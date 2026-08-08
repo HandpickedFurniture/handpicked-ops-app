@@ -6,8 +6,9 @@ Three modules over the `handpicked-curtains` Supabase project (`jrevqijbzzwdcwxc
 | | |
 |---|---|
 | Stack | Hand-written HTML/CSS/vanilla JS as native ES modules. **No npm, no bundler, no framework.** |
+| Hosting (LIVE) | **https://handpickedfurniture.github.io/kurtains-ops-app/** — GitHub Pages, repo `HandpickedFurniture/kurtains-ops-app`. Update = commit + push to `main`. |
 | Local preview | `python -m http.server 8124 --directory ops-app` → http://localhost:8124 (also `.claude/launch.json`) |
-| Hosting | GitHub Pages, same pattern as `pfc-order-app` (Cloud Run is blocked by the GCP org policy; Supabase cannot serve HTML) |
+| Why Pages | Cloud Run is blocked by the GCP org policy (403 on allUsers) and Supabase cannot serve HTML; Pages also gives HTTPS, which the camera and microphone require |
 | Auth | Supabase Auth, email + password, **one account per person** |
 | Languages | English / Hindi / Bengali |
 | Theme | Light only — `Context_overview.docx` says avoid dark mode |
