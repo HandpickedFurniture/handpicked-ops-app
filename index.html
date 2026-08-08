@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0f4c5c">
+  <meta name="color-scheme" content="light">
+  <title>Kurtains Operations</title>
+  <link rel="stylesheet" href="./css/app.css?v=2026-08-08.1">
+</head>
+<body>
+
+<header id="hdr"></header>
+<nav class="tabs" id="tabs"></nav>
+
+<main id="main"></main>
+
+<div id="loading"><div class="spinner"></div><div id="loadmsg">Loading…</div></div>
+
+<footer style="text-align:center;padding:18px;font-size:11px;color:#5f7480">
+  Kurtains Operations · build <span id="build"></span>
+</footer>
+
+<!-- Native ES modules: no npm, no bundler, no transpiler. Served fine by GitHub Pages and by
+     `python -m http.server`, but they DO NOT work over file:// - open the preview URL, never the
+     file directly. Bump the ?v= on deploy; Pages caches assets for 10 minutes. -->
+<script type="module" src="./js/app.js?v=2026-08-08.1"></script>
+
+</body>
+</html>

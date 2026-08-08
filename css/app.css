@@ -1,0 +1,239 @@
+/* Kurtains Operations Management.
+ *
+ * Light theme only, deliberately: Context_overview.docx says "Avoid dark mode for interfaces".
+ * color-scheme is pinned to light and prefers-color-scheme is never consulted, so a phone in dark
+ * mode still renders the intended palette.
+ *
+ * Palette is copied from pfc-order-app so the two apps read as one system.
+ * Mobile-first; the dense table layout starts at 1024px.
+ */
+:root{
+  --brand:#0f4c5c; --brand-dark:#0a3540; --accent:#e36414; --ok:#1a7f37;
+  --bg:#f2f5f7; --card:#ffffff; --line:#dde4e8; --txt:#16232a; --muted:#5f7480;
+  --danger:#c0392b; --warn:#9a5b00; --warn-bg:#fff4e0; --radius:14px;
+  --ok-bg:#eef7ef; --bad-bg:#fdecea; --info-bg:#e8f0f3; --mute-bg:#f2f5f7;
+  color-scheme: light;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--txt);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,
+    "Noto Sans Devanagari","Noto Sans Bengali",Arial,sans-serif;font-size:16px;}
+/* Devanagari and Bengali need more vertical room than Latin */
+html[lang="hi"] body,html[lang="bn"] body{line-height:1.5;}
+h1,h2,h3,h4{margin:0;}
+.hidden{display:none !important;}
+button{font-family:inherit;}
+
+/* Large-text mode for the production floor */
+body.big{font-size:18px;}
+body.big button,body.big .btn{min-height:56px;}
+body.big .cell-actions button{min-height:48px;}
+
+/* ---------------------------------------------------------------- header */
+header{background:var(--brand);color:#fff;padding:10px 14px;position:sticky;top:0;z-index:60;
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+header .logo{width:36px;height:36px;border-radius:10px;background:#fff;color:var(--brand);
+  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;flex:none;}
+header .titles{flex:1;min-width:120px;}
+header .t1{font-size:16px;font-weight:700;line-height:1.1;}
+header .t2{font-size:12px;opacity:.85;}
+header select,header .hbtn{padding:7px 10px;font-size:14px;font-weight:700;
+  border:1.5px solid rgba(255,255,255,.45);border-radius:10px;background:rgba(255,255,255,.12);
+  color:#fff;cursor:pointer;}
+header select option{color:var(--txt);}
+.qbadge{background:var(--accent);color:#fff;border-radius:999px;padding:3px 9px;font-size:12px;
+  font-weight:700;}
+.qbadge.fail{background:var(--danger);}
+
+nav.tabs{display:flex;gap:2px;background:var(--brand-dark);position:sticky;top:56px;z-index:55;
+  overflow-x:auto;}
+nav.tabs a{flex:1;min-width:110px;text-align:center;padding:11px 8px;color:#cfe0e6;
+  text-decoration:none;font-size:14px;font-weight:600;white-space:nowrap;
+  border-bottom:3px solid transparent;}
+nav.tabs a.active{color:#fff;border-bottom-color:var(--accent);background:rgba(255,255,255,.06);}
+
+main{padding:12px;max-width:1600px;margin:0 auto;}
+
+/* ---------------------------------------------------------------- generic bits */
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+  padding:14px;margin-bottom:12px;}
+.btn{border:1.5px solid var(--line);background:var(--card);color:var(--txt);border-radius:10px;
+  padding:9px 13px;font-size:14px;font-weight:600;cursor:pointer;min-height:42px;}
+.btn:hover{border-color:var(--brand);}
+.btn.primary{background:var(--brand);color:#fff;border-color:var(--brand);}
+.btn.accent{background:var(--accent);color:#fff;border-color:var(--accent);}
+.btn.ghost{background:transparent;}
+.btn.sm{padding:5px 9px;font-size:13px;min-height:34px;}
+.btn:disabled{opacity:.5;cursor:not-allowed;}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+.spread{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;}
+label.f{display:block;font-size:12px;font-weight:700;color:var(--muted);margin:0 0 4px;
+  text-transform:uppercase;letter-spacing:.03em;}
+input[type=text],input[type=date],input[type=time],input[type=number],
+input[type=email],input[type=password],select,textarea{
+  width:100%;padding:10px 11px;border:1.5px solid var(--line);border-radius:10px;
+  font-size:15px;font-family:inherit;background:var(--card);color:var(--txt);min-height:44px;}
+textarea{min-height:74px;resize:vertical;}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--brand);outline-offset:-1px;}
+.muted{color:var(--muted);font-size:13px;}
+.err{color:var(--danger);font-size:14px;font-weight:600;}
+.grid2{display:grid;grid-template-columns:1fr;gap:10px;}
+@media(min-width:700px){.grid2{grid-template-columns:1fr 1fr;}}
+.grid3{display:grid;grid-template-columns:1fr;gap:10px;}
+@media(min-width:700px){.grid3{grid-template-columns:repeat(3,1fr);}}
+
+/* Chips. Never colour-only: every chip carries text, and status chips carry a glyph too, because a
+   red/green-only signal fails on a sunlit phone and for colour-blind installers. */
+.chip{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:2px 9px;
+  font-size:12px;font-weight:700;border:1px solid transparent;white-space:nowrap;}
+.chip.ok{background:var(--ok-bg);color:var(--ok);border-color:#bfe0c8;}
+.chip.warn{background:var(--warn-bg);color:var(--warn);border-color:#f0d9ac;}
+.chip.bad{background:var(--bad-bg);color:var(--danger);border-color:#f2c3bd;}
+.chip.info{background:var(--info-bg);color:var(--brand);border-color:#c5d8de;}
+.chip.mute{background:var(--mute-bg);color:var(--muted);border-color:var(--line);}
+.chip.wait{background:var(--mute-bg);color:var(--muted);border-color:var(--line);}
+
+/* ---------------------------------------------------------------- filter bar */
+.filterbar{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+  margin-bottom:12px;overflow:hidden;}
+.filterbar .fsummary{display:flex;justify-content:space-between;align-items:center;gap:8px;
+  padding:12px 14px;cursor:pointer;font-weight:700;font-size:14px;}
+.filterbar .fbody{padding:0 14px 14px;border-top:1px solid var(--line);}
+.filterbar.collapsed .fbody{display:none;}
+.fgrid{display:grid;grid-template-columns:1fr;gap:10px;margin:12px 0;}
+@media(min-width:640px){.fgrid{grid-template-columns:1fr 1fr;}}
+@media(min-width:1024px){.fgrid{grid-template-columns:repeat(4,1fr);}}
+.bucketrow{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;}
+.bucketrow button{border:1.5px solid var(--line);background:var(--card);border-radius:10px;
+  padding:7px 11px;font-size:13px;font-weight:700;cursor:pointer;color:var(--txt);}
+.bucketrow button.on{border-color:var(--brand);background:var(--info-bg);}
+
+/* ---------------------------------------------------------------- order list
+   Cards on mobile, a dense sticky-header table from 1024px. */
+.olist{display:grid;gap:10px;}
+.ocard{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+  overflow:hidden;border-left:5px solid var(--line);}
+.ocard.b-overdue{border-left-color:var(--danger);}
+.ocard.b-today{border-left-color:var(--accent);}
+.ocard.b-this_week{border-left-color:var(--brand);}
+.ocard.b-done{border-left-color:var(--ok);}
+.ocard.b-later,.ocard.b-nodate{border-left-color:var(--line);}
+.ohead{padding:11px 13px;display:flex;gap:10px;align-items:flex-start;cursor:pointer;}
+.ohead:hover{background:#fafcfd;}
+.oid{font-weight:800;font-size:16px;}
+.ometa{flex:1;min-width:0;}
+.oname{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.osub{font-size:12px;color:var(--muted);margin-top:2px;}
+.ochips{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px;}
+.ocaret{color:var(--muted);font-size:18px;flex:none;padding-top:2px;}
+
+.progress{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;}
+.bar{width:52px;height:7px;border-radius:4px;background:var(--line);overflow:hidden;flex:none;}
+.bar > i{display:block;height:100%;background:var(--ok);}
+.bar.part > i{background:var(--accent);}
+
+table.dense{width:100%;border-collapse:collapse;font-size:13px;}
+table.dense th{position:sticky;top:0;background:var(--info-bg);text-align:left;padding:8px 9px;
+  font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--brand);
+  border-bottom:2px solid var(--line);cursor:pointer;white-space:nowrap;z-index:5;}
+table.dense td{padding:8px 9px;border-bottom:1px solid var(--line);vertical-align:top;}
+table.dense tr:hover td{background:#fafcfd;}
+.scrollx{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+
+/* ---------------------------------------------------------------- drawer */
+.drawer{border-top:1px solid var(--line);background:#fbfdfe;padding:12px 13px;}
+.dsec{margin-bottom:14px;}
+.dsec > h4{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--brand);
+  margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+.dsec ul{margin:0;padding-left:18px;font-size:13px;}
+.dsec li{margin-bottom:3px;}
+.dnone{color:var(--muted);font-size:13px;font-style:italic;}
+.subtabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;}
+.subtabs button{border:1.5px solid var(--line);background:var(--card);border-radius:999px;
+  padding:6px 12px;font-size:13px;font-weight:700;cursor:pointer;color:var(--muted);}
+.subtabs button.on{background:var(--brand);border-color:var(--brand);color:#fff;}
+
+.unit{display:flex;gap:8px;align-items:center;padding:8px;border:1px solid var(--line);
+  border-radius:10px;background:var(--card);margin-bottom:6px;flex-wrap:wrap;}
+.unit .uname{font-weight:700;font-size:13px;flex:1;min-width:110px;}
+.unit .usub{font-size:12px;color:var(--muted);}
+
+/* ---------------------------------------------------------------- voice */
+.mic{border:1.5px solid var(--line);background:var(--card);border-radius:10px;width:44px;
+  height:44px;font-size:18px;cursor:pointer;flex:none;color:var(--brand);}
+.mic.on{background:var(--accent);border-color:var(--accent);color:#fff;}
+.mic:disabled{opacity:.4;cursor:not-allowed;}
+.withmic{display:flex;gap:8px;align-items:flex-start;}
+.withmic > :first-child{flex:1;}
+
+/* ---------------------------------------------------------------- dashboard */
+.tiles{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px;}
+@media(min-width:700px){.tiles{grid-template-columns:repeat(6,1fr);}}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:11px;
+  cursor:pointer;text-align:left;border-top:4px solid var(--line);}
+.tile.on{outline:2px solid var(--brand);}
+.tile .tn{font-size:24px;font-weight:800;line-height:1;}
+.tile .tl{font-size:12px;color:var(--muted);margin-top:4px;font-weight:600;}
+.tile.b-overdue{border-top-color:var(--danger);background:var(--bad-bg);}
+.tile.b-today{border-top-color:var(--accent);background:var(--warn-bg);}
+.tile.b-this_week{border-top-color:var(--brand);background:var(--info-bg);}
+.tile.b-done{border-top-color:var(--ok);background:var(--ok-bg);}
+.stat{display:flex;flex-direction:column;gap:2px;}
+.stat .sn{font-size:20px;font-weight:800;}
+.stat .sl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;}
+.statrow{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
+@media(min-width:700px){.statrow{grid-template-columns:repeat(5,1fr);}}
+
+/* ---------------------------------------------------------------- overlays */
+#loading{position:fixed;inset:0;background:rgba(255,255,255,.85);display:none;
+  align-items:center;justify-content:center;z-index:200;flex-direction:column;gap:10px;
+  font-weight:700;color:var(--brand);}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:22px;background:var(--txt);
+  color:#fff;padding:11px 17px;border-radius:11px;font-size:14px;z-index:300;max-width:90vw;
+  box-shadow:0 6px 20px rgba(0,0,0,.25);}
+.toast.ok{background:var(--ok);}
+.toast.bad{background:var(--danger);}
+.modal{position:fixed;inset:0;background:rgba(10,30,40,.45);display:flex;align-items:flex-end;
+  justify-content:center;z-index:250;}
+@media(min-width:700px){.modal{align-items:center;}}
+.modal .sheet{background:var(--card);border-radius:16px 16px 0 0;padding:16px;width:100%;
+  max-width:620px;max-height:92vh;overflow-y:auto;}
+@media(min-width:700px){.modal .sheet{border-radius:16px;}}
+
+.banner{border-radius:10px;padding:9px 12px;font-size:13px;font-weight:600;margin-bottom:10px;}
+.banner.warn{background:var(--warn-bg);color:var(--warn);border:1px solid #f0d9ac;}
+.banner.bad{background:var(--bad-bg);color:var(--danger);border:1px solid #f2c3bd;}
+.banner.info{background:var(--info-bg);color:var(--brand);border:1px solid #c5d8de;}
+
+/* ---------------------------------------------------------------- photos */
+.photostrip{margin-top:8px;}
+.photostrip label.btn{display:inline-flex;align-items:center;gap:6px;cursor:pointer;}
+.thumbs{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;}
+.thumb{width:52px;height:52px;border:1.5px solid var(--line);border-radius:9px;background:var(--mute-bg);
+  font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;}
+.thumb:hover{border-color:var(--brand);}
+.thumb.gone{opacity:.45;border-style:dashed;}
+.lightbox img{width:100%;height:auto;border-radius:11px;background:var(--mute-bg);}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;}
+
+.pgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
+@media(min-width:700px){.pgrid{grid-template-columns:repeat(4,1fr);}}
+@media(min-width:1200px){.pgrid{grid-template-columns:repeat(6,1fr);}}
+.pcard{background:var(--card);border:1px solid var(--line);border-radius:11px;overflow:hidden;
+  cursor:pointer;text-align:left;padding:0;}
+.pcard .pimg{width:100%;aspect-ratio:4/3;background:var(--mute-bg);display:flex;
+  align-items:center;justify-content:center;font-size:26px;color:var(--muted);}
+.pcard .pmeta{padding:7px 9px;font-size:11px;line-height:1.35;}
+.pcard.gone{opacity:.55;border-style:dashed;}
+
+/* ---------------------------------------------------------------- transfers / inventory */
+.tline{display:grid;grid-template-columns:1fr auto auto auto;gap:8px;align-items:center;
+  padding:8px;border:1px solid var(--line);border-radius:10px;margin-bottom:6px;background:var(--card);}
+@media(max-width:640px){.tline{grid-template-columns:1fr 1fr;}}
+.qty{width:82px;text-align:right;}
+.statebtns{display:flex;gap:4px;flex-wrap:wrap;}
+
+/* a cell whose write has not been acknowledged yet */
+.pending{position:relative;}
+.pending::after{content:"";position:absolute;top:2px;right:2px;width:7px;height:7px;
+  border-radius:50%;background:var(--accent);}
