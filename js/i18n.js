@@ -27,7 +27,7 @@ export const SPEECH_LOCALE = { en: "en-IN", hi: "hi-IN", bn: "bn-IN" };
 export const I18N = {
   en: {
     "app.title": "Operations",
-    "nav.production": "Production", "nav.status": "Order status", "nav.dashboard": "Dashboard",
+    "nav.production": "Production", "nav.status": "Installation", "nav.dashboard": "Dashboard",
     "nav.eod": "End of day",
 
     "auth.title": "Sign in", "auth.email": "Email", "auth.password": "Password",
@@ -81,6 +81,9 @@ export const I18N = {
     "adj.drift": "Rate card says AED {n}", "adj.total": "Extra beyond PO",
     "adj.reasonRequired": "A reason is required - it is printed on the invoice.",
     "adj.confirm": "Confirm", "adj.drop": "Do not charge",
+    "adj.buildInvoice": "Build draft invoice",
+    "adj.buildInvoiceHint":
+      "Creates a draft invoice from the PO lines plus every agreed extra. Re-running rebuilds it in place.",
 
     "bucket.overdue": "Overdue", "bucket.today": "Today", "bucket.week": "This week",
     "bucket.later": "Later", "bucket.nodate": "No date", "bucket.done": "Done",
@@ -172,11 +175,43 @@ export const I18N = {
     "audit.title": "Photo audit", "audit.filters": "Filters", "audit.from": "From", "audit.to": "To",
     "audit.total": "{n} photo(s)", "audit.export": "Download index (CSV)",
     "audit.noPhotos": "No photos match these filters.",
+
+    "bucket.tomorrow": "Tomorrow", "bucket.dayAfter": "Day after",
+
+    "ps.awaiting": "Awaiting fabric", "ps.ordered": "Fabric ordered", "ps.fabricIn": "Fabric in",
+    "ps.inProd": "In production", "ps.packed": "Packed", "ps.cancelled": "Cancelled",
+
+    "tr.extra": "Extra materials", "tr.toLocation": "To location",
+
+    "col.owlTotal": "OWL total", "col.owlCurtains": "OWL curtains", "col.owlBlinds": "OWL blinds",
+    "col.meters": "Fabric (m)", "col.alteration": "Alteration",
+    "col.optComments": "Optional comments", "col.installNotes": "Installation notes",
+    "col.production": "Production",
+    "t.metersNote": "From the PO fabric total",
+
+    "f.alteration": "Alteration", "f.alterationYes": "Has alteration",
+    "f.alterationNo": "No alteration",
+
+    "st.members": "Team members", "st.member": "Member {n}", "st.addMember": "+ Add name",
+    "st.memberNone": "—", "st.newMember": "New name…", "st.memberAdded": "Name added",
+
+    "inv.packs": "Packs", "inv.packName": "Pack name", "inv.packQty": "Units per pack",
+    "inv.addPack": "Add pack", "inv.packCount": "How many packs",
+    "inv.receivePacks": "Receive in packs", "inv.noPacks": "No packs defined",
+    "inv.packLimit": "An item can have at most 10 pack types.",
+    "inv.override": "Set counted quantity", "inv.overrideHint":
+      "The difference is recorded as an adjustment, so the correction stays in the history.",
+    "inv.counted": "Counted quantity", "inv.was": "Was {n}, now {m} ({d})",
+    "inv.noChange": "Already correct — nothing recorded.",
+    "inv.packsTotal": "{n} packs × {q} = {t}",
+
+    "dash.byProduction": "By production status", "dash.byInstall": "By installation status",
+    "dash.noChart": "Nothing to chart yet.",
   },
 
   hi: {
     "app.title": "ऑपरेशंस",
-    "nav.production": "उत्पादन", "nav.status": "ऑर्डर स्थिति", "nav.dashboard": "डैशबोर्ड",
+    "nav.production": "उत्पादन", "nav.status": "इंस्टॉलेशन", "nav.dashboard": "डैशबोर्ड",
     "nav.eod": "दिन का अंत",
 
     "auth.title": "साइन इन करें", "auth.email": "ईमेल", "auth.password": "पासवर्ड",
@@ -230,6 +265,9 @@ export const I18N = {
     "adj.drift": "दर सूची कहती है AED {n}", "adj.total": "PO से अतिरिक्त",
     "adj.reasonRequired": "कारण आवश्यक है – यह बिल पर छपता है।",
     "adj.confirm": "पुष्टि करें", "adj.drop": "शुल्क न लें",
+    "adj.buildInvoice": "ड्राफ़्ट बिल बनाएँ",
+    "adj.buildInvoiceHint":
+      "PO लाइनों और सभी सहमत अतिरिक्त कार्यों से ड्राफ़्ट बिल बनाता है। दोबारा चलाने पर वही बिल फिर से बनता है।",
 
     "bucket.overdue": "विलंबित", "bucket.today": "आज", "bucket.week": "इस सप्ताह",
     "bucket.later": "बाद में", "bucket.nodate": "तिथि नहीं", "bucket.done": "पूर्ण",
@@ -323,11 +361,43 @@ export const I18N = {
     "audit.title": "फ़ोटो ऑडिट", "audit.filters": "फ़िल्टर", "audit.from": "से", "audit.to": "तक",
     "audit.total": "{n} फ़ोटो", "audit.export": "सूची डाउनलोड करें (CSV)",
     "audit.noPhotos": "इन फ़िल्टर से कोई फ़ोटो नहीं मिली।",
+
+    "bucket.tomorrow": "कल", "bucket.dayAfter": "परसों",
+
+    "ps.awaiting": "कपड़े का इंतज़ार", "ps.ordered": "कपड़ा ऑर्डर किया", "ps.fabricIn": "कपड़ा आ गया",
+    "ps.inProd": "उत्पादन में", "ps.packed": "पैक हो गया", "ps.cancelled": "रद्द",
+
+    "tr.extra": "अतिरिक्त सामग्री", "tr.toLocation": "किस स्थान पर",
+
+    "col.owlTotal": "OWL कुल", "col.owlCurtains": "OWL पर्दे", "col.owlBlinds": "OWL ब्लाइंड",
+    "col.meters": "कपड़ा (मी)", "col.alteration": "अल्टरेशन",
+    "col.optComments": "वैकल्पिक टिप्पणियाँ", "col.installNotes": "इंस्टॉलेशन नोट्स",
+    "col.production": "उत्पादन",
+    "t.metersNote": "PO कपड़ा कुल से",
+
+    "f.alteration": "अल्टरेशन", "f.alterationYes": "अल्टरेशन है",
+    "f.alterationNo": "अल्टरेशन नहीं",
+
+    "st.members": "टीम सदस्य", "st.member": "सदस्य {n}", "st.addMember": "+ नाम जोड़ें",
+    "st.memberNone": "—", "st.newMember": "नया नाम…", "st.memberAdded": "नाम जोड़ा गया",
+
+    "inv.packs": "पैक", "inv.packName": "पैक का नाम", "inv.packQty": "प्रति पैक इकाई",
+    "inv.addPack": "पैक जोड़ें", "inv.packCount": "कितने पैक",
+    "inv.receivePacks": "पैक में प्राप्त करें", "inv.noPacks": "कोई पैक परिभाषित नहीं",
+    "inv.packLimit": "एक आइटम में अधिकतम 10 पैक प्रकार।",
+    "inv.override": "गिनी गई मात्रा सेट करें", "inv.overrideHint":
+      "अंतर समायोजन के रूप में दर्ज होता है, ताकि सुधार इतिहास में बना रहे।",
+    "inv.counted": "गिनी गई मात्रा", "inv.was": "पहले {n}, अब {m} ({d})",
+    "inv.noChange": "पहले से सही — कुछ दर्ज नहीं हुआ।",
+    "inv.packsTotal": "{n} पैक × {q} = {t}",
+
+    "dash.byProduction": "उत्पादन स्थिति अनुसार", "dash.byInstall": "इंस्टॉलेशन स्थिति अनुसार",
+    "dash.noChart": "अभी चार्ट के लिए कुछ नहीं।",
   },
 
   bn: {
     "app.title": "অপারেশনস",
-    "nav.production": "উৎপাদন", "nav.status": "অর্ডার অবস্থা", "nav.dashboard": "ড্যাশবোর্ড",
+    "nav.production": "উৎপাদন", "nav.status": "ইনস্টলেশন", "nav.dashboard": "ড্যাশবোর্ড",
     "nav.eod": "দিনের শেষ",
 
     "auth.title": "সাইন ইন করুন", "auth.email": "ইমেল", "auth.password": "পাসওয়ার্ড",
@@ -381,6 +451,9 @@ export const I18N = {
     "adj.drift": "রেট তালিকা বলছে AED {n}", "adj.total": "PO-র বাইরে অতিরিক্ত",
     "adj.reasonRequired": "কারণ আবশ্যক – এটি বিলে ছাপা হয়।",
     "adj.confirm": "নিশ্চিত করুন", "adj.drop": "চার্জ করবেন না",
+    "adj.buildInvoice": "খসড়া বিল তৈরি করুন",
+    "adj.buildInvoiceHint":
+      "PO লাইন ও সম্মত সব অতিরিক্ত কাজ থেকে খসড়া বিল তৈরি করে। আবার চালালে সেটিই পুনর্গঠিত হয়।",
 
     "bucket.overdue": "বিলম্বিত", "bucket.today": "আজ", "bucket.week": "এই সপ্তাহে",
     "bucket.later": "পরে", "bucket.nodate": "তারিখ নেই", "bucket.done": "সম্পন্ন",
@@ -474,6 +547,38 @@ export const I18N = {
     "audit.title": "ছবি অডিট", "audit.filters": "ফিল্টার", "audit.from": "থেকে", "audit.to": "পর্যন্ত",
     "audit.total": "{n} ছবি", "audit.export": "সূচি ডাউনলোড (CSV)",
     "audit.noPhotos": "এই ফিল্টারে কোনো ছবি নেই।",
+
+    "bucket.tomorrow": "আগামীকাল", "bucket.dayAfter": "পরশু",
+
+    "ps.awaiting": "কাপড়ের অপেক্ষায়", "ps.ordered": "কাপড় অর্ডার হয়েছে", "ps.fabricIn": "কাপড় এসেছে",
+    "ps.inProd": "উৎপাদনে", "ps.packed": "প্যাক হয়েছে", "ps.cancelled": "বাতিল",
+
+    "tr.extra": "অতিরিক্ত উপকরণ", "tr.toLocation": "কোন অবস্থানে",
+
+    "col.owlTotal": "OWL মোট", "col.owlCurtains": "OWL পর্দা", "col.owlBlinds": "OWL ব্লাইন্ড",
+    "col.meters": "কাপড় (মি)", "col.alteration": "অল্টারেশন",
+    "col.optComments": "ঐচ্ছিক মন্তব্য", "col.installNotes": "ইনস্টলেশন নোট",
+    "col.production": "উৎপাদন",
+    "t.metersNote": "PO কাপড় মোট থেকে",
+
+    "f.alteration": "অল্টারেশন", "f.alterationYes": "অল্টারেশন আছে",
+    "f.alterationNo": "অল্টারেশন নেই",
+
+    "st.members": "দলের সদস্য", "st.member": "সদস্য {n}", "st.addMember": "+ নাম যোগ করুন",
+    "st.memberNone": "—", "st.newMember": "নতুন নাম…", "st.memberAdded": "নাম যোগ হয়েছে",
+
+    "inv.packs": "প্যাক", "inv.packName": "প্যাকের নাম", "inv.packQty": "প্রতি প্যাকে একক",
+    "inv.addPack": "প্যাক যোগ করুন", "inv.packCount": "কতগুলি প্যাক",
+    "inv.receivePacks": "প্যাকে গ্রহণ করুন", "inv.noPacks": "কোনো প্যাক নির্ধারিত নেই",
+    "inv.packLimit": "একটি আইটেমে সর্বাধিক ১০টি প্যাক ধরন।",
+    "inv.override": "গণনা করা পরিমাণ সেট করুন", "inv.overrideHint":
+      "পার্থক্যটি সমন্বয় হিসেবে রেকর্ড হয়, তাই সংশোধনটি ইতিহাসে থেকে যায়।",
+    "inv.counted": "গণনা করা পরিমাণ", "inv.was": "আগে {n}, এখন {m} ({d})",
+    "inv.noChange": "আগে থেকেই সঠিক — কিছু রেকর্ড হয়নি।",
+    "inv.packsTotal": "{n} প্যাক × {q} = {t}",
+
+    "dash.byProduction": "উৎপাদন অবস্থা অনুযায়ী", "dash.byInstall": "ইনস্টলেশন অবস্থা অনুযায়ী",
+    "dash.noChart": "চার্ট করার মতো কিছু নেই।",
   },
 };
 

@@ -12,7 +12,7 @@
 import { api, apiAll, rpc, submit, currentActor, queueDepth, isSignedIn } from "./api.js";
 import { tr, tv, getLang } from "./i18n.js";
 import {
-  ORDER_STATUSES, STATUS_TONE, CHARGE_TYPES, ADJ_STATUSES, TRANSFER_STATUSES,
+  ORDER_STATUSES, STATUS_TONE, CHARGE_TYPES, ADJ_STATUSES, TRANSFER_STATUSES, SPECIAL_COLS,
 } from "./config.js";
 import {
   $, esc, el, chip, aed, num, fmtDate, toast, loading, modal, selectHtml, confirmSheet,
@@ -25,15 +25,34 @@ const BOARD_COLS = [
   "order_id", "customer_name", "city", "city_source", "installation_date", "date_bucket",
   "sheet_status", "version_no", "window_count", "status", "ready", "comment",
   "alteration", "alteration_note", "alteration_special_requirement", "removal_curtain_count",
+  "owl_total", "owl_curtains", "owl_blinds", "production_state",
+  "optional_comments", "installation_notes", "production_comments",
+  "n_roman", "n_roller", "n_zebra", "n_wooden", "n_venetian", "n_pelmet", "n_motor",
+  "n_bend_rail", "n_scaffolding", "n_pull_cord", "n_eyelet", "n_baton_stick",
+  "n_tieback_hooks", "n_tieback_velcro", "n_cassette", "n_trunking", "n_velcro_stitch",
+  "n_pickup", "n_alteration", "n_removal",
   "has_adjustment", "adjustment_count", "adjustment_amount", "team_no", "team_name",
   "team_assigned", "visit_count", "last_visit_no", "last_visit_date", "last_visit_status",
-  "po_amount_aed", "adj_amount_aed", "total_billable_aed", "adj_pending", "invoice_status",
+  "last_visit_members", "adj_pending",
   "production_hold", "cancelled", "transfer_status", "transfer_location", "photo_count",
   "stitching_types", "commercial_names", "window_refs", "fabric_1_codes", "fabric_2_codes",
 ].join(",");
 
 let OPTIONS = null;
 let TEAMS = null;
+let MEMBERS = null;   // the installer name list behind the six per-visit dropdowns
+
+async function loadMembers(force) {
+  if (MEMBERS && !force) return MEMBERS;
+  try {
+    // sorted case-insensitively: the seed list mixes AJISH and Hafis, and a plain sort would put
+    // every capitalised name above every mixed-case one
+    const rows = await api("/rest/v1/team_members?select=id,name&active=is.true");
+    MEMBERS = rows.map((r) => r.name)
+      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  } catch (e) { MEMBERS = []; }
+  return MEMBERS;
+}
 
 export async function render(mount, state, setFilters) {
   if (!isSignedIn()) return;
@@ -43,6 +62,7 @@ export async function render(mount, state, setFilters) {
     try { TEAMS = await api("/rest/v1/teams?select=team_no,team_name&order=team_no"); }
     catch (e) { TEAMS = []; }
   }
+  await loadMembers();
   if (!OPTIONS) {
     try {
       const all = await apiAll("/rest/v1/v_ops_order_roster?select=city,sheet_status,stitching_types,commercial_names,window_refs,fabric_1_codes,fabric_2_codes");
@@ -83,6 +103,14 @@ export async function render(mount, state, setFilters) {
   box.appendChild(list);
 }
 
+/* The special requirements that actually apply to this order - what the installers need to have on
+ * the van before they leave. */
+function specialChips(r) {
+  const on = SPECIAL_COLS.filter((s) => Number(r[s.col]) > 0);
+  if (!on.length) return "";
+  return on.map((s) => chip(`${tr(s.key)} ${num(r[s.col])}`, "info")).join(" ");
+}
+
 function orderCard(r, reload) {
   const st = r.status ? chip(r.status, STATUS_TONE[r.status] || "mute") : "";
   const card = el(`
@@ -98,7 +126,15 @@ function orderCard(r, reload) {
           </div>
           <div class="oname">${esc(r.customer_name || "—")}</div>
           <div class="osub">${esc(r.city || tr("t.cityUnknown"))} · ${esc(fmtDate(r.installation_date))}
-            · ${esc(r.visit_count)} ${esc(tr("col.visits").toLowerCase())}</div>
+            · ${esc(r.visit_count)} ${esc(tr("col.visits").toLowerCase())}
+            ${r.last_visit_members && r.last_visit_members.length
+              ? " · " + esc(r.last_visit_members.join(", ")) : ""}</div>
+          <div class="ochips">
+            ${chip(`${tr("col.owlTotal")} ${num(r.owl_total)}`, "info")}
+            ${Number(r.owl_curtains) ? chip(`${tr("col.owlCurtains")} ${num(r.owl_curtains)}`, "mute") : ""}
+            ${Number(r.owl_blinds) ? chip(`${tr("col.owlBlinds")} ${num(r.owl_blinds)}`, "mute") : ""}
+            ${chip(`${tr("col.windows")} ${num(r.window_count)}`, "mute")}
+          </div>
           <div class="ochips">
             ${r.alteration ? chip(tr("st.alteration"), "warn", "!") : ""}
             ${Number(r.removal_curtain_count)
@@ -106,14 +142,14 @@ function orderCard(r, reload) {
             ${r.transfer_status
               ? chip(tv(TRANSFER_STATUSES, r.transfer_status),
                      (TRANSFER_STATUSES.find((s) => s.value === r.transfer_status) || {}).tone) : ""}
+            ${r.adj_pending ? chip(`${tr("adj.new")} ${r.adj_pending}`, "warn", "!") : ""}
             ${r.photo_count ? chip(String(r.photo_count), "mute", "📷") : ""}
           </div>
-          <div class="ochips">
-            ${Number(r.adj_amount_aed) ? chip(`${tr("adj.total")} ${aed(r.adj_amount_aed)}`, "warn") : ""}
-            ${r.adj_pending ? chip(`${tr("adj.new")} ${r.adj_pending}`, "warn", "!") : ""}
-            ${chip(`${tr("dash.billable")} ${aed(r.total_billable_aed)}`, "mute")}
-            ${r.invoice_status ? chip(r.invoice_status, "mute") : ""}
-          </div>
+          <div class="ochips">${specialChips(r)}</div>
+          ${r.optional_comments || r.installation_notes ? `<div class="osub" style="margin-top:6px">
+            ${r.optional_comments ? esc(String(r.optional_comments).slice(0, 140)) : ""}
+            ${r.installation_notes ? " · <i>" + esc(String(r.installation_notes).slice(0, 140)) + "</i>" : ""}
+          </div>` : ""}
         </div>
         <span class="ocaret">▾</span>
       </div>
@@ -259,6 +295,7 @@ function visitRow(r, v, reload) {
     <div class="unit">
       <div class="uname">${esc(tr("st.visit", { n: v.visit_no }))}
         <div class="usub">${esc(fmtDate(v.visit_date))}${v.visit_time ? " · " + esc(v.visit_time) : ""}
+          ${v.member_names && v.member_names.length ? " · " + esc(v.member_names.join(", ")) : ""}
           ${v.comment ? " · " + esc(v.comment) : ""}</div>
       </div>
       <div>${v.status ? chip(v.status, STATUS_TONE[v.status] || "mute") : chip("—", "mute")}
@@ -267,6 +304,47 @@ function visitRow(r, v, reload) {
     </div>`);
   row.querySelector("[data-edit]").addEventListener("click", () => openVisitSheet(r, v, reload));
   return row;
+}
+
+/* One of six slots. Dropdowns rather than free text so "IKBAL", "Ikbal" and "ikbal " do not become
+ * three different installers; the "+ New name" option keeps a new hire from blocking the visit. */
+function memberSelect(i, current) {
+  const opts = (MEMBERS || []).map((n) =>
+    `<option value="${esc(n)}"${n === current ? " selected" : ""}>${esc(n)}</option>`).join("");
+  return `<select name="vm${i}" aria-label="${esc(tr("st.member", { n: i + 1 }))}">
+    <option value="">${esc(tr("st.memberNone"))}</option>
+    ${opts}
+    <option value="__new__">${esc(tr("st.newMember"))}</option>
+  </select>`;
+}
+
+/* Wires the "+ New name" sentinel on every member dropdown in a container. */
+function wireMemberSelects(root) {
+  root.querySelectorAll('select[name^="vm"]').forEach((sel) => {
+    sel.addEventListener("change", async () => {
+      if (sel.value !== "__new__") return;
+      sel.value = "";
+      const name = (prompt(tr("st.addMember")) || "").trim();
+      if (!name) return;
+      try {
+        await api("/rest/v1/team_members", {
+          method: "POST",
+          body: JSON.stringify({ name, created_by: currentActor() }),
+        });
+      } catch (e) {
+        // a duplicate is fine - the name already exists, just select it
+        if (!/duplicate|unique/i.test(e.message)) { toast(e.message, "bad"); return; }
+      }
+      await loadMembers(true);
+      root.querySelectorAll('select[name^="vm"]').forEach((s) => {
+        const keep = s.value;
+        s.innerHTML = memberSelect(0, keep).replace(/^<select[^>]*>|<\/select>$/g, "");
+        s.value = keep;
+      });
+      sel.value = name;
+      toast(tr("st.memberAdded"), "ok");
+    });
+  });
 }
 
 function openVisitSheet(r, v, reload) {
@@ -283,6 +361,12 @@ function openVisitSheet(r, v, reload) {
         ${selectHtml("vteam", (TEAMS || []).map((t) => ({
             value: t.team_no, label: t.team_name || tr("dash.team", { n: t.team_no }) })),
             v.team_no || r.team_no || "", tr("dash.unassigned"))}</div>
+    </div>
+    <div style="margin-top:12px">
+      <label class="f">${esc(tr("st.members"))}</label>
+      <div class="memgrid">
+        ${[0, 1, 2, 3, 4, 5].map((i) => memberSelect(i, (v.member_names || [])[i])).join("")}
+      </div>
     </div>
     <div style="margin-top:10px">
       <label class="f">${esc(tr("st.internal"))}</label>
@@ -303,6 +387,7 @@ function openVisitSheet(r, v, reload) {
 
   let method = "typed";
   wireMics(m.sheet, (_t, mm) => { method = mm; });
+  wireMemberSelects(m.sheet);
 
   // Site photos belong to the visit that produced them.
   m.sheet.querySelector("[data-photos]").appendChild(photoStrip({
@@ -322,6 +407,10 @@ function openVisitSheet(r, v, reload) {
         visit_status: g("vstatus"), team_no: g("vteam"),
         visit_comment: g("vcomment"), internal_comment: g("vcomment"),
         slack_comment: g("vslack"),
+        // de-duplicated and blanks dropped, so six slots can be filled in any order
+        member_names: Array.from(new Set([0, 1, 2, 3, 4, 5]
+          .map((i) => m.sheet.querySelector(`[name="vm${i}"]`).value.trim())
+          .filter((x) => x && x !== "__new__"))),
         input_method: method, lang: getLang(),
       },
       p_actor: currentActor(),
@@ -354,6 +443,7 @@ function adjustmentsSection(r, rows, reload) {
             ${a.rate_drift ? " · " + esc(tr("adj.drift", { n: num(a.card_rate_aed) })) : ""}</div>
         </div>
         <div><b>${esc(aed(amt))}</b> ${chip(tv(ADJ_STATUSES, a.status), stat.tone)}</div>
+        <!-- per-adjustment amounts stay: they are the charge itself, not an order-level money total -->
         <div class="cell-actions row">
           ${a.status === "new" ? `<button class="btn sm primary" data-ok>${esc(tr("adj.confirm"))}</button>
              <button class="btn sm ghost" data-drop>${esc(tr("adj.drop"))}</button>` : ""}
@@ -385,24 +475,24 @@ function adjustmentsSection(r, rows, reload) {
     box.appendChild(row);
   });
 
+  // Money totals were removed from this module - they belong in the management view. The invoice
+  // action stays, but with its OWN label: it used to share the "Total billable" key with two purely
+  // decorative chips, so nothing on screen hinted that this button writes.
   const actions = el(`
     <div class="row" style="margin-top:8px">
       <button class="btn sm accent" data-add>+ ${esc(tr("adj.add"))}</button>
-      <button class="btn sm" data-invoice>${esc(tr("dash.billable"))}</button>
-      <span class="muted" style="margin-left:auto">${esc(tr("adj.total"))}:
-        <b>${esc(aed(r.adj_amount_aed))}</b></span>
+      <button class="btn sm" data-invoice>${esc(tr("adj.buildInvoice"))}</button>
     </div>`);
 
   actions.querySelector("[data-add]").addEventListener("click",
     () => openAdjustmentSheet(r, reload));
 
   actions.querySelector("[data-invoice]").addEventListener("click", async () => {
-    const go = await confirmSheet(tr("dash.billable"),
-      `${tr("dash.poValue")} ${aed(r.po_amount_aed)} + ${tr("adj.total")} ${aed(r.adj_amount_aed)} = ${aed(r.total_billable_aed)}`);
+    const go = await confirmSheet(tr("adj.buildInvoice"), tr("adj.buildInvoiceHint"));
     if (!go) return;
     try {
       const res = await rpc("fn_ops_build_invoice", { p_order_id: r.order_id });
-      toast(`${tr("t.saved")} — ${aed(res.total_aed)} (${res.po_lines}+${res.adjustment_lines})`, "ok");
+      toast(`${tr("t.saved")} — ${res.po_lines}+${res.adjustment_lines}`, "ok");
       reload();
     } catch (e) { toast(e.message, "bad"); }
   });

@@ -12,6 +12,7 @@ import { tr, getLang, setLang, LANGS } from "./i18n.js";
 import { $, esc, el, toast } from "./ui.js";
 import { renderLogin } from "./auth.js";
 import { readHash, writeHash } from "./filters.js";
+import { logoSvg, installFavicon } from "./brand.js";
 import * as production from "./mod-production.js";
 import * as status from "./mod-status.js";
 import * as dashboard from "./mod-dashboard.js";
@@ -34,7 +35,7 @@ function setFilters(route, f) { writeHash(route, f); }
 function paintHeader() {
   const h = $("#hdr");
   h.innerHTML = `
-    <div class="logo">K</div>
+    <span class="logo">${logoSvg(36)}</span>
     <div class="titles">
       <div class="t1">${esc(tr("app.title"))}</div>
       <div class="t2">${esc(currentActor() || "")}</div>
@@ -106,6 +107,7 @@ async function route() {
 
 function boot() {
   document.documentElement.lang = getLang();
+  installFavicon();
   if (localStorage.getItem(STORAGE_PREFIX + "big")) document.body.classList.add("big");
   $("#build").textContent = BUILD;
 

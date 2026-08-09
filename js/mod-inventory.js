@@ -8,6 +8,8 @@
  * transfer (transfer_out / transfer_in), or consumed against an order.
  */
 import { api, rpc, submit, currentActor, queueDepth, isSignedIn } from "./api.js";
+/* fn_ops_pack_limit and the qty override both live in the database, so the rules hold however the
+ * row arrives - not only through this screen. */
 import { tr, tv } from "./i18n.js";
 import { MOVE_REASONS, LOCATION_KINDS } from "./config.js";
 import {
@@ -141,11 +143,52 @@ async function itemPanel(host, r, reload) {
           <input type="text" name="mnote"></div>
       </div>
       <div class="row" style="justify-content:flex-end;margin-top:8px">
+        <button class="btn sm" data-override>${esc(tr("inv.override"))}</button>
         <button class="btn primary sm" data-move>${esc(tr("act.save"))}</button>
       </div>
     </div>`);
   act.querySelector("[data-loc]").innerHTML = await locationSelect("mloc", r.location_code || "");
   wireNewLocation(act.querySelector('[name="mloc"]'));
+
+  // Set the counted quantity. Recorded as the DIFFERENCE, because stock on hand is the sum of the
+  // ledger - so a correction stays visible in the history instead of a number silently changing.
+  act.querySelector("[data-override]").addEventListener("click", () => {
+    const m = modal(`
+      <h3>${esc(tr("inv.override"))} — ${esc(r.item_code)}</h3>
+      <div class="muted" style="margin:8px 0 12px">${esc(tr("inv.overrideHint"))}</div>
+      <div class="grid2">
+        <div><label class="f">${esc(tr("inv.onHand"))}</label>
+          <input type="text" value="${esc(num(r.on_hand))} ${esc(r.uom)}" disabled></div>
+        <div><label class="f">${esc(tr("inv.counted"))}</label>
+          <input type="number" name="ocount" step="0.01" autofocus></div>
+      </div>
+      <div style="margin-top:10px">
+        <label class="f">${esc(tr("act.comment"))}</label>
+        <input type="text" name="onote" placeholder="Stock count">
+      </div>
+      <div class="row" style="justify-content:flex-end;margin-top:14px">
+        <button class="btn ghost" data-no>${esc(tr("act.cancel"))}</button>
+        <button class="btn primary" data-yes>${esc(tr("act.save"))}</button>
+      </div>`);
+    m.sheet.querySelector("[data-no]").onclick = m.close;
+    m.sheet.querySelector("[data-yes]").onclick = async () => {
+      const v = m.sheet.querySelector('[name="ocount"]').value;
+      if (v === "") return;
+      m.close();
+      try {
+        const res = await rpc("fn_ops_inventory_set_qty", {
+          p_item_id: r.id, p_target_qty: Number(v),
+          p_note: m.sheet.querySelector('[name="onote"]').value.trim() || null,
+          p_location_code: act.querySelector('[name="mloc"]').value || null,
+          p_actor: currentActor(),
+        });
+        toast(Number(res.delta) === 0 ? tr("inv.noChange")
+          : tr("inv.was", { n: num(res.previous), m: num(res.new),
+                            d: (Number(res.delta) > 0 ? "+" : "") + num(res.delta) }), "ok");
+        reload();
+      } catch (e) { toast(e.message, "bad"); }
+    };
+  });
 
   act.querySelector("[data-move]").addEventListener("click", async () => {
     const qty = Number(act.querySelector('[name="mqty"]').value);
@@ -162,6 +205,9 @@ async function itemPanel(host, r, reload) {
     reload();
   });
   wrap.appendChild(act);
+
+  /* ---- packs: reusable container definitions, up to 10 per item */
+  wrap.appendChild(await packsSection(r, act, reload));
 
   const pb = el(`<div class="dsec"><h4>${esc(tr("photo.title"))}</h4></div>`);
   pb.appendChild(photoStrip({
@@ -197,6 +243,105 @@ async function itemPanel(host, r, reload) {
 
   host.innerHTML = "";
   host.appendChild(wrap);
+}
+
+/* Packs are container definitions that live on, so "10 boxes" is enterable next month without
+ * anyone remembering that a box holds 100. qty_per_pack is always in the ITEM'S own unit, which is
+ * why there is no unit conversion here - and why an m -> sqm pack, which would need a fabric width
+ * the inventory does not hold, is deliberately not offered. */
+async function packsSection(r, act, reload) {
+  let packs = [];
+  try {
+    packs = await api(`/rest/v1/inventory_packs?select=*&item_id=eq.${r.id}&active=is.true&order=name`);
+  } catch (e) { /* the rest of the panel is still useful */ }
+
+  const box = el(`
+    <div class="dsec">
+      <h4>${esc(tr("inv.packs"))} <span class="chip mute">${packs.length}/10</span></h4>
+    </div>`);
+
+  if (!packs.length) box.appendChild(el(`<div class="dnone">${esc(tr("inv.noPacks"))}</div>`));
+
+  packs.forEach((p) => {
+    const row = el(`
+      <div class="tline">
+        <div><b>${esc(p.name)}</b>
+          <div class="muted">${esc(num(p.qty_per_pack))} ${esc(r.uom)} ${esc(tr("inv.packQty").toLowerCase())}</div></div>
+        <div><input type="number" class="qty" name="pc_${p.id}" step="1" placeholder="0"
+             aria-label="${esc(tr("inv.packCount"))}"></div>
+        <div class="muted" data-total="${p.id}"></div>
+        <div><button class="btn sm accent" data-recv="${p.id}">${esc(tr("inv.receivePacks"))}</button></div>
+      </div>`);
+
+    const input = row.querySelector(`[name="pc_${p.id}"]`);
+    const totalEl = row.querySelector(`[data-total="${p.id}"]`);
+    const showTotal = () => {
+      const n = Number(input.value || 0);
+      totalEl.textContent = n
+        ? tr("inv.packsTotal", { n, q: num(p.qty_per_pack), t: num(n * p.qty_per_pack) + " " + r.uom })
+        : "";
+    };
+    input.addEventListener("input", showTotal);
+
+    row.querySelector(`[data-recv="${p.id}"]`).addEventListener("click", async () => {
+      const n = Number(input.value || 0);
+      if (!n) { toast(tr("inv.packCount"), "bad"); return; }
+      await submit("fn_ops_inventory_move_packs", {
+        p_pack_id: p.id, p_pack_count: n,
+        p_reason: act.querySelector('[name="mreason"]').value || "purchase",
+        p_order_id: act.querySelector('[name="morder"]').value.trim() || null,
+        p_location_code: act.querySelector('[name="mloc"]').value || null,
+        p_note: null, p_actor: currentActor(),
+      });
+      toast(queueDepth() ? tr("t.queued") : tr("t.saved"), "ok");
+      reload();
+    });
+    box.appendChild(row);
+  });
+
+  if (packs.length < 10) {
+    const add = el(`<button class="btn sm">+ ${esc(tr("inv.addPack"))}</button>`);
+    add.addEventListener("click", () => {
+      const m = modal(`
+        <h3>${esc(tr("inv.addPack"))} — ${esc(r.item_code)}</h3>
+        <div class="grid2" style="margin-top:12px">
+          <div><label class="f">${esc(tr("inv.packName"))}</label>
+            <input type="text" name="pname" placeholder="Box" autofocus></div>
+          <div><label class="f">${esc(tr("inv.packQty"))} (${esc(r.uom)})</label>
+            <input type="number" name="pqty" step="0.01" min="0.01" placeholder="100"></div>
+        </div>
+        <div id="perr" class="err hidden" style="margin-top:10px"></div>
+        <div class="row" style="justify-content:flex-end;margin-top:14px">
+          <button class="btn ghost" data-no>${esc(tr("act.cancel"))}</button>
+          <button class="btn primary" data-yes>${esc(tr("act.save"))}</button>
+        </div>`);
+      m.sheet.querySelector("[data-no]").onclick = m.close;
+      m.sheet.querySelector("[data-yes]").onclick = async () => {
+        const name = m.sheet.querySelector('[name="pname"]').value.trim();
+        const qty = Number(m.sheet.querySelector('[name="pqty"]').value);
+        const errBox = m.sheet.querySelector("#perr");
+        if (!name || !(qty > 0)) {
+          errBox.textContent = `${tr("inv.packName")} + ${tr("inv.packQty")}`;
+          errBox.classList.remove("hidden");
+          return;
+        }
+        try {
+          await rpc("fn_ops_save_pack", {
+            p_item_id: r.id, p_name: name, p_qty_per_pack: qty, p_actor: currentActor(),
+          });
+          m.close();
+          toast(tr("t.saved"), "ok");
+          reload();
+        } catch (e) {
+          errBox.textContent = /10 pack/.test(e.message) ? tr("inv.packLimit") : e.message;
+          errBox.classList.remove("hidden");
+        }
+      };
+    });
+    box.appendChild(add);
+  }
+
+  return box;
 }
 
 function openItemSheet(item, reload) {

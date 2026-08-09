@@ -12,7 +12,7 @@ import { $, esc, el, selectHtml } from "./ui.js";
 
 export const FIELDS = [
   "order", "from", "to", "sheet", "city", "customer",
-  "stitch", "commercial", "wref", "comment", "fab1", "fab2", "bucket", "q",
+  "stitch", "commercial", "wref", "comment", "fab1", "fab2", "bucket", "q", "alt",
 ];
 
 export function readHash() {
@@ -47,6 +47,9 @@ export function toQuery(f) {
   if (f.to)         q.push(`installation_date=lte.${f.to}`);
   if (f.sheet)      q.push(`sheet_status=eq.${encodeURIComponent(f.sheet)}`);
   if (f.bucket)     q.push(`date_bucket=eq.${f.bucket}`);
+  // `alteration` is exposed on the roster AND the status board, so this one predicate works in
+  // every module rather than needing a per-module special case
+  if (f.alt)        q.push(`alteration=is.${f.alt === "yes"}`);
 
   // 492 of 641 orders have no city at all, so "unknown" has to be selectable rather than
   // silently excluded
@@ -127,6 +130,10 @@ export function renderFilterBar(mount, state, opts, onChange) {
                <input type="text" name="comment" value="${esc(f.comment || "")}"></div>
           <div><label class="f">${esc(tr("f.fabric1"))}</label>${sel("fab1", opts.fab1)}</div>
           <div><label class="f">${esc(tr("f.fabric2"))}</label>${sel("fab2", opts.fab2)}</div>
+          <div><label class="f">${esc(tr("f.alteration"))}</label>
+               ${selectHtml("alt", [{ value: "yes", label: tr("f.alterationYes") },
+                                    { value: "no",  label: tr("f.alterationNo") }],
+                            f.alt || "", tr("f.any"))}</div>
         </div>
         <div class="row" style="justify-content:flex-end">
           <button class="btn ghost" data-clear>${esc(tr("f.clear"))}</button>

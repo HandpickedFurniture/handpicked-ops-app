@@ -1,11 +1,11 @@
-/* Kurtains Operations Management - configuration and vocabularies.
+/* Handpicked Operations Management - configuration and vocabularies.
  *
  * Every value below that is written to the database is the canonical snake_case / exact-case string
  * the column's CHECK constraint expects. Labels are translated in i18n.js; VALUES ARE NEVER
  * TRANSLATED. Reverse that and writes start failing their CHECK.
  */
 
-export const BUILD = "2026-08-08.1";
+export const BUILD = "2026-08-09.1";
 
 /* Supabase project "handpicked-curtains". The publishable key is safe to ship: every table is
  * RLS-locked to the `authenticated` role and `anon` has no policy at all. The bearer token on each
@@ -73,7 +73,11 @@ export const DISPATCH_SUBSTATES = [
 
 /* ---------------------------------------------------------------- order status
  * Exact strings - order_status_status_check and order_visits_status_check are case-sensitive. */
+/* The first two are PRE-states; the rest are outcomes. v_ops_eod counts outcomes, so Scheduled and
+ * Out for installation deliberately fall outside both the completed and the issue tallies. */
 export const ORDER_STATUSES = [
+  "Scheduled",
+  "Out for installation",
   "Successfully completed",
   "Production issue",
   "Consultation issue",
@@ -85,6 +89,8 @@ export const ORDER_STATUSES = [
 ];
 
 export const STATUS_TONE = {
+  "Scheduled":              "info",
+  "Out for installation":   "info",
   "Successfully completed": "ok",
   "Partially completed":    "warn",
   "Rescheduled":            "warn",
@@ -94,6 +100,16 @@ export const STATUS_TONE = {
   "Client change of mind":  "mute",
   "Others":                 "mute",
 };
+
+/* v_ops_order_roster.production_state - a coarse production position, for the dashboard chart. */
+export const PRODUCTION_STATES = [
+  { value: "awaiting_fabric", key: "ps.awaiting",  tone: "mute" },
+  { value: "ordered",         key: "ps.ordered",   tone: "info" },
+  { value: "fabric_in",       key: "ps.fabricIn",  tone: "info" },
+  { value: "in_production",   key: "ps.inProd",    tone: "warn" },
+  { value: "packed",          key: "ps.packed",    tone: "ok" },
+  { value: "cancelled",       key: "ps.cancelled", tone: "bad" },
+];
 
 /* ---------------------------------------------------------------- adjustments
  * accounting_alerts.charge_type vocabulary. Rates are NOT hardcoded here - they come from
@@ -123,13 +139,20 @@ export const ADJ_STATUSES = [
  * Computed server-side in v_ops_order_roster against Asia/Dubai, so a laptop on the wrong timezone
  * cannot disagree with a phone. Never colour-only: each carries a glyph and a label too. */
 export const DATE_BUCKETS = [
-  { value: "overdue",   key: "bucket.overdue",   glyph: "!" },
-  { value: "today",     key: "bucket.today",     glyph: "●" },
-  { value: "this_week", key: "bucket.week",      glyph: "›" },
-  { value: "later",     key: "bucket.later",     glyph: "·" },
-  { value: "nodate",    key: "bucket.nodate",    glyph: "?" },
-  { value: "done",      key: "bucket.done",      glyph: "✓" },
+  { value: "overdue",   key: "bucket.overdue",   glyph: "!", tone: "bad" },
+  { value: "today",     key: "bucket.today",     glyph: "●", tone: "warn" },
+  { value: "tomorrow",  key: "bucket.tomorrow",  glyph: "▸", tone: "warn" },
+  { value: "day_after", key: "bucket.dayAfter",  glyph: "▹", tone: "info" },
+  { value: "this_week", key: "bucket.week",      glyph: "›", tone: "info" },
+  { value: "later",     key: "bucket.later",     glyph: "·", tone: "mute" },
+  { value: "nodate",    key: "bucket.nodate",    glyph: "?", tone: "mute" },
+  { value: "done",      key: "bucket.done",      glyph: "✓", tone: "ok" },
 ];
+
+/* Tone lives on the entry above rather than in a hardcoded ladder in each module, so adding a
+ * bucket needs one edit here instead of three that can silently drift apart. */
+export const bucketOf = (v) =>
+  DATE_BUCKETS.find((b) => b.value === v) || { key: "bucket.later", glyph: "·", tone: "mute" };
 
 /* Special-requirement columns on v_ops_order_roster, in the order production cares about. */
 export const SPECIAL_COLS = [
@@ -163,6 +186,7 @@ export const TRANSFER_STATUSES = [
   { value: "ready",              key: "tr.ready",      tone: "ok" },
   { value: "returned",           key: "tr.returned",   tone: "ok" },
   { value: "partially_returned", key: "tr.partial",    tone: "warn" },
+  { value: "extra_materials",    key: "tr.extra",      tone: "warn" },
   { value: "cancelled",          key: "tr.cancelled",  tone: "mute" },
   { value: "issue",              key: "tr.issue",      tone: "bad" },
 ];

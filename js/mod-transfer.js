@@ -159,7 +159,7 @@ async function panel(host, r, reload) {
           r.transfer_status === s.value ? "primary" : ""}" data-st="${s.value}">${esc(tr(s.key))}</button>`).join("")}
       </div>
       <div class="grid2" style="margin-top:10px">
-        <div><label class="f">${esc(tr("loc.title"))}</label><span data-loc></span></div>
+        <div><label class="f">${esc(tr("tr.toLocation"))}</label><span data-loc></span></div>
         <div><label class="f">${esc(tr("tr.issueNote"))}</label>
           <input type="text" name="tissue" value="${esc(r.issue_note || "")}"></div>
       </div>
@@ -281,7 +281,7 @@ function openLineSheet(transferId, l, r, reload) {
           ${selectHtml("litem", (ITEMS || []).map((i) => ({
             value: i.id, label: `${i.item_code} — ${i.name}` })), (l && l.item_id) || "",
             tr("tr.noItem"))}</div>
-        <div><label class="f">${esc(tr("loc.title"))}</label>${locHtml}</div>
+        <div><label class="f">${esc(tr("tr.toLocation"))}</label>${locHtml}</div>
       </div>
       <div class="muted" style="margin-top:8px">${esc(tr("tr.autoStatus"))}</div>
       <div id="lerr" class="err hidden" style="margin-top:10px"></div>

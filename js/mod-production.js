@@ -9,7 +9,7 @@
  */
 import { apiAll, isSignedIn } from "./api.js";
 import { tr } from "./i18n.js";
-import { SPECIAL_COLS, DATE_BUCKETS, PAGE_SIZE } from "./config.js";
+import { SPECIAL_COLS, DATE_BUCKETS, PAGE_SIZE, bucketOf } from "./config.js";
 import {
   $, esc, el, chip, num, fmtDate, daysSince, toast, loading, progressBar,
 } from "./ui.js";
@@ -23,7 +23,8 @@ const ROSTER_COLS = [
   "recv_total", "recv_done", "recv_ordered", "recv_oos", "recv_qc_fail",
   "prep_total", "prep_done", "prep_started", "dispatch", "dispatch_all_back",
   "adj_total", "adj_new", "adj_agreed_aed", "production_hold", "cancelled", "hold_reason",
-  "team_no", "order_status", "ready",
+  "team_no", "order_status", "ready", "alteration", "alteration_note",
+  "fabric_meters_total", "meters_sent_total", "production_state",
   "stitching_types", "commercial_names", "window_refs", "fabric_1_codes", "fabric_2_codes",
   ...SPECIAL_COLS.map((s) => s.col),
 ].join(",");
@@ -116,12 +117,8 @@ function dispatchCell(r) {
 }
 
 function bucketChip(r) {
-  const b = DATE_BUCKETS.find((x) => x.value === r.date_bucket) || DATE_BUCKETS[3];
-  const tone = r.date_bucket === "overdue" ? "bad"
-    : r.date_bucket === "today" ? "warn"
-    : r.date_bucket === "done" ? "ok"
-    : r.date_bucket === "this_week" ? "info" : "mute";
-  return chip(tr(b.key), tone, b.glyph);
+  const b = bucketOf(r.date_bucket);
+  return chip(tr(b.key), b.tone, b.glyph);
 }
 
 function flagChips(r) {
@@ -129,6 +126,7 @@ function flagChips(r) {
   if (r.cancelled)          c.push(chip("CANCELLED", "bad", "!"));
   if (r.production_hold)    c.push(chip("HOLD", "bad", "!"));
   if (r.revised_recheck)    c.push(chip("revised", "warn", "!"));
+  if (r.alteration)         c.push(chip(tr("col.alteration"), "warn", "!"));
   if (r.recv_oos)           c.push(chip(tr("recv.oos"), "bad", "!"));
   if (r.recv_qc_fail)       c.push(chip(tr("qc.title"), "bad", "!"));
   if (r.adj_new)            c.push(chip(`${tr("col.adjustments")} ${r.adj_new}`, "warn", "!"));
@@ -153,6 +151,7 @@ function cardView(rows) {
             <div class="oname">${esc(r.customer_name || "—")}</div>
             <div class="osub">${esc(r.city || tr("t.cityUnknown"))} · ${esc(fmtDate(r.installation_date))}
               · ${esc(r.window_count)} ${esc(tr("col.windows").toLowerCase())}
+              · ${esc(num(r.fabric_meters_total))} m
               ${r.sheet_status ? " · " + esc(r.sheet_status) : ""}</div>
             <div class="ochips">${flagChips(r)}</div>
             <div class="ochips">${fabricCell(r)}</div>
@@ -183,6 +182,8 @@ function tableView(rows) {
         <th data-sort="city">${esc(tr("col.city"))}</th>
         <th data-sort="customer_name">${esc(tr("col.customer"))}</th>
         <th data-sort="version_no">${esc(tr("col.version"))}</th>
+        <th data-sort="fabric_meters_total" title="${esc(tr("t.metersNote"))}">${esc(tr("col.meters"))}</th>
+        <th data-sort="alteration">${esc(tr("col.alteration"))}</th>
         <th>${esc(tr("col.fabrics"))}</th>
         <th>${esc(tr("col.special"))}</th>
         <th data-sort="recv_done">${esc(tr("col.receiving"))}</th>
@@ -203,6 +204,12 @@ function tableView(rows) {
         <td>${esc(r.city || "—")}${r.city_source === "sheet" ? '<div class="muted">3D</div>' : ""}</td>
         <td>${esc(r.customer_name || "—")}<div>${flagChips(r)}</div></td>
         <td>v${esc(r.version_no ?? 1)}</td>
+        <td><b>${esc(num(r.fabric_meters_total))}</b>
+            ${Number(r.meters_sent_total) &&
+              Math.abs(Number(r.meters_sent_total) - Number(r.fabric_meters_total)) > 0.5
+              ? `<div class="muted" title="${esc(tr("t.metersNote"))}">(${esc(num(r.meters_sent_total))} sent)</div>`
+              : ""}</td>
+        <td>${r.alteration ? chip(tr("col.alteration"), "warn", "!") : `<span class="muted">—</span>`}</td>
         <td>${fabricCell(r)}</td>
         <td>${specialCell(r)}</td>
         <td>${progressBar(r.recv_done, r.recv_total)}</td>
@@ -210,7 +217,8 @@ function tableView(rows) {
         <td>${dispatchCell(r)}</td>
         <td><button class="btn sm" data-open>${esc(tr("d.open"))}</button></td>
       </tr>`);
-    const host = el(`<tr class="dhostrow"><td colspan="11" style="padding:0"></td></tr>`);
+    // colspan must track the header count above
+    const host = el(`<tr class="dhostrow"><td colspan="13" style="padding:0"></td></tr>`);
     host.style.display = "none";
     let opened = false;
     tr1.querySelector("[data-open]").addEventListener("click", async () => {

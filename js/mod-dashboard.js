@@ -10,18 +10,21 @@
  * via GROUPING SETS (is_overall marks the summary).
  */
 import { apiAll, api, isSignedIn } from "./api.js";
-import { tr } from "./i18n.js";
-import { ORDER_STATUSES, STATUS_TONE, DATE_BUCKETS } from "./config.js";
+import { tr, tv } from "./i18n.js";
+import {
+  ORDER_STATUSES, STATUS_TONE, DATE_BUCKETS, PRODUCTION_STATES, bucketOf,
+} from "./config.js";
 import {
   $, esc, el, chip, aed, aed0, num, fmtDate, today, toast, loading, selectHtml, downloadCsv, copyText,
 } from "./ui.js";
 import { renderFilterBar, toQuery, deriveOptions, writeHash } from "./filters.js";
+import { chartCard, ORDINAL_RAMP } from "./charts.js";
 
 const COLS = [
   "order_id", "customer_name", "city", "installation_date", "date_bucket", "sheet_status",
   "status", "ready", "team_no", "team_name", "team_assigned", "visit_count",
-  "has_adjustment", "adjustment_count", "adjustment_amount",
-  "po_amount_aed", "adj_amount_aed", "total_billable_aed", "adj_pending", "invoice_status",
+  "has_adjustment", "adjustment_count", "alteration", "adj_pending",
+  "production_state", "owl_total", "window_count",
   "production_hold", "cancelled",
   "stitching_types", "commercial_names", "window_refs", "fabric_1_codes", "fabric_2_codes",
 ].join(",");
@@ -114,7 +117,7 @@ export async function render(mount, state, setFilters) {
   });
   box.appendChild(tiles);
 
-  /* ---- headline numbers */
+  /* ---- headline numbers (money deliberately absent - it belongs in the management view) */
   const sum = (fn) => rows.reduce((a, r) => a + Number(fn(r) || 0), 0);
   box.appendChild(el(`
     <div class="card statrow">
@@ -122,13 +125,32 @@ export async function render(mount, state, setFilters) {
         <span class="sl">${esc(tr("col.order"))}</span></div>
       <div class="stat"><span class="sn">${rows.filter((r) => r.status === "Successfully completed").length}</span>
         <span class="sl">${esc(tr("dash.completed"))}</span></div>
+      <div class="stat"><span class="sn">${rows.filter((r) => r.alteration).length}</span>
+        <span class="sl">${esc(tr("col.alteration"))}</span></div>
       <div class="stat"><span class="sn">${rows.filter((r) => r.adj_pending).length}</span>
         <span class="sl">${esc(tr("adj.new"))}</span></div>
-      <div class="stat"><span class="sn">${esc(aed0(sum((r) => r.adj_amount_aed)))}</span>
-        <span class="sl">${esc(tr("adj.total"))}</span></div>
-      <div class="stat"><span class="sn">${esc(aed0(sum((r) => r.total_billable_aed)))}</span>
-        <span class="sl">${esc(tr("dash.billable"))}</span></div>
+      <div class="stat"><span class="sn">${esc(num(sum((r) => r.owl_total)))}</span>
+        <span class="sl">${esc(tr("col.owlTotal"))}</span></div>
     </div>`));
+
+  /* ---- charts */
+  const prodRows = PRODUCTION_STATES.map((s, i) => ({
+    label: tr(s.key),
+    value: rows.filter((r) => r.production_state === s.value).length,
+    // ordinal ramp: the colour carries the pipeline order, not identity
+    color: ORDINAL_RAMP[Math.min(i, ORDINAL_RAMP.length - 1)],
+  }));
+  const instRows = [
+    ...ORDER_STATUSES.map((s) => ({
+      label: s, value: rows.filter((r) => r.status === s).length, tone: STATUS_TONE[s],
+    })),
+    { label: "—", value: rows.filter((r) => !r.status).length, tone: "mute" },
+  ];
+
+  box.appendChild(el(`<div class="chartwrap">
+    ${chartCard(tr("dash.byProduction"), prodRows, { keepZero: true })}
+    ${chartCard(tr("dash.byInstall"), instRows)}
+  </div>`));
 
   /* ---- table */
   if (!rows.length) {
@@ -140,9 +162,9 @@ export async function render(mount, state, setFilters) {
         <thead><tr>
           <th>${esc(tr("col.order"))}</th><th>${esc(tr("col.customer"))}</th>
           <th>${esc(tr("col.city"))}</th><th>${esc(tr("col.install"))}</th>
-          <th>${esc(tr("col.status"))}</th><th>${esc(tr("col.team"))}</th>
-          <th>${esc(tr("col.visits"))}</th><th>${esc(tr("col.adjustments"))}</th>
-          <th>${esc(tr("col.billable"))}</th>
+          <th>${esc(tr("col.status"))}</th><th>${esc(tr("col.production"))}</th>
+          <th>${esc(tr("col.team"))}</th>
+          <th>${esc(tr("col.visits"))}</th><th>${esc(tr("col.alteration"))}</th>
         </tr></thead>
         <tbody>${rows.map((r) => `
           <tr>
@@ -152,11 +174,10 @@ export async function render(mount, state, setFilters) {
             <td>${esc(fmtDate(r.installation_date))}</td>
             <td>${r.status ? chip(r.status, STATUS_TONE[r.status] || "mute") : "—"}
                 ${r.ready ? chip(tr("st.ready"), "ok", "✓") : ""}</td>
+            <td>${esc(tv(PRODUCTION_STATES, r.production_state))}</td>
             <td>${esc(r.team_name || (r.team_no ? tr("dash.team", { n: r.team_no }) : "—"))}</td>
             <td>${esc(r.visit_count)}</td>
-            <td>${Number(r.adj_amount_aed) ? esc(aed(r.adj_amount_aed)) : "—"}
-                ${r.adj_pending ? chip(String(r.adj_pending), "warn", "!") : ""}</td>
-            <td><b>${esc(aed(r.total_billable_aed))}</b></td>
+            <td>${r.alteration ? chip(tr("col.alteration"), "warn", "!") : "—"}</td>
           </tr>`).join("")}</tbody>
       </table>`));
     box.appendChild(wrap);
@@ -167,16 +188,16 @@ export async function render(mount, state, setFilters) {
   $("#dlcsv", box).addEventListener("click", () => downloadCsv(`orders_${today()}.csv`, rows.map((r) => ({
     order_id: r.order_id, customer: r.customer_name, city: r.city,
     install_date: r.installation_date, bucket: r.date_bucket, status: r.status,
-    ready: r.ready, team: r.team_name || r.team_no, visits: r.visit_count,
-    adjustments_aed: r.adj_amount_aed, po_aed: r.po_amount_aed, billable_aed: r.total_billable_aed,
+    production_state: r.production_state, ready: r.ready,
+    team: r.team_name || r.team_no, visits: r.visit_count,
+    alteration: r.alteration, owl_total: r.owl_total, windows: r.window_count,
+    adjustments_pending: r.adj_pending,
   }))));
 }
 
 function bucketChip(r) {
-  const b = DATE_BUCKETS.find((x) => x.value === r.date_bucket) || DATE_BUCKETS[3];
-  const tone = r.date_bucket === "overdue" ? "bad" : r.date_bucket === "today" ? "warn"
-    : r.date_bucket === "done" ? "ok" : r.date_bucket === "this_week" ? "info" : "mute";
-  return chip(tr(b.key), tone, b.glyph);
+  const b = bucketOf(r.date_bucket);
+  return chip(tr(b.key), b.tone, b.glyph);
 }
 
 /* ---------------------------------------------------------------- end of day */

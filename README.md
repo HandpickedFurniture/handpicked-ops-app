@@ -1,4 +1,4 @@
-# Kurtains Operations Management
+# Handpicked Operations Management
 
 Mobile + desktop web app for production coordinators, installation coordinators and management.
 Three modules over the `handpicked-curtains` Supabase project (`jrevqijbzzwdcwxcnwfa`).
@@ -6,7 +6,7 @@ Three modules over the `handpicked-curtains` Supabase project (`jrevqijbzzwdcwxc
 | | |
 |---|---|
 | Stack | Hand-written HTML/CSS/vanilla JS as native ES modules. **No npm, no bundler, no framework.** |
-| Hosting (LIVE) | **https://handpickedfurniture.github.io/kurtains-ops-app/** — GitHub Pages, repo `HandpickedFurniture/kurtains-ops-app`. Update = commit + push to `main`. |
+| Hosting (LIVE) | **https://handpickedfurniture.github.io/handpicked-ops-app/** — GitHub Pages, repo `HandpickedFurniture/handpicked-ops-app`. Update = commit + push to `main`. |
 | Local preview | `python -m http.server 8124 --directory ops-app` → http://localhost:8124 (also `.claude/launch.json`) |
 | Why Pages | Cloud Run is blocked by the GCP org policy (403 on allUsers) and Supabase cannot serve HTML; Pages also gives HTTPS, which the camera and microphone require |
 | Auth | Supabase Auth, email + password, **one account per person** |

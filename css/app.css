@@ -1,4 +1,4 @@
-/* Kurtains Operations Management.
+/* Handpicked Operations Management.
  *
  * Light theme only, deliberately: Context_overview.docx says "Avoid dark mode for interfaces".
  * color-scheme is pinned to light and prefers-color-scheme is never consulted, so a phone in dark
@@ -32,8 +32,8 @@ body.big .cell-actions button{min-height:48px;}
 /* ---------------------------------------------------------------- header */
 header{background:var(--brand);color:#fff;padding:10px 14px;position:sticky;top:0;z-index:60;
   display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
-header .logo{width:36px;height:36px;border-radius:10px;background:#fff;color:var(--brand);
-  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;flex:none;}
+header .logo{width:36px;height:36px;flex:none;display:flex;align-items:center;justify-content:center;}
+header .logo svg{display:block;border-radius:50%;background:#fff;}
 header .titles{flex:1;min-width:120px;}
 header .t1{font-size:16px;font-weight:700;line-height:1.1;}
 header .t2{font-size:12px;opacity:.85;}
@@ -115,6 +115,8 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--brand);outline-o
   overflow:hidden;border-left:5px solid var(--line);}
 .ocard.b-overdue{border-left-color:var(--danger);}
 .ocard.b-today{border-left-color:var(--accent);}
+.ocard.b-tomorrow{border-left-color:#d98324;}
+.ocard.b-day_after{border-left-color:#7fa6b3;}
 .ocard.b-this_week{border-left-color:var(--brand);}
 .ocard.b-done{border-left-color:var(--ok);}
 .ocard.b-later,.ocard.b-nodate{border-left-color:var(--line);}
@@ -167,8 +169,10 @@ table.dense tr:hover td{background:#fafcfd;}
 .withmic > :first-child{flex:1;}
 
 /* ---------------------------------------------------------------- dashboard */
+/* auto-fit rather than a fixed count, so adding a date bucket never silently breaks the row */
 .tiles{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px;}
-@media(min-width:700px){.tiles{grid-template-columns:repeat(6,1fr);}}
+@media(min-width:700px){.tiles{grid-template-columns:repeat(4,1fr);}}
+@media(min-width:1024px){.tiles{grid-template-columns:repeat(8,1fr);}}
 .tile{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:11px;
   cursor:pointer;text-align:left;border-top:4px solid var(--line);}
 .tile.on{outline:2px solid var(--brand);}
@@ -176,8 +180,20 @@ table.dense tr:hover td{background:#fafcfd;}
 .tile .tl{font-size:12px;color:var(--muted);margin-top:4px;font-weight:600;}
 .tile.b-overdue{border-top-color:var(--danger);background:var(--bad-bg);}
 .tile.b-today{border-top-color:var(--accent);background:var(--warn-bg);}
+.tile.b-tomorrow{border-top-color:#d98324;background:var(--warn-bg);}
+.tile.b-day_after{border-top-color:#7fa6b3;background:var(--info-bg);}
 .tile.b-this_week{border-top-color:var(--brand);background:var(--info-bg);}
 .tile.b-done{border-top-color:var(--ok);background:var(--ok-bg);}
+
+/* ---------------------------------------------------------------- charts
+   Inline SVG, no library. Bars carry a text label and a value, so the chart is readable without
+   relying on colour alone. */
+.chartwrap{display:grid;grid-template-columns:1fr;gap:12px;}
+@media(min-width:900px){.chartwrap{grid-template-columns:1fr 1fr;}}
+.chart{width:100%;height:auto;overflow:visible;}
+.chart .track{fill:var(--mute-bg);}
+.chart .lbl{font-size:11px;fill:var(--muted);}
+.chart .val{font-size:11px;font-weight:700;fill:var(--txt);}
 .stat{display:flex;flex-direction:column;gap:2px;}
 .stat .sn{font-size:20px;font-weight:800;}
 .stat .sl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;}
@@ -231,6 +247,8 @@ table.dense tr:hover td{background:#fafcfd;}
   padding:8px;border:1px solid var(--line);border-radius:10px;margin-bottom:6px;background:var(--card);}
 @media(max-width:640px){.tline{grid-template-columns:1fr 1fr;}}
 .qty{width:82px;text-align:right;}
+.memgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;}
+@media(min-width:700px){.memgrid{grid-template-columns:repeat(3,1fr);}}
 .statebtns{display:flex;gap:4px;flex-wrap:wrap;}
 
 /* a cell whose write has not been acknowledged yet */

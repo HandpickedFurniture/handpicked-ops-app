@@ -27,9 +27,14 @@ EXPECTED = {
     "CHARGE_TYPES": {"alteration", "pickup", "drop_off", "moving", "removal", "extra_track",
                      "scaffolding", "additional_visit", "tieback", "other"},
     "ADJ_STATUSES": {"new", "reviewed", "invoiced", "dropped"},
-    "DATE_BUCKETS": {"overdue", "today", "this_week", "later", "nodate", "done"},
+    # date_bucket is computed in v_ops_order_roster, not a CHECK - these must match that CASE
+    "DATE_BUCKETS": {"overdue", "today", "tomorrow", "day_after", "this_week",
+                     "later", "nodate", "done"},
+    # likewise production_state, derived in the same view
+    "PRODUCTION_STATES": {"awaiting_fabric", "ordered", "fabric_in", "in_production",
+                          "packed", "cancelled"},
     "TRANSFER_STATUSES": {"in_progress", "ready", "returned", "partially_returned",
-                          "cancelled", "issue"},
+                          "extra_materials", "cancelled", "issue"},
     "MOVE_REASONS": {"purchase", "consumption", "adjustment", "return",
                      "transfer_out", "transfer_in"},
     "LOCATION_KINDS": {"warehouse", "rack", "shelf", "van", "site", "contractor", "office", "other"},
@@ -37,7 +42,10 @@ EXPECTED = {
                        "transfer", "inventory", "other"},
 }
 
+# The first two are pre-states; the rest are outcomes. Order matters here because the UI renders
+# the list in this sequence.
 ORDER_STATUSES = [
+    "Scheduled", "Out for installation",
     "Successfully completed", "Production issue", "Consultation issue", "Rescheduled",
     "Partially completed", "Client change of mind", "Installation issue", "Others",
 ]
