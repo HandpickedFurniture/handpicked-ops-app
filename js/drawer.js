@@ -273,12 +273,17 @@ function dispatchTab(d, orderId, refresh) {
 }
 
 function contractorRow(contractor, otherName, label, hit, orderId, refresh) {
+  const failed = hit && hit.substate === "qc_failed";
   const row = el(`
-    <div class="unit">
+    <div class="unit${failed ? " qcfail" : ""}">
       <div class="uname">${esc(label)}
+        ${failed ? chip(tr("disp.qcFail"), "bad", "!") : ""}
+        ${hit && hit.substate === "qc_passed" ? chip(tr("disp.qcPass"), "ok", "✓") : ""}
         <div class="usub">${hit && hit.sent_at ? esc(tr("disp.sent")) + " " + esc(fmtDateTime(hit.sent_at)) : ""}
           ${hit && hit.received_back_at ? " · " + esc(tr("disp.back")) + " " + esc(fmtDateTime(hit.received_back_at)) : ""}
+          ${hit && hit.qc_at ? " · " + esc(tr("qc.title")) + " " + esc(fmtDateTime(hit.qc_at)) : ""}
           ${hit && hit.items_count ? " · " + esc(hit.items_count) + " " + esc(tr("disp.items")) : ""}</div>
+        ${failed && hit.qc_note ? `<div class="err" style="margin-top:4px">${esc(hit.qc_note)}</div>` : ""}
       </div>
       <div class="cell-actions row">
         ${DISPATCH_SUBSTATES.map((s) => `<button class="btn sm ${
@@ -295,12 +300,35 @@ function contractorRow(contractor, otherName, label, hit, orderId, refresh) {
 
   row.querySelectorAll("[data-sub]").forEach((b) => {
     b.addEventListener("click", async () => {
+      const sub = b.dataset.sub;
+
+      // A failure must say what went wrong; the database rejects a blank one anyway, and asking here
+      // explains why instead of surfacing a constraint error.
+      let qcNote = null;
+      if (sub === "qc_failed") {
+        qcNote = (prompt(tr("disp.qcFailWhat")) || "").trim();
+        if (!qcNote) { toast(tr("disp.qcFailRequired"), "bad"); return; }
+      }
+
       row.classList.add("pending");
-      await submit("fn_ops_set_dispatch", {
-        p_order_id: orderId, p_contractor: contractor, p_substate: b.dataset.sub,
-        p_other_name: otherName, p_actor: currentActor(), p_note: null, p_items: null,
-      });
-      toast(queueDepth() ? tr("t.queued") : tr("t.saved"), "ok");
+      // Passing QC closes the production loop server-side, so this cannot go through the offline
+      // queue blind - we want the result back to tell the user whether production was marked.
+      try {
+        const res = await rpc("fn_ops_set_dispatch", {
+          p_order_id: orderId, p_contractor: contractor, p_substate: sub,
+          p_other_name: otherName, p_actor: currentActor(),
+          p_note: null, p_items: null, p_qc_note: qcNote,
+        });
+        if (sub === "qc_passed") {
+          toast(res && res.all_passed
+            ? `${tr("disp.packedAuto")} (${res.units_marked_packed || 0})`
+            : tr("disp.qcPartial"), res && res.all_passed ? "ok" : "");
+        } else {
+          toast(tr("t.saved"), "ok");
+        }
+      } catch (e) {
+        toast(e.message, "bad");
+      }
       refresh();
     });
   });

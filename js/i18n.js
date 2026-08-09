@@ -66,6 +66,11 @@ export const I18N = {
     "disp.other": "Other", "disp.planned": "Planned", "disp.sent": "Sent",
     "disp.back": "Received back", "disp.otherName": "Name", "disp.items": "Items",
     "disp.title": "Sent out for stitching",
+    "disp.qcPass": "Quality check success", "disp.qcFail": "Quality check failed",
+    "disp.qcFailWhat": "What failed the quality check?",
+    "disp.qcFailRequired": "Say what failed — a red flag with no reason helps nobody.",
+    "disp.packedAuto": "Production marked completed – folded & packed",
+    "disp.qcPartial": "Marked, but other contractors on this order have not passed yet",
 
     "chg.visit": "Additional visit", "chg.alteration": "Curtain alteration",
     "chg.removal": "Remove existing curtains", "chg.pickup": "Pickup and drop-off",
@@ -180,6 +185,7 @@ export const I18N = {
 
     "ps.awaiting": "Awaiting fabric", "ps.ordered": "Fabric ordered", "ps.fabricIn": "Fabric in",
     "ps.inProd": "In production", "ps.packed": "Packed", "ps.cancelled": "Cancelled",
+    "ps.qcFailed": "Quality check failed",
 
     "tr.extra": "Extra materials", "tr.toLocation": "To location",
 
@@ -250,6 +256,11 @@ export const I18N = {
     "disp.other": "अन्य", "disp.planned": "योजित", "disp.sent": "भेजा",
     "disp.back": "वापस मिला", "disp.otherName": "नाम", "disp.items": "आइटम",
     "disp.title": "सिलाई के लिए भेजा",
+    "disp.qcPass": "गुणवत्ता जाँच सफल", "disp.qcFail": "गुणवत्ता जाँच विफल",
+    "disp.qcFailWhat": "गुणवत्ता जाँच में क्या विफल हुआ?",
+    "disp.qcFailRequired": "कारण बताएं — बिना कारण लाल निशान बेकार है।",
+    "disp.packedAuto": "उत्पादन पूर्ण – मोड़ा और पैक चिह्नित",
+    "disp.qcPartial": "चिह्नित, पर इस ऑर्डर के अन्य ठेकेदार अभी पास नहीं हुए",
 
     "chg.visit": "अतिरिक्त विज़िट", "chg.alteration": "पर्दा अल्टरेशन",
     "chg.removal": "पुराने पर्दे हटाना", "chg.pickup": "पिकअप और ड्रॉप-ऑफ",
@@ -366,6 +377,7 @@ export const I18N = {
 
     "ps.awaiting": "कपड़े का इंतज़ार", "ps.ordered": "कपड़ा ऑर्डर किया", "ps.fabricIn": "कपड़ा आ गया",
     "ps.inProd": "उत्पादन में", "ps.packed": "पैक हो गया", "ps.cancelled": "रद्द",
+    "ps.qcFailed": "गुणवत्ता जाँच विफल",
 
     "tr.extra": "अतिरिक्त सामग्री", "tr.toLocation": "किस स्थान पर",
 
@@ -436,6 +448,11 @@ export const I18N = {
     "disp.other": "অন্য", "disp.planned": "পরিকল্পিত", "disp.sent": "পাঠানো",
     "disp.back": "ফেরত এসেছে", "disp.otherName": "নাম", "disp.items": "আইটেম",
     "disp.title": "সেলাইয়ের জন্য পাঠানো",
+    "disp.qcPass": "মান পরীক্ষা সফল", "disp.qcFail": "মান পরীক্ষা ব্যর্থ",
+    "disp.qcFailWhat": "মান পরীক্ষায় কী ব্যর্থ হয়েছে?",
+    "disp.qcFailRequired": "কারণ লিখুন — কারণ ছাড়া লাল চিহ্ন অর্থহীন।",
+    "disp.packedAuto": "উৎপাদন সম্পন্ন – ভাঁজ ও প্যাক চিহ্নিত",
+    "disp.qcPartial": "চিহ্নিত, তবে এই অর্ডারের অন্য ঠিকাদাররা এখনো পাস করেনি",
 
     "chg.visit": "অতিরিক্ত ভিজিট", "chg.alteration": "পর্দা অল্টারেশন",
     "chg.removal": "পুরনো পর্দা সরানো", "chg.pickup": "পিকআপ ও ড্রপ-অফ",
@@ -552,6 +569,7 @@ export const I18N = {
 
     "ps.awaiting": "কাপড়ের অপেক্ষায়", "ps.ordered": "কাপড় অর্ডার হয়েছে", "ps.fabricIn": "কাপড় এসেছে",
     "ps.inProd": "উৎপাদনে", "ps.packed": "প্যাক হয়েছে", "ps.cancelled": "বাতিল",
+    "ps.qcFailed": "মান পরীক্ষা ব্যর্থ",
 
     "tr.extra": "অতিরিক্ত উপকরণ", "tr.toLocation": "কোন অবস্থানে",
 

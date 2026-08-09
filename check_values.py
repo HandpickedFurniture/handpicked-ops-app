@@ -23,7 +23,7 @@ EXPECTED = {
     # the app must write ONLY these six.
     "PREP_STAGES": {"cutting", "hemming", "ironing", "marking_measurement", "taping", "folding_packing"},
     "DISPATCH_CONTRACTORS": {"farooq", "jamal", "shahzad", "other"},
-    "DISPATCH_SUBSTATES": {"planned", "sent", "received_back"},
+    "DISPATCH_SUBSTATES": {"planned", "sent", "received_back", "qc_passed", "qc_failed"},
     "CHARGE_TYPES": {"alteration", "pickup", "drop_off", "moving", "removal", "extra_track",
                      "scaffolding", "additional_visit", "tieback", "other"},
     "ADJ_STATUSES": {"new", "reviewed", "invoiced", "dropped"},
@@ -32,7 +32,7 @@ EXPECTED = {
                      "later", "nodate", "done"},
     # likewise production_state, derived in the same view
     "PRODUCTION_STATES": {"awaiting_fabric", "ordered", "fabric_in", "in_production",
-                          "packed", "cancelled"},
+                          "packed", "qc_failed", "cancelled"},
     "TRANSFER_STATUSES": {"in_progress", "ready", "returned", "partially_returned",
                           "extra_materials", "cancelled", "issue"},
     "MOVE_REASONS": {"purchase", "consumption", "adjustment", "return",

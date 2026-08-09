@@ -5,7 +5,7 @@
  * TRANSLATED. Reverse that and writes start failing their CHECK.
  */
 
-export const BUILD = "2026-08-09.1";
+export const BUILD = "2026-08-09.2";
 
 /* Supabase project "handpicked-curtains". The publishable key is safe to ship: every table is
  * RLS-locked to the `authenticated` role and `anon` has no policy at all. The bearer token on each
@@ -65,10 +65,15 @@ export const DISPATCH_CONTRACTORS = [
   { value: "other",   key: "disp.other" },
 ];
 
+/* planned -> sent -> received_back -> qc_passed | qc_failed.
+ * Passing QC is what closes the production loop: fn_ops_set_dispatch then marks the order's panels
+ * "Completed - folded & packed", but only once EVERY contractor on the order has passed. */
 export const DISPATCH_SUBSTATES = [
-  { value: "planned",       key: "disp.planned" },
-  { value: "sent",          key: "disp.sent" },
-  { value: "received_back", key: "disp.back" },
+  { value: "planned",       key: "disp.planned",  tone: "info" },
+  { value: "sent",          key: "disp.sent",     tone: "warn" },
+  { value: "received_back", key: "disp.back",     tone: "info" },
+  { value: "qc_passed",     key: "disp.qcPass",   tone: "ok" },
+  { value: "qc_failed",     key: "disp.qcFail",   tone: "bad" },
 ];
 
 /* ---------------------------------------------------------------- order status
@@ -108,6 +113,8 @@ export const PRODUCTION_STATES = [
   { value: "fabric_in",       key: "ps.fabricIn",  tone: "info" },
   { value: "in_production",   key: "ps.inProd",    tone: "warn" },
   { value: "packed",          key: "ps.packed",    tone: "ok" },
+  // ranked above 'packed' in the view: panels that failed QC are not finished, however far prep got
+  { value: "qc_failed",       key: "ps.qcFailed",  tone: "bad" },
   { value: "cancelled",       key: "ps.cancelled", tone: "bad" },
 ];
 

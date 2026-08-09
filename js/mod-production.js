@@ -9,7 +9,9 @@
  */
 import { apiAll, isSignedIn } from "./api.js";
 import { tr } from "./i18n.js";
-import { SPECIAL_COLS, DATE_BUCKETS, PAGE_SIZE, bucketOf } from "./config.js";
+import {
+  SPECIAL_COLS, DATE_BUCKETS, PAGE_SIZE, bucketOf, DISPATCH_SUBSTATES, PRODUCTION_STATES,
+} from "./config.js";
 import {
   $, esc, el, chip, num, fmtDate, daysSince, toast, loading, progressBar,
 } from "./ui.js";
@@ -25,6 +27,7 @@ const ROSTER_COLS = [
   "adj_total", "adj_new", "adj_agreed_aed", "production_hold", "cancelled", "hold_reason",
   "team_no", "order_status", "ready", "alteration", "alteration_note",
   "fabric_meters_total", "meters_sent_total", "production_state",
+  "dispatch_qc_failed", "dispatch_qc_passed",
   "stitching_types", "commercial_names", "window_refs", "fabric_1_codes", "fabric_2_codes",
   ...SPECIAL_COLS.map((s) => s.col),
 ].join(",");
@@ -111,8 +114,13 @@ function dispatchCell(r) {
   if (!d.length) return `<span class="muted">—</span>`;
   return d.map((x) => {
     const name = x.contractor === "other" ? (x.other_name || "other") : x.contractor;
-    const tone = x.substate === "received_back" ? "ok" : x.substate === "sent" ? "warn" : "info";
-    return chip(name, tone, x.substate === "received_back" ? "✓" : "›");
+    const s = DISPATCH_SUBSTATES.find((y) => y.value === x.substate) || { tone: "info" };
+    const glyph = x.substate === "qc_passed" ? "✓"
+      : x.substate === "qc_failed" ? "!"
+      : x.substate === "received_back" ? "↩" : "›";
+    return chip(name, s.tone, glyph)
+      + (x.substate === "qc_failed" && x.qc_note
+         ? `<div class="err" style="font-size:11px">${esc(String(x.qc_note).slice(0, 60))}</div>` : "");
   }).join(" ");
 }
 
@@ -126,6 +134,8 @@ function flagChips(r) {
   if (r.cancelled)          c.push(chip("CANCELLED", "bad", "!"));
   if (r.production_hold)    c.push(chip("HOLD", "bad", "!"));
   if (r.revised_recheck)    c.push(chip("revised", "warn", "!"));
+  // a failed quality check after stitching is the loudest thing here short of a dead order
+  if (r.dispatch_qc_failed) c.push(chip(tr("disp.qcFail"), "bad", "!"));
   if (r.alteration)         c.push(chip(tr("col.alteration"), "warn", "!"));
   if (r.recv_oos)           c.push(chip(tr("recv.oos"), "bad", "!"));
   if (r.recv_qc_fail)       c.push(chip(tr("qc.title"), "bad", "!"));
@@ -140,7 +150,7 @@ function cardView(rows) {
   const list = el(`<div class="olist"></div>`);
   rows.forEach((r) => {
     const card = el(`
-      <div class="ocard b-${esc(r.date_bucket)}">
+      <div class="ocard b-${esc(r.date_bucket)}${r.dispatch_qc_failed ? " qcfail" : ""}">
         <div class="ohead">
           <div class="ometa">
             <div class="row" style="gap:6px">
@@ -197,7 +207,7 @@ function tableView(rows) {
   const tb = table.querySelector("tbody");
   rows.forEach((r) => {
     const tr1 = el(`
-      <tr>
+      <tr class="${r.dispatch_qc_failed ? "qcfail" : ""}">
         <td><b>${esc(r.order_id)}</b><div>${bucketChip(r)}</div></td>
         <td>${esc(fmtDate(r.installation_date))}
             <div class="muted">${esc(r.sheet_status || "")}</div></td>

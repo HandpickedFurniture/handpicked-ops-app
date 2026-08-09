@@ -251,6 +251,16 @@ table.dense tr:hover td{background:#fafcfd;}
 @media(min-width:700px){.memgrid{grid-template-columns:repeat(3,1fr);}}
 .statebtns{display:flex;gap:4px;flex-wrap:wrap;}
 
+/* A failed quality check after stitching. Red, but never red ALONE - every one of these also carries
+   a "Quality check failed" chip and the stated reason, so it reads on a sunlit phone and for a
+   colour-blind coordinator. */
+.qcfail{background:var(--bad-bg) !important;}
+.ocard.qcfail{border-left-color:var(--danger) !important;
+  box-shadow:inset 0 0 0 1px rgba(192,57,43,.35);}
+tr.qcfail td{background:var(--bad-bg);}
+tr.qcfail:hover td{background:#fbdfdb;}
+.unit.qcfail{border-color:var(--danger);}
+
 /* a cell whose write has not been acknowledged yet */
 .pending{position:relative;}
 .pending::after{content:"";position:absolute;top:2px;right:2px;width:7px;height:7px;
