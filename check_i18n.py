@@ -77,6 +77,7 @@ for f in glob.glob(os.path.join(os.path.dirname(path) or ".", "*.js")):
     body = open(f, encoding="utf-8").read()
     used |= set(re.findall(r'\btr\(\s*"([^"]+)"', body))
     used |= set(re.findall(r'\bkey:\s*"([^"]+)"', body))
+    used |= set(re.findall(r'\bdesc:\s*"([^"]+)"', body))
 unknown = sorted(k for k in used if k not in ev)
 if unknown:
     problems.append(f"tr() references keys that do not exist: {unknown}")

@@ -24,7 +24,7 @@ const COLS = [
   "order_id", "customer_name", "city", "installation_date", "date_bucket", "sheet_status",
   "status", "ready", "team_no", "team_name", "team_assigned", "visit_count",
   "has_adjustment", "adjustment_count", "alteration", "adj_pending",
-  "production_state", "owl_total", "window_count",
+  "production_state", "owl_total", "window_count", "fabric_meters_total",
   "production_hold", "cancelled",
   "stitching_types", "commercial_names", "window_refs", "fabric_1_codes", "fabric_2_codes",
 ].join(",");
@@ -134,12 +134,19 @@ export async function render(mount, state, setFilters) {
     </div>`));
 
   /* ---- charts */
-  const prodRows = PRODUCTION_STATES.map((s, i) => ({
-    label: tr(s.key),
-    value: rows.filter((r) => r.production_state === s.value).length,
-    // ordinal ramp: the colour carries the pipeline order, not identity
-    color: ORDINAL_RAMP[Math.min(i, ORDINAL_RAMP.length - 1)],
-  }));
+  const prodRows = PRODUCTION_STATES.map((s, i) => {
+    const inState = rows.filter((r) => r.production_state === s.value);
+    const metres = inState.reduce((a, r) => a + (Number(r.fabric_meters_total) || 0), 0);
+    return {
+      label: tr(s.key),
+      value: inState.length,
+      // the metres sitting at each stage, not just the order count - 3 orders holding 400 m is a
+      // very different problem from 30 orders holding 40 m
+      note: metres ? num(metres) + " m" : "",
+      // ordinal ramp: the colour carries the pipeline order, not identity
+      color: ORDINAL_RAMP[Math.min(i, ORDINAL_RAMP.length - 1)],
+    };
+  });
   const instRows = [
     ...ORDER_STATUSES.map((s) => ({
       label: s, value: rows.filter((r) => r.status === s).length, tone: STATUS_TONE[s],

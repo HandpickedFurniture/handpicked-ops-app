@@ -17,6 +17,7 @@ import {
 } from "./ui.js";
 import { photoStrip, locationSelect } from "./photos.js";
 import { wireNewLocation } from "./mod-transfer.js";
+import { syncBar } from "./sync.js";
 
 export async function render(mount, state) {
   if (!isSignedIn()) return;
@@ -32,11 +33,13 @@ export async function render(mount, state) {
         <button class="btn sm ${onlyReorder ? "primary" : ""}" id="ireorder">${esc(tr("inv.needsReorder"))}</button>
       </div>
       <div class="row">
+        <span id="invsync"></span>
         <button class="btn sm accent" id="iadd">+ ${esc(tr("inv.addItem"))}</button>
         <button class="btn sm" id="icsv">${esc(tr("dash.csv"))}</button>
       </div>
     </div>
     <div id="ibody"></div>`;
+  $("#invsync", mount).appendChild(syncBar());
 
   const setP = (k, v) => {
     const p = new URLSearchParams(location.hash.split("?")[1] || "");

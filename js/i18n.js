@@ -212,7 +212,49 @@ export const I18N = {
     "inv.packsTotal": "{n} packs × {q} = {t}",
 
     "dash.byProduction": "By production status", "dash.byInstall": "By installation status",
-    "dash.noChart": "Nothing to chart yet.",
+    "dash.noChart": "Nothing to chart yet.", "dash.byMeters": "Fabric metres by production status",
+
+    "nav.home": "Home", "nav.insights": "Insights", "nav.reports": "Reports",
+
+    "home.hello": "Hello {who}", "home.sub": "Everything the team needs, in one place.",
+    "home.attention": "Needs attention", "home.allClear": "Nothing needs attention right now.",
+    "home.ofOrders": "of {n} orders", "home.modules": "Modules",
+    "home.noLink": "No link on the site yet", "home.source": "Links mirrored from",
+    "home.dProduction": "Fabric receiving, stitching stages, dispatch",
+    "home.dInstall": "Visits, teams, status, extra charges",
+    "home.dTransfer": "Materials out and back",
+    "home.dInventory": "Stock, packs, movements",
+    "home.dInsights": "Dashboard, reports, end of day, photos",
+
+    "grp.daily": "Daily sheets & tracking", "grp.capture": "Forms & uploads",
+    "grp.reference": "Reference & SOPs", "grp.training": "Training",
+    "grp.admin": "Admin & records",
+
+    "sync.label": "3D sheet synced", "sync.never": "3D sheet has never synced",
+    "sync.justNow": "just now", "sync.minsAgo": "{n} min ago",
+    "sync.hoursAgo": "{n} h ago", "sync.daysAgo": "{n} days ago",
+
+    "col.recvFabric": "Fabric", "col.recvMaterials": "Materials",
+    "act.expandAll": "Expand all details", "act.collapseAll": "Collapse all",
+    "act.expandCap": "Expanded the first {n} — open the rest individually.",
+    "act.receiveAllMat": "Mark all materials received",
+    "d.statusTab": "Status", "disp.notSent": "Not sent",
+
+    "rep.orderDetails": "Order details", "rep.scheduling": "Scheduling",
+    "rep.production": "Production", "rep.stitching": "Stitching", "rep.railing": "Railing",
+    "rep.shortRail": "Short rails", "rep.dragonMart": "Dragon Mart", "rep.comments": "Comments",
+    "rep.total": "Total", "rep.instTime": "Install time", "rep.issueFlag": "Type",
+    "rep.americanM": "American m", "rep.waveM": "Wave m", "rep.credits": "Order value",
+    "rep.estTime": "Est. time", "rep.receive": "Fabric in", "rep.materials": "Materials in",
+    "rep.curtains": "Curtains", "rep.meter": "Metres", "rep.recMeter": "Metres received",
+    "rep.l1Meter": "L1 m", "rep.l1Width": "L1 width", "rep.l1Height": "L1 height",
+    "rep.l1Comment": "L1 comment", "rep.l1Bottom": "L1 bottom", "rep.pieces": "Pieces",
+    "rep.l2Meter": "L2 m", "rep.l2Width": "L2 width", "rep.l2Height": "L2 height",
+    "rep.stitchType": "Stitching type", "rep.layers": "Layers", "rep.railLength": "Rail length",
+    "rep.numRails": "# rails", "rep.drilling": "Drilling", "rep.brackets": "Brackets",
+    "rep.comments2": "Comments", "rep.widthBucket": "Width band",
+    "rep.dmTailor": "Tailor", "rep.dmDispatch": "Dispatch", "rep.dmPayment": "Payment",
+    "rep.prodComments": "Production comments",
   },
 
   hi: {
@@ -404,7 +446,49 @@ export const I18N = {
     "inv.packsTotal": "{n} पैक × {q} = {t}",
 
     "dash.byProduction": "उत्पादन स्थिति अनुसार", "dash.byInstall": "इंस्टॉलेशन स्थिति अनुसार",
-    "dash.noChart": "अभी चार्ट के लिए कुछ नहीं।",
+    "dash.noChart": "अभी चार्ट के लिए कुछ नहीं।", "dash.byMeters": "उत्पादन स्थिति अनुसार कपड़ा मीटर",
+
+    "nav.home": "होम", "nav.insights": "इनसाइट्स", "nav.reports": "रिपोर्ट",
+
+    "home.hello": "नमस्ते {who}", "home.sub": "टीम को चाहिए सब कुछ, एक जगह।",
+    "home.attention": "ध्यान चाहिए", "home.allClear": "अभी कुछ भी ध्यान देने योग्य नहीं।",
+    "home.ofOrders": "{n} ऑर्डर में से", "home.modules": "मॉड्यूल",
+    "home.noLink": "साइट पर अभी लिंक नहीं", "home.source": "लिंक स्रोत",
+    "home.dProduction": "कपड़ा प्राप्ति, सिलाई चरण, भेजना",
+    "home.dInstall": "विज़िट, टीम, स्थिति, अतिरिक्त शुल्क",
+    "home.dTransfer": "सामग्री बाहर और वापस",
+    "home.dInventory": "स्टॉक, पैक, मूवमेंट",
+    "home.dInsights": "डैशबोर्ड, रिपोर्ट, दिन का अंत, फ़ोटो",
+
+    "grp.daily": "दैनिक शीट और ट्रैकिंग", "grp.capture": "फ़ॉर्म और अपलोड",
+    "grp.reference": "संदर्भ और SOP", "grp.training": "प्रशिक्षण",
+    "grp.admin": "प्रशासन और रिकॉर्ड",
+
+    "sync.label": "3D शीट सिंक", "sync.never": "3D शीट कभी सिंक नहीं हुई",
+    "sync.justNow": "अभी", "sync.minsAgo": "{n} मिनट पहले",
+    "sync.hoursAgo": "{n} घंटे पहले", "sync.daysAgo": "{n} दिन पहले",
+
+    "col.recvFabric": "कपड़ा", "col.recvMaterials": "सामग्री",
+    "act.expandAll": "सभी विवरण खोलें", "act.collapseAll": "सभी बंद करें",
+    "act.expandCap": "पहले {n} खोले गए — बाकी अलग से खोलें।",
+    "act.receiveAllMat": "सभी सामग्री प्राप्त चिह्नित करें",
+    "d.statusTab": "स्थिति", "disp.notSent": "भेजा नहीं",
+
+    "rep.orderDetails": "ऑर्डर विवरण", "rep.scheduling": "शेड्यूलिंग",
+    "rep.production": "उत्पादन", "rep.stitching": "सिलाई", "rep.railing": "रेलिंग",
+    "rep.shortRail": "छोटी रेल", "rep.dragonMart": "ड्रैगन मार्ट", "rep.comments": "टिप्पणियाँ",
+    "rep.total": "कुल", "rep.instTime": "इंस्टॉल समय", "rep.issueFlag": "प्रकार",
+    "rep.americanM": "अमेरिकन मी", "rep.waveM": "वेव मी", "rep.credits": "ऑर्डर मूल्य",
+    "rep.estTime": "अनुमानित समय", "rep.receive": "कपड़ा आया", "rep.materials": "सामग्री आई",
+    "rep.curtains": "पर्दे", "rep.meter": "मीटर", "rep.recMeter": "प्राप्त मीटर",
+    "rep.l1Meter": "L1 मी", "rep.l1Width": "L1 चौड़ाई", "rep.l1Height": "L1 ऊँचाई",
+    "rep.l1Comment": "L1 टिप्पणी", "rep.l1Bottom": "L1 तल", "rep.pieces": "टुकड़े",
+    "rep.l2Meter": "L2 मी", "rep.l2Width": "L2 चौड़ाई", "rep.l2Height": "L2 ऊँचाई",
+    "rep.stitchType": "सिलाई प्रकार", "rep.layers": "परतें", "rep.railLength": "रेल लंबाई",
+    "rep.numRails": "रेल संख्या", "rep.drilling": "ड्रिलिंग", "rep.brackets": "ब्रैकेट",
+    "rep.comments2": "टिप्पणियाँ", "rep.widthBucket": "चौड़ाई श्रेणी",
+    "rep.dmTailor": "दर्ज़ी", "rep.dmDispatch": "भेजना", "rep.dmPayment": "भुगतान",
+    "rep.prodComments": "उत्पादन टिप्पणियाँ",
   },
 
   bn: {
@@ -596,7 +680,49 @@ export const I18N = {
     "inv.packsTotal": "{n} প্যাক × {q} = {t}",
 
     "dash.byProduction": "উৎপাদন অবস্থা অনুযায়ী", "dash.byInstall": "ইনস্টলেশন অবস্থা অনুযায়ী",
-    "dash.noChart": "চার্ট করার মতো কিছু নেই।",
+    "dash.noChart": "চার্ট করার মতো কিছু নেই।", "dash.byMeters": "উৎপাদন অবস্থা অনুযায়ী কাপড়ের মিটার",
+
+    "nav.home": "হোম", "nav.insights": "ইনসাইটস", "nav.reports": "রিপোর্ট",
+
+    "home.hello": "নমস্কার {who}", "home.sub": "দলের যা প্রয়োজন, সব এক জায়গায়।",
+    "home.attention": "মনোযোগ প্রয়োজন", "home.allClear": "এখন কিছুতেই মনোযোগ প্রয়োজন নেই।",
+    "home.ofOrders": "{n}টি অর্ডারের মধ্যে", "home.modules": "মডিউল",
+    "home.noLink": "সাইটে এখনো লিঙ্ক নেই", "home.source": "লিঙ্কের উৎস",
+    "home.dProduction": "কাপড় গ্রহণ, সেলাইয়ের ধাপ, পাঠানো",
+    "home.dInstall": "ভিজিট, দল, অবস্থা, অতিরিক্ত চার্জ",
+    "home.dTransfer": "উপকরণ বাইরে ও ফেরত",
+    "home.dInventory": "স্টক, প্যাক, মুভমেন্ট",
+    "home.dInsights": "ড্যাশবোর্ড, রিপোর্ট, দিনের শেষ, ছবি",
+
+    "grp.daily": "দৈনিক শিট ও ট্র্যাকিং", "grp.capture": "ফর্ম ও আপলোড",
+    "grp.reference": "রেফারেন্স ও SOP", "grp.training": "প্রশিক্ষণ",
+    "grp.admin": "প্রশাসন ও রেকর্ড",
+
+    "sync.label": "3D শিট সিঙ্ক", "sync.never": "3D শিট কখনো সিঙ্ক হয়নি",
+    "sync.justNow": "এইমাত্র", "sync.minsAgo": "{n} মিনিট আগে",
+    "sync.hoursAgo": "{n} ঘণ্টা আগে", "sync.daysAgo": "{n} দিন আগে",
+
+    "col.recvFabric": "কাপড়", "col.recvMaterials": "উপকরণ",
+    "act.expandAll": "সব বিবরণ খুলুন", "act.collapseAll": "সব বন্ধ করুন",
+    "act.expandCap": "প্রথম {n}টি খোলা হয়েছে — বাকিগুলি আলাদাভাবে খুলুন।",
+    "act.receiveAllMat": "সব উপকরণ প্রাপ্ত চিহ্নিত করুন",
+    "d.statusTab": "অবস্থা", "disp.notSent": "পাঠানো হয়নি",
+
+    "rep.orderDetails": "অর্ডার বিবরণ", "rep.scheduling": "সময়সূচি",
+    "rep.production": "উৎপাদন", "rep.stitching": "সেলাই", "rep.railing": "রেলিং",
+    "rep.shortRail": "ছোট রেল", "rep.dragonMart": "ড্রাগন মার্ট", "rep.comments": "মন্তব্য",
+    "rep.total": "মোট", "rep.instTime": "ইনস্টল সময়", "rep.issueFlag": "ধরন",
+    "rep.americanM": "আমেরিকান মি", "rep.waveM": "ওয়েভ মি", "rep.credits": "অর্ডার মূল্য",
+    "rep.estTime": "আনুমানিক সময়", "rep.receive": "কাপড় এসেছে", "rep.materials": "উপকরণ এসেছে",
+    "rep.curtains": "পর্দা", "rep.meter": "মিটার", "rep.recMeter": "প্রাপ্ত মিটার",
+    "rep.l1Meter": "L1 মি", "rep.l1Width": "L1 প্রস্থ", "rep.l1Height": "L1 উচ্চতা",
+    "rep.l1Comment": "L1 মন্তব্য", "rep.l1Bottom": "L1 নিচ", "rep.pieces": "টুকরা",
+    "rep.l2Meter": "L2 মি", "rep.l2Width": "L2 প্রস্থ", "rep.l2Height": "L2 উচ্চতা",
+    "rep.stitchType": "সেলাইয়ের ধরন", "rep.layers": "স্তর", "rep.railLength": "রেলের দৈর্ঘ্য",
+    "rep.numRails": "রেল সংখ্যা", "rep.drilling": "ড্রিলিং", "rep.brackets": "ব্র্যাকেট",
+    "rep.comments2": "মন্তব্য", "rep.widthBucket": "প্রস্থ শ্রেণি",
+    "rep.dmTailor": "দর্জি", "rep.dmDispatch": "পাঠানো", "rep.dmPayment": "পেমেন্ট",
+    "rep.prodComments": "উৎপাদন মন্তব্য",
   },
 };
 

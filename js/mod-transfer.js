@@ -17,6 +17,7 @@ import {
 } from "./ui.js";
 import { renderFilterBar, toQuery, deriveOptions, activeCount } from "./filters.js";
 import { photoStrip, locationSelect, createLocation, locations } from "./photos.js";
+import { syncBar } from "./sync.js";
 
 const COLS = [
   // NB: the board exposes the order's status as `status`; `order_status` is the roster's name for it
@@ -32,7 +33,9 @@ let ITEMS = null;
 
 export async function render(mount, state, setFilters) {
   if (!isSignedIn()) return;
-  mount.innerHTML = `<div id="fbar"></div><div id="tstate"></div><div id="tlist"></div>`;
+  mount.innerHTML = `<div class="sectionbar"><span></span><span id="trsync"></span></div>
+                     <div id="fbar"></div><div id="tstate"></div><div id="tlist"></div>`;
+  $("#trsync", mount).appendChild(syncBar());
 
   if (!OPTIONS) {
     try {

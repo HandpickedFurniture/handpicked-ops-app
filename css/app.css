@@ -93,12 +93,20 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--brand);outline-o
 .chip.mute{background:var(--mute-bg);color:var(--muted);border-color:var(--line);}
 .chip.wait{background:var(--mute-bg);color:var(--muted);border-color:var(--line);}
 
-/* ---------------------------------------------------------------- filter bar */
+/* ---------------------------------------------------------------- filter bar
+   Deliberately loud. Filters drive every screen in this app, and a white-on-white bar was being
+   missed entirely - people scrolled a 600-row table instead of narrowing it. The summary strip wears
+   the brand teal so it reads as a control, not a heading. */
 .filterbar{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
-  margin-bottom:12px;overflow:hidden;}
+  margin-bottom:12px;overflow:hidden;box-shadow:0 1px 3px rgba(15,76,92,.12);}
 .filterbar .fsummary{display:flex;justify-content:space-between;align-items:center;gap:8px;
-  padding:12px 14px;cursor:pointer;font-weight:700;font-size:14px;}
-.filterbar .fbody{padding:0 14px 14px;border-top:1px solid var(--line);}
+  padding:13px 15px;cursor:pointer;font-weight:800;font-size:14px;
+  background:var(--brand);color:#fff;letter-spacing:.01em;}
+.filterbar .fsummary:hover{background:var(--brand-dark);}
+.filterbar .fsummary .muted{color:rgba(255,255,255,.85);}
+.filterbar.collapsed .fsummary{border-radius:0;}
+.filterbar .fbody{padding:0 14px 14px;border-top:1px solid var(--line);background:var(--info-bg);}
+.filterbar .fbody label.f{color:var(--brand-dark);}
 .filterbar.collapsed .fbody{display:none;}
 .fgrid{display:grid;grid-template-columns:1fr;gap:10px;margin:12px 0;}
 @media(min-width:640px){.fgrid{grid-template-columns:1fr 1fr;}}
@@ -260,6 +268,48 @@ table.dense tr:hover td{background:#fafcfd;}
 tr.qcfail td{background:var(--bad-bg);}
 tr.qcfail:hover td{background:#fbdfdb;}
 .unit.qcfail{border-color:var(--danger);}
+
+/* ---------------------------------------------------------------- home */
+.hero{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;
+  flex-wrap:wrap;margin-bottom:12px;}
+.hero h2{font-size:20px;}
+.tilegrid{display:grid;grid-template-columns:1fr;gap:8px;}
+@media(min-width:640px){.tilegrid{grid-template-columns:1fr 1fr;}}
+@media(min-width:1024px){.tilegrid{grid-template-columns:repeat(3,1fr);}}
+.ltile{display:flex;gap:10px;align-items:center;padding:11px 12px;border:1px solid var(--line);
+  border-radius:11px;background:var(--card);text-decoration:none;color:var(--txt);}
+.ltile:hover{border-color:var(--brand);background:var(--info-bg);}
+.ltile.dead{opacity:.5;border-style:dashed;cursor:default;}
+.ltile.dead:hover{border-color:var(--line);background:var(--card);}
+.lico{font-size:19px;flex:none;width:24px;text-align:center;}
+.ltxt{display:flex;flex-direction:column;gap:1px;min-width:0;font-size:14px;}
+.ltxt .muted{font-size:12px;}
+.attn{display:inline-flex;gap:6px;align-items:baseline;padding:7px 12px;border-radius:999px;
+  text-decoration:none;font-size:13px;font-weight:700;border:1px solid transparent;}
+.attn b{font-size:16px;}
+.attn.bad{background:var(--bad-bg);color:var(--danger);border-color:#f2c3bd;}
+.attn.warn{background:var(--warn-bg);color:var(--warn);border-color:#f0d9ac;}
+
+/* ---------------------------------------------------------------- sync stamp */
+.syncstamp{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;
+  padding:3px 9px;border-radius:999px;white-space:nowrap;}
+.syncstamp.ok{background:var(--ok-bg);color:var(--ok);}
+.syncstamp.warn{background:var(--warn-bg);color:var(--warn);}
+.syncstamp.bad{background:var(--bad-bg);color:var(--danger);}
+.sectionbar{display:flex;justify-content:space-between;align-items:center;gap:10px;
+  flex-wrap:wrap;margin-bottom:10px;}
+
+/* ---------------------------------------------------------------- totals strip */
+.totalsbar{display:flex;gap:6px;flex-wrap:wrap;padding:10px 12px;}
+.tot{display:flex;flex-direction:column;align-items:center;min-width:74px;flex:1;
+  padding:6px 8px;border-radius:9px;background:var(--info-bg);}
+.tot b{font-size:17px;line-height:1.1;}
+.tot span{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.02em;
+  text-align:center;margin-top:2px;}
+.dispstate{margin-top:3px;}
+table.dense th.wide, table.dense td.wide{max-width:260px;white-space:normal;}
+table.dense tfoot th{position:sticky;bottom:0;background:var(--info-bg);border-top:2px solid var(--line);
+  font-size:12px;color:var(--brand);}
 
 /* a cell whose write has not been acknowledged yet */
 .pending{position:relative;}

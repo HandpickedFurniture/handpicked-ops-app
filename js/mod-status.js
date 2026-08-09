@@ -20,6 +20,7 @@ import {
 import { renderFilterBar, toQuery, deriveOptions, activeCount } from "./filters.js";
 import { micField, wireMics } from "./voice.js";
 import { photoStrip } from "./photos.js";
+import { syncBar } from "./sync.js";
 
 const BOARD_COLS = [
   "order_id", "customer_name", "city", "city_source", "installation_date", "date_bucket",
@@ -56,7 +57,9 @@ async function loadMembers(force) {
 
 export async function render(mount, state, setFilters) {
   if (!isSignedIn()) return;
-  mount.innerHTML = `<div id="fbar"></div><div id="board"></div>`;
+  mount.innerHTML = `<div class="sectionbar"><span></span><span id="stsync"></span></div>
+                     <div id="fbar"></div><div id="board"></div>`;
+  $("#stsync", mount).appendChild(syncBar());
 
   if (!TEAMS) {
     try { TEAMS = await api("/rest/v1/teams?select=team_no,team_name&order=team_no"); }

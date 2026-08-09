@@ -44,8 +44,11 @@ export async function renderDrawer(host, orderId, onDirty) {
   const body = el(`<div></div>`);
 
   const TABS = [
-    { id: "fab",  label: tr("col.fabrics"),   render: () => receivingTab(d, orderId, refresh) },
-    { id: "prod", label: tr("col.prep"),      render: () => prepTab(d, orderId, refresh) },
+    { id: "fab",  label: tr("col.fabrics"),   render: () => receivingTab(d, orderId, refresh, "order_fabric") },
+    { id: "mat",  label: tr("col.recvMaterials"), render: () => receivingTab(d, orderId, refresh, "materials") },
+    // "Status" rather than "Production": inside an order's details, this tab is the per-panel stage,
+    // and the module it sits in is already called Production
+    { id: "prod", label: tr("d.statusTab"),   render: () => prepTab(d, orderId, refresh) },
     { id: "disp", label: tr("disp.title"),    render: () => dispatchTab(d, orderId, refresh) },
     { id: "alert",label: tr("d.prodAlerts"),  render: () => alertsTab(d) },
     { id: "note", label: tr("d.comments"),    render: () => commentsTab(d, orderId, refresh) },
@@ -81,8 +84,14 @@ export async function renderDrawer(host, orderId, onDirty) {
 }
 
 /* ---------------------------------------------------------------- stages 1-4 */
-function receivingTab(d, orderId, refresh) {
-  const rows = d.receiving || [];
+/* which = 'order_fabric' (rolls of cloth) or 'materials' (motors, remotes, ready-made tracks,
+ * blinds, sticks). They come from different suppliers on different lead times and are chased by
+ * different people, so one combined list hid which half was actually late. */
+function receivingTab(d, orderId, refresh, which) {
+  const all = d.receiving || [];
+  const rows = which === "order_fabric"
+    ? all.filter((r) => r.grain === "order_fabric")
+    : all.filter((r) => r.grain !== "order_fabric");
   const box = el(`<div class="dsec"></div>`);
   if (!rows.length) { box.innerHTML = `<div class="dnone">${esc(tr("d.none"))}</div>`; return box; }
 
@@ -91,7 +100,8 @@ function receivingTab(d, orderId, refresh) {
   box.appendChild(el(`
     <div class="spread" style="margin-bottom:10px">
       <div>${progressBar(done, rows.length)}</div>
-      <button class="btn accent sm" data-all>${esc(tr("act.receiveAll"))}</button>
+      <button class="btn accent sm" data-all>${esc(
+        which === "order_fabric" ? tr("act.receiveAll") : tr("act.receiveAllMat"))}</button>
     </div>`));
 
   rows.forEach((r) => {
@@ -146,8 +156,12 @@ function receivingTab(d, orderId, refresh) {
   });
 
   box.querySelector("[data-all]").addEventListener("click", async () => {
+    // only the half currently on screen - "mark all fabrics received" must not also tick off motors
+    // that have not arrived
     await submit("fn_ops_receive_all", {
-      p_order_id: orderId, p_actor: currentActor(), p_note: null, p_grain: null,
+      p_order_id: orderId, p_actor: currentActor(), p_note: null,
+      p_grain: which === "order_fabric" ? "order_fabric" : null,
+      p_exclude_fabric: which !== "order_fabric",
     });
     toast(queueDepth() ? tr("t.queued") : tr("t.saved"), "ok");
     refresh();
@@ -279,6 +293,12 @@ function contractorRow(contractor, otherName, label, hit, orderId, refresh) {
       <div class="uname">${esc(label)}
         ${failed ? chip(tr("disp.qcFail"), "bad", "!") : ""}
         ${hit && hit.substate === "qc_passed" ? chip(tr("disp.qcPass"), "ok", "✓") : ""}
+        <!-- the current state, spelled out under the name: the highlighted button alone was easy to
+             miss on a phone, and this row is read far more often than it is clicked -->
+        <div class="dispstate">${hit
+          ? chip(tv(DISPATCH_SUBSTATES, hit.substate),
+                 (DISPATCH_SUBSTATES.find((s) => s.value === hit.substate) || {}).tone || "info")
+          : chip(tr("disp.notSent"), "mute", "—")}</div>
         <div class="usub">${hit && hit.sent_at ? esc(tr("disp.sent")) + " " + esc(fmtDateTime(hit.sent_at)) : ""}
           ${hit && hit.received_back_at ? " · " + esc(tr("disp.back")) + " " + esc(fmtDateTime(hit.received_back_at)) : ""}
           ${hit && hit.qc_at ? " · " + esc(tr("qc.title")) + " " + esc(fmtDateTime(hit.qc_at)) : ""}

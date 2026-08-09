@@ -13,22 +13,27 @@ import { $, esc, el, toast } from "./ui.js";
 import { renderLogin } from "./auth.js";
 import { readHash, writeHash } from "./filters.js";
 import { logoSvg, installFavicon } from "./brand.js";
+import * as home from "./mod-home.js";
 import * as production from "./mod-production.js";
 import * as status from "./mod-status.js";
-import * as dashboard from "./mod-dashboard.js";
 import * as transfer from "./mod-transfer.js";
 import * as inventory from "./mod-inventory.js";
-import * as audit from "./mod-audit.js";
+import * as insights from "./mod-insights.js";
 
+/* Dashboard, Reports, End of day and Photo audit now live inside Insights - four read-only views
+ * under one tab, so the data-entry modules keep the top level. Old #/dashboard, #/eod and #/audit
+ * links still work: they redirect into the right Insights sub-section (see route()). */
 const ROUTES = {
+  home:       { key: "nav.home",       render: (m, s) => home.render(m, s) },
   production: { key: "nav.production", render: (m, s, f) => production.render(m, s, f) },
   status:     { key: "nav.status",     render: (m, s, f) => status.render(m, s, f) },
   transfer:   { key: "nav.transfer",   render: (m, s, f) => transfer.render(m, s, f) },
   inventory:  { key: "nav.inventory",  render: (m, s) => inventory.render(m, s) },
-  dashboard:  { key: "nav.dashboard",  render: (m, s, f) => dashboard.render(m, s, f) },
-  eod:        { key: "nav.eod",        render: (m, s) => dashboard.renderEod(m, s) },
-  audit:      { key: "nav.audit",      render: (m, s) => audit.render(m, s) },
+  insights:   { key: "nav.insights",   render: (m, s, f) => insights.render(m, s, f) },
 };
+
+/* the tabs that used to be top-level, mapped to their new home */
+const MOVED = { dashboard: "dashboard", eod: "eod", audit: "audit", reports: "reports" };
 
 function setFilters(route, f) { writeHash(route, f); }
 
@@ -70,10 +75,14 @@ function paintQueue() {
     : f ? `<span class="qbadge fail" title="${esc(tr("t.failed", { n: f }))}">${f} !</span>` : "";
 }
 
+const TAB_ICON = { home: "🏠", production: "✂️", status: "🚚", transfer: "📦",
+                   inventory: "🔩", insights: "📊" };
+
 function paintTabs() {
   const { route: r } = readHash();
   $("#tabs").innerHTML = Object.keys(ROUTES).map((k) =>
-    `<a href="#/${k}" class="${k === r ? "active" : ""}">${esc(tr(ROUTES[k].key))}</a>`).join("");
+    `<a href="#/${k}" class="${k === r ? "active" : ""}">${TAB_ICON[k] || ""} ${esc(tr(ROUTES[k].key))}</a>`
+  ).join("");
 }
 
 let busy = false;
@@ -82,7 +91,16 @@ async function route() {
   busy = true;
   try {
     const { route: name, filters, params } = readHash();
-    const def = ROUTES[name] || ROUTES.production;
+
+    // an old top-level link lands in the right Insights sub-section rather than 404ing to Production
+    if (MOVED[name]) {
+      const q = new URLSearchParams(location.hash.split("?")[1] || "");
+      q.set("sec", MOVED[name]);
+      location.hash = "/insights?" + q.toString();
+      return;
+    }
+
+    const def = ROUTES[name] || ROUTES.home;
     paintTabs();
 
     const main = $("#main");
@@ -119,7 +137,7 @@ function boot() {
 
   window.addEventListener("hashchange", route);
   window.addEventListener("ops:rerender", route);
-  if (!location.hash) location.hash = "#/production";
+  if (!location.hash) location.hash = "#/home";
   route();
   flush();
 }

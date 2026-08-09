@@ -34,7 +34,10 @@ export function barChart(rows, opts = {}) {
   if (!data.length) return `<div class="dnone">${esc(tr("dash.noChart"))}</div>`;
 
   const max = Math.max(...data.map((r) => Number(r.value) || 0), 1);
-  const rowH = 26, gap = 6, padL = opts.labelWidth || 132, padR = 44, top = 4;
+  // taller rows when any bar carries a secondary note (e.g. metres under the count)
+  const hasNote = data.some((r) => r.note);
+  const rowH = hasNote ? 34 : 26;
+  const gap = 6, padL = opts.labelWidth || 132, padR = 62, top = 4;
   const h = top + data.length * (rowH + gap);
   const w = 460;                      // viewBox units; the SVG scales to its container
   const barW = w - padL - padR;
@@ -53,6 +56,8 @@ export function barChart(rows, opts = {}) {
         <rect class="track" x="${padL}" y="${y + 4}" width="${barW}" height="${rowH - 8}" rx="4"/>
         <rect x="${padL}" y="${y + 4}" width="${len}" height="${rowH - 8}" rx="4" fill="${fill}"/>
         <text class="val" x="${padL + len + 8}" y="${y + rowH / 2 + 4}">${esc(String(v))}</text>
+        ${r.note ? `<text class="lbl" x="${padL + len + 8}" y="${y + rowH / 2 + 15}"
+           >${esc(r.note)}</text>` : ""}
       </g>`;
   }).join("");
 

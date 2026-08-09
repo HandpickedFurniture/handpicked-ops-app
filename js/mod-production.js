@@ -11,7 +11,9 @@ import { apiAll, isSignedIn } from "./api.js";
 import { tr } from "./i18n.js";
 import {
   SPECIAL_COLS, DATE_BUCKETS, PAGE_SIZE, bucketOf, DISPATCH_SUBSTATES, PRODUCTION_STATES,
+  PREP_STAGES,
 } from "./config.js";
+import { syncBar } from "./sync.js";
 import {
   $, esc, el, chip, num, fmtDate, daysSince, toast, loading, progressBar,
 } from "./ui.js";
@@ -28,6 +30,8 @@ const ROSTER_COLS = [
   "team_no", "order_status", "ready", "alteration", "alteration_note",
   "fabric_meters_total", "meters_sent_total", "production_state",
   "dispatch_qc_failed", "dispatch_qc_passed",
+  "recv_fab_total", "recv_fab_done", "recv_mat_total", "recv_mat_done",
+  "prep_max_rank", "owl_curtains", "owl_blinds", "owl_total", "issue_flag",
   "stitching_types", "commercial_names", "window_refs", "fabric_1_codes", "fabric_2_codes",
   ...SPECIAL_COLS.map((s) => s.col),
 ].join(",");
@@ -79,14 +83,59 @@ export async function render(mount, state, setFilters) {
     return;
   }
 
+  /* ---- totals for the filtered set: what the floor has to get through today */
+  const sum = (k) => rows.reduce((a, r) => a + (Number(r[k]) || 0), 0);
+  const totals = el(`
+    <div class="card totalsbar">
+      <div class="tot"><b>${esc(num(rows.length))}</b><span>${esc(tr("col.order"))}</span></div>
+      <div class="tot"><b>${esc(num(sum("window_count")))}</b><span>${esc(tr("col.windows"))}</span></div>
+      <div class="tot"><b>${esc(num(sum("owl_curtains")))}</b><span>${esc(tr("col.owlCurtains"))}</span></div>
+      <div class="tot"><b>${esc(num(sum("owl_blinds")))}</b><span>${esc(tr("col.owlBlinds"))}</span></div>
+      <div class="tot"><b>${esc(num(sum("owl_total")))}</b><span>${esc(tr("col.owlTotal"))}</span></div>
+      <div class="tot"><b>${esc(num(sum("fabric_meters_total")))}</b><span>${esc(tr("col.meters"))}</span></div>
+      <div class="tot"><b>${esc(num(sum("n_motor")))}</b><span>${esc(tr("sp.motor"))}</span></div>
+      <div class="tot"><b>${esc(num(sum("n_roman")))}</b><span>${esc(tr("sp.roman"))}</span></div>
+      <div class="tot"><b>${esc(num(sum("n_roller")))}</b><span>${esc(tr("sp.roller"))}</span></div>
+      <div class="tot"><b>${esc(num(sum("n_scaffolding")))}</b><span>${esc(tr("sp.scaffolding"))}</span></div>
+      <div class="tot"><b>${esc(num(sum("est_minutes") / 60))}</b><span>${esc(tr("rep.estTime"))} h</span></div>
+    </div>`);
+  box.appendChild(totals);
+
   const stale = rows.find((r) => r.synced_at);
   if (stale && daysSince(stale.synced_at) >= 1) {
     box.appendChild(el(`<div class="banner warn">${esc(tr("t.staleWarn"))} — ${
       esc(tr("t.stale", { d: fmtDate(stale.synced_at) }))}</div>`));
   }
 
+  /* ---- expand / collapse every order's details at once */
+  const bar2 = el(`
+    <div class="row" style="justify-content:space-between;margin-bottom:10px">
+      <span id="prodsync"></span>
+      <button class="btn sm" id="expandall">${esc(tr("act.expandAll"))}</button>
+    </div>`);
+  bar2.querySelector("#prodsync").appendChild(syncBar());
+  box.appendChild(bar2);
+
   const isWide = window.matchMedia("(min-width:1024px)").matches;
-  box.appendChild(isWide ? tableView(rows) : cardView(rows));
+  const listEl = isWide ? tableView(rows) : cardView(rows);
+  box.appendChild(listEl);
+
+  let expanded = false;
+  bar2.querySelector("#expandall").addEventListener("click", (e) => {
+    expanded = !expanded;
+    e.target.textContent = expanded ? tr("act.collapseAll") : tr("act.expandAll");
+    // clicking every toggle is what the user would do by hand; doing it for 600 orders at once
+    // would fire 600 drawer loads, so cap it and say so
+    const toggles = Array.from(listEl.querySelectorAll("[data-open], .ohead"));
+    const cap = 40;
+    toggles.slice(0, cap).forEach((t) => {
+      const row = t.closest("tr, .ocard");
+      const open = row && (row.nextElementSibling?.style.display === "table-row"
+                           || row.querySelector(".dhost")?.innerHTML);
+      if (expanded !== !!open) t.click();
+    });
+    if (toggles.length > cap) toast(tr("act.expandCap", { n: cap }), "");
+  });
 }
 
 /* ---------------------------------------------------------------- shared cell builders */
@@ -129,6 +178,17 @@ function bucketChip(r) {
   return chip(tr(b.key), b.tone, b.glyph);
 }
 
+/* The furthest production stage actually reached. A count like "0/3" said nothing about WHERE the
+ * order had got to - an order with hemming done on every panel still read as 0 packed. */
+function stageCell(r) {
+  const rank = Number(r.prep_max_rank || 0);
+  if (!rank) return `<span class="muted">—</span>`;
+  const s = PREP_STAGES[rank - 1];
+  const done = rank === PREP_STAGES.length;
+  return chip(tr(s.key), done ? "ok" : "info", done ? "✓" : "›")
+    + `<div class="muted" style="font-size:11px">${esc(r.prep_done)}/${esc(r.prep_total)}</div>`;
+}
+
 function flagChips(r) {
   const c = [];
   if (r.cancelled)          c.push(chip("CANCELLED", "bad", "!"));
@@ -167,8 +227,9 @@ function cardView(rows) {
             <div class="ochips">${fabricCell(r)}</div>
             <div class="ochips">${specialCell(r)}</div>
             <div class="ochips" style="gap:10px">
-              <span class="muted">${esc(tr("col.receiving"))}</span> ${progressBar(r.recv_done, r.recv_total)}
-              <span class="muted">${esc(tr("col.prep"))}</span> ${progressBar(r.prep_done, r.prep_total)}
+              <span class="muted">${esc(tr("col.recvFabric"))}</span> ${progressBar(r.recv_fab_done, r.recv_fab_total)}
+              <span class="muted">${esc(tr("col.recvMaterials"))}</span> ${progressBar(r.recv_mat_done, r.recv_mat_total)}
+              <span class="muted">${esc(tr("col.prep"))}</span> ${stageCell(r)}
             </div>
           </div>
           <span class="ocaret">▾</span>
@@ -196,8 +257,9 @@ function tableView(rows) {
         <th data-sort="alteration">${esc(tr("col.alteration"))}</th>
         <th>${esc(tr("col.fabrics"))}</th>
         <th>${esc(tr("col.special"))}</th>
-        <th data-sort="recv_done">${esc(tr("col.receiving"))}</th>
-        <th data-sort="prep_done">${esc(tr("col.prep"))}</th>
+        <th data-sort="recv_fab_done">${esc(tr("col.recvFabric"))}</th>
+        <th data-sort="recv_mat_done">${esc(tr("col.recvMaterials"))}</th>
+        <th data-sort="prep_max_rank">${esc(tr("col.prep"))}</th>
         <th>${esc(tr("disp.title"))}</th>
         <th></th>
       </tr></thead>
@@ -222,13 +284,14 @@ function tableView(rows) {
         <td>${r.alteration ? chip(tr("col.alteration"), "warn", "!") : `<span class="muted">—</span>`}</td>
         <td>${fabricCell(r)}</td>
         <td>${specialCell(r)}</td>
-        <td>${progressBar(r.recv_done, r.recv_total)}</td>
-        <td>${progressBar(r.prep_done, r.prep_total)}</td>
+        <td>${progressBar(r.recv_fab_done, r.recv_fab_total)}</td>
+        <td>${progressBar(r.recv_mat_done, r.recv_mat_total)}</td>
+        <td>${stageCell(r)}</td>
         <td>${dispatchCell(r)}</td>
         <td><button class="btn sm" data-open>${esc(tr("d.open"))}</button></td>
       </tr>`);
     // colspan must track the header count above
-    const host = el(`<tr class="dhostrow"><td colspan="13" style="padding:0"></td></tr>`);
+    const host = el(`<tr class="dhostrow"><td colspan="14" style="padding:0"></td></tr>`);
     host.style.display = "none";
     let opened = false;
     tr1.querySelector("[data-open]").addEventListener("click", async () => {
