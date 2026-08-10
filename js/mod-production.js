@@ -8,7 +8,8 @@
  * on a phone.
  */
 import { apiAll, isSignedIn } from "./api.js";
-import { tr } from "./i18n.js";
+import { tr, tv } from "./i18n.js";
+import { docButton, openLatest } from "./docs.js";
 import {
   SPECIAL_COLS, DATE_BUCKETS, PAGE_SIZE, bucketOf, DISPATCH_SUBSTATES, PRODUCTION_STATES,
   PREP_STAGES,
@@ -29,7 +30,7 @@ const ROSTER_COLS = [
   "adj_total", "adj_new", "adj_agreed_aed", "production_hold", "cancelled", "hold_reason",
   "team_no", "order_status", "ready", "alteration", "alteration_note",
   "fabric_meters_total", "meters_sent_total", "production_state",
-  "dispatch_qc_failed", "dispatch_qc_passed",
+  "dispatch_qc_failed", "dispatch_qc_passed", "dispatch_issue",
   "recv_fab_total", "recv_fab_done", "recv_mat_total", "recv_mat_done",
   "prep_max_rank", "owl_curtains", "owl_blinds", "owl_total", "issue_flag",
   "stitching_types", "commercial_names", "window_refs", "fabric_1_codes", "fabric_2_codes",
@@ -38,6 +39,7 @@ const ROSTER_COLS = [
 
 let OPTIONS = null;      // filter dropdown values, derived once from the unfiltered roster
 let SORT = "installation_date.asc.nullslast";
+let DOCS = {};           // order_id -> { has_pdf, doc_count } for the PDF column
 
 export async function render(mount, state, setFilters) {
   if (!isSignedIn()) return;
@@ -74,6 +76,13 @@ export async function render(mount, state, setFilters) {
 
   state.count = rows.length;
   paintBar();
+
+  // one request for the whole page's PDF availability, rather than one per row
+  try {
+    const docs = await apiAll(
+      "/rest/v1/v_ops_order_doc_summary?select=order_id,has_pdf,doc_count,pdf_outdated");
+    DOCS = Object.fromEntries(docs.map((d) => [d.order_id, d]));
+  } catch (e) { DOCS = {}; }
 
   if (!rows.length) {
     // "no rows with no filters" is an auth failure, not an empty result: anon has no policy on these
@@ -158,6 +167,8 @@ function specialCell(r) {
   return on.map((s) => chip(`${tr(s.key)} ${num(r[s.col])}`, "info")).join(" ");
 }
 
+/* Tailor name, with the state written out beneath it. A coloured chip alone made you remember what
+ * each colour meant; the words do not. */
 function dispatchCell(r) {
   const d = r.dispatch || [];
   if (!d.length) return `<span class="muted">—</span>`;
@@ -165,12 +176,16 @@ function dispatchCell(r) {
     const name = x.contractor === "other" ? (x.other_name || "other") : x.contractor;
     const s = DISPATCH_SUBSTATES.find((y) => y.value === x.substate) || { tone: "info" };
     const glyph = x.substate === "qc_passed" ? "✓"
-      : x.substate === "qc_failed" ? "!"
+      : (x.substate === "qc_failed" || x.substate === "issue") ? "!"
       : x.substate === "received_back" ? "↩" : "›";
-    return chip(name, s.tone, glyph)
-      + (x.substate === "qc_failed" && x.qc_note
-         ? `<div class="err" style="font-size:11px">${esc(String(x.qc_note).slice(0, 60))}</div>` : "");
-  }).join(" ");
+    const bad = x.substate === "qc_failed" || x.substate === "issue";
+    return `<div class="dispcell">
+        <b>${esc(name)}</b>
+        <div>${chip(tv(DISPATCH_SUBSTATES, x.substate), s.tone, glyph)}</div>
+        ${bad && x.qc_note
+          ? `<div class="err" style="font-size:11px">${esc(String(x.qc_note).slice(0, 60))}</div>` : ""}
+      </div>`;
+  }).join("");
 }
 
 function bucketChip(r) {
@@ -196,6 +211,7 @@ function flagChips(r) {
   if (r.revised_recheck)    c.push(chip("revised", "warn", "!"));
   // a failed quality check after stitching is the loudest thing here short of a dead order
   if (r.dispatch_qc_failed) c.push(chip(tr("disp.qcFail"), "bad", "!"));
+  if (r.dispatch_issue)     c.push(chip(tr("disp.issue"), "bad", "!"));
   if (r.alteration)         c.push(chip(tr("col.alteration"), "warn", "!"));
   if (r.recv_oos)           c.push(chip(tr("recv.oos"), "bad", "!"));
   if (r.recv_qc_fail)       c.push(chip(tr("qc.title"), "bad", "!"));
@@ -210,7 +226,7 @@ function cardView(rows) {
   const list = el(`<div class="olist"></div>`);
   rows.forEach((r) => {
     const card = el(`
-      <div class="ocard b-${esc(r.date_bucket)}${r.dispatch_qc_failed ? " qcfail" : ""}">
+      <div class="ocard b-${esc(r.date_bucket)}${(r.dispatch_qc_failed || r.dispatch_issue) ? " qcfail" : ""}">
         <div class="ohead">
           <div class="ometa">
             <div class="row" style="gap:6px">
@@ -261,6 +277,7 @@ function tableView(rows) {
         <th data-sort="recv_mat_done">${esc(tr("col.recvMaterials"))}</th>
         <th data-sort="prep_max_rank">${esc(tr("col.prep"))}</th>
         <th>${esc(tr("disp.title"))}</th>
+        <th>${esc(tr("doc.title"))}</th>
         <th></th>
       </tr></thead>
       <tbody></tbody>
@@ -269,7 +286,7 @@ function tableView(rows) {
   const tb = table.querySelector("tbody");
   rows.forEach((r) => {
     const tr1 = el(`
-      <tr class="${r.dispatch_qc_failed ? "qcfail" : ""}">
+      <tr class="${(r.dispatch_qc_failed || r.dispatch_issue) ? "qcfail" : ""}">
         <td><b>${esc(r.order_id)}</b><div>${bucketChip(r)}</div></td>
         <td>${esc(fmtDate(r.installation_date))}
             <div class="muted">${esc(r.sheet_status || "")}</div></td>
@@ -288,10 +305,15 @@ function tableView(rows) {
         <td>${progressBar(r.recv_mat_done, r.recv_mat_total)}</td>
         <td>${stageCell(r)}</td>
         <td>${dispatchCell(r)}</td>
+        <td>${docButton(r.order_id, DOCS[r.order_id])}</td>
         <td><button class="btn sm" data-open>${esc(tr("d.open"))}</button></td>
       </tr>`);
+
+    const pdfBtn = tr1.querySelector("[data-pdf]");
+    if (pdfBtn) pdfBtn.addEventListener("click", () => openLatest(r.order_id));
+
     // colspan must track the header count above
-    const host = el(`<tr class="dhostrow"><td colspan="14" style="padding:0"></td></tr>`);
+    const host = el(`<tr class="dhostrow"><td colspan="15" style="padding:0"></td></tr>`);
     host.style.display = "none";
     let opened = false;
     tr1.querySelector("[data-open]").addEventListener("click", async () => {

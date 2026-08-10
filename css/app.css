@@ -97,16 +97,17 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--brand);outline-o
    Deliberately loud. Filters drive every screen in this app, and a white-on-white bar was being
    missed entirely - people scrolled a 600-row table instead of narrowing it. The summary strip wears
    the brand teal so it reads as a control, not a heading. */
-.filterbar{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
-  margin-bottom:12px;overflow:hidden;box-shadow:0 1px 3px rgba(15,76,92,.12);}
+.filterbar{background:var(--card);border:1px solid #f0d9ac;border-radius:var(--radius);
+  margin-bottom:12px;overflow:hidden;box-shadow:0 1px 4px rgba(227,100,20,.22);}
 .filterbar .fsummary{display:flex;justify-content:space-between;align-items:center;gap:8px;
   padding:13px 15px;cursor:pointer;font-weight:800;font-size:14px;
-  background:var(--brand);color:#fff;letter-spacing:.01em;}
-.filterbar .fsummary:hover{background:var(--brand-dark);}
-.filterbar .fsummary .muted{color:rgba(255,255,255,.85);}
+  background:var(--accent);color:#fff;letter-spacing:.01em;}
+.filterbar .fsummary:hover{background:#c85610;}
+.filterbar .fsummary .muted{color:rgba(255,255,255,.9);}
 .filterbar.collapsed .fsummary{border-radius:0;}
-.filterbar .fbody{padding:0 14px 14px;border-top:1px solid var(--line);background:var(--info-bg);}
-.filterbar .fbody label.f{color:var(--brand-dark);}
+/* a warm tint below, so the open panel still reads as one control with the orange strip */
+.filterbar .fbody{padding:0 14px 14px;border-top:1px solid #f0d9ac;background:#fdf4ec;}
+.filterbar .fbody label.f{color:#8a4a10;}
 .filterbar.collapsed .fbody{display:none;}
 .fgrid{display:grid;grid-template-columns:1fr;gap:10px;margin:12px 0;}
 @media(min-width:640px){.fgrid{grid-template-columns:1fr 1fr;}}
@@ -307,6 +308,18 @@ tr.qcfail:hover td{background:#fbdfdb;}
 .tot span{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.02em;
   text-align:center;margin-top:2px;}
 .dispstate{margin-top:3px;}
+/* tailor name with its state written underneath, in the production table's dispatch column */
+.dispcell{padding:3px 0;line-height:1.35;}
+.dispcell + .dispcell{border-top:1px dashed var(--line);margin-top:3px;}
+.dispcell b{font-size:12px;text-transform:capitalize;}
+
+/* ---------------------------------------------------------------- documents */
+.docs{display:flex;flex-direction:column;gap:6px;}
+.docrow{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);
+  border-radius:10px;background:var(--card);}
+.docrow .dico{font-size:18px;flex:none;}
+.docrow .dmeta{flex:1;display:flex;flex-direction:column;gap:1px;min-width:0;font-size:13px;}
+.docrow .dmeta .muted{font-size:11px;}
 table.dense th.wide, table.dense td.wide{max-width:260px;white-space:normal;}
 table.dense tfoot th{position:sticky;bottom:0;background:var(--info-bg);border-top:2px solid var(--line);
   font-size:12px;color:var(--brand);}

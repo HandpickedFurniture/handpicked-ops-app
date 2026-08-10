@@ -5,7 +5,7 @@
  * TRANSLATED. Reverse that and writes start failing their CHECK.
  */
 
-export const BUILD = "2026-08-09.3";
+export const BUILD = "2026-08-09.4";
 
 /* Supabase project "handpicked-curtains". The publishable key is safe to ship: every table is
  * RLS-locked to the `authenticated` role and `anon` has no policy at all. The bearer token on each
@@ -74,6 +74,8 @@ export const DISPATCH_SUBSTATES = [
   { value: "received_back", key: "disp.back",     tone: "info" },
   { value: "qc_passed",     key: "disp.qcPass",   tone: "ok" },
   { value: "qc_failed",     key: "disp.qcFail",   tone: "bad" },
+  // work stalled at the tailor - distinct from qc_failed, which is work that came back and failed
+  { value: "issue",         key: "disp.issue",    tone: "bad" },
 ];
 
 /* ---------------------------------------------------------------- order status

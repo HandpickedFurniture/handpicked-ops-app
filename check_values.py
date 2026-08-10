@@ -23,7 +23,7 @@ EXPECTED = {
     # the app must write ONLY these six.
     "PREP_STAGES": {"cutting", "hemming", "ironing", "marking_measurement", "taping", "folding_packing"},
     "DISPATCH_CONTRACTORS": {"farooq", "jamal", "shahzad", "other"},
-    "DISPATCH_SUBSTATES": {"planned", "sent", "received_back", "qc_passed", "qc_failed"},
+    "DISPATCH_SUBSTATES": {"planned", "sent", "received_back", "qc_passed", "qc_failed", "issue"},
     "CHARGE_TYPES": {"alteration", "pickup", "drop_off", "moving", "removal", "extra_track",
                      "scaffolding", "additional_visit", "tieback", "other"},
     "ADJ_STATUSES": {"new", "reviewed", "invoiced", "dropped"},

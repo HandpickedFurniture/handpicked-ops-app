@@ -17,6 +17,7 @@ import {
 } from "./ui.js";
 import { micField, wireMics } from "./voice.js";
 import { photoStrip } from "./photos.js";
+import { docsPanel } from "./docs.js";
 
 const cache = new Map();
 
@@ -53,6 +54,7 @@ export async function renderDrawer(host, orderId, onDirty) {
     { id: "alert",label: tr("d.prodAlerts"),  render: () => alertsTab(d) },
     { id: "note", label: tr("d.comments"),    render: () => commentsTab(d, orderId, refresh) },
     { id: "mail", label: tr("d.emails"),      render: () => emailsTab(d) },
+    { id: "docs", label: tr("doc.title"),     render: () => docsPanel(orderId) },
   ];
 
   let current = "fab";
@@ -287,7 +289,7 @@ function dispatchTab(d, orderId, refresh) {
 }
 
 function contractorRow(contractor, otherName, label, hit, orderId, refresh) {
-  const failed = hit && hit.substate === "qc_failed";
+  const failed = hit && (hit.substate === "qc_failed" || hit.substate === "issue");
   const row = el(`
     <div class="unit${failed ? " qcfail" : ""}">
       <div class="uname">${esc(label)}
@@ -322,12 +324,14 @@ function contractorRow(contractor, otherName, label, hit, orderId, refresh) {
     b.addEventListener("click", async () => {
       const sub = b.dataset.sub;
 
-      // A failure must say what went wrong; the database rejects a blank one anyway, and asking here
-      // explains why instead of surfacing a constraint error.
+      // A failure or an issue must say what went wrong; the database rejects a blank one anyway, and
+      // asking here explains why instead of surfacing a constraint error.
       let qcNote = null;
-      if (sub === "qc_failed") {
-        qcNote = (prompt(tr("disp.qcFailWhat")) || "").trim();
-        if (!qcNote) { toast(tr("disp.qcFailRequired"), "bad"); return; }
+      if (sub === "qc_failed" || sub === "issue") {
+        const ask = sub === "issue" ? "disp.issueWhat" : "disp.qcFailWhat";
+        const warn = sub === "issue" ? "disp.issueRequired" : "disp.qcFailRequired";
+        qcNote = (prompt(tr(ask)) || "").trim();
+        if (!qcNote) { toast(tr(warn), "bad"); return; }
       }
 
       row.classList.add("pending");
