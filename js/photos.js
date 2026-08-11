@@ -321,20 +321,21 @@ export async function createLocation(code, label, kind) {
  */
 export function photoStrip(meta, opts = {}) {
   const id = "ph_" + Math.random().toString(36).slice(2, 9);
+  // readOnly drops the camera button but keeps the thumbnails: a viewer can look, not add
   const box = el(`
     <div class="photostrip" data-strip="${id}">
       <div class="row" style="gap:6px;align-items:center">
-        <label class="btn sm" style="margin:0">
+        ${opts.readOnly ? "" : `<label class="btn sm" style="margin:0">
           📷 ${esc(opts.label || tr("photo.add"))}
           <input type="file" accept="image/*" capture="environment" multiple hidden>
-        </label>
+        </label>`}
         <span class="muted" data-count></span>
         <span class="muted" data-busy></span>
       </div>
       <div class="thumbs"></div>
     </div>`);
 
-  const input = box.querySelector("input[type=file]");
+  const input = box.querySelector("input[type=file]");   // absent when readOnly
   const thumbs = box.querySelector(".thumbs");
   const countEl = box.querySelector("[data-count]");
   const busyEl = box.querySelector("[data-busy]");
@@ -354,7 +355,7 @@ export function photoStrip(meta, opts = {}) {
     rows.forEach((p) => thumbs.appendChild(thumb(p, urls.get(p.id))));
   }
 
-  input.addEventListener("change", async () => {
+  if (input) input.addEventListener("change", async () => {
     const files = Array.from(input.files || []);
     input.value = "";
     if (!files.length) return;

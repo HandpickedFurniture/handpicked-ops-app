@@ -7,26 +7,34 @@
  *
  * The active sub-section rides in the hash (?sec=), so a link to a specific report still works.
  */
-import { isSignedIn } from "./api.js";
+import { isSignedIn, isViewer } from "./api.js";
 import { tr } from "./i18n.js";
 import { $, esc, el } from "./ui.js";
 import { syncBar } from "./sync.js";
 import * as dashboard from "./mod-dashboard.js";
 import * as reports from "./mod-reports.js";
 import * as audit from "./mod-audit.js";
+import * as roles from "./mod-roles.js";
 
+/* `ops` marks a section only a full-access account sees. Roles lives here rather than in the top
+ * nav because it is administrative and rarely opened - and a viewer has nothing to do on it. */
 const SECTIONS = [
   { id: "dashboard", key: "nav.dashboard", icon: "📊", render: (m, s, f) => dashboard.render(m, s, f) },
   { id: "reports",   key: "nav.reports",   icon: "📈", render: (m, s, f) => reports.render(m, s, f) },
   { id: "eod",       key: "nav.eod",       icon: "🌙", render: (m, s) => dashboard.renderEod(m, s) },
   { id: "audit",     key: "nav.audit",     icon: "📷", render: (m, s) => audit.render(m, s) },
+  { id: "roles",     key: "nav.roles",     icon: "🔑", ops: true, render: (m, s) => roles.render(m, s) },
 ];
+
+const visibleSections = () => SECTIONS.filter((s) => !s.ops || !isViewer());
 
 export async function render(mount, state, setFilters) {
   if (!isSignedIn()) return;
 
+  const shown = visibleSections();
   const secId = state.params.get("sec") || "dashboard";
-  const sec = SECTIONS.find((s) => s.id === secId) || SECTIONS[0];
+  // a viewer following a ?sec=roles link lands on the dashboard rather than an empty tab
+  const sec = shown.find((s) => s.id === secId) || shown[0];
 
   mount.innerHTML = `
     <div class="sectionbar">
@@ -35,7 +43,7 @@ export async function render(mount, state, setFilters) {
     </div>
     <div id="secBody"></div>`;
 
-  $("#secTabs", mount).innerHTML = SECTIONS.map((s) =>
+  $("#secTabs", mount).innerHTML = shown.map((s) =>
     `<button data-sec="${s.id}" class="${s.id === sec.id ? "on" : ""}">${s.icon} ${esc(tr(s.key))}</button>`
   ).join("");
 

@@ -6,7 +6,7 @@
 import { BUILD, STORAGE_PREFIX } from "./config.js";
 import {
   loadSession, isSignedIn, signOut, onSession, onQueue, startQueueWatcher, flush,
-  queueDepth, failedWrites, currentActor,
+  queueDepth, failedWrites, currentActor, loadRole,
 } from "./api.js";
 import { tr, getLang, setLang, LANGS } from "./i18n.js";
 import { $, esc, el, toast } from "./ui.js";
@@ -110,6 +110,9 @@ async function route() {
       return;
     }
     $("#tabs").classList.remove("hidden");
+
+    // resolved once per signed-in session; decides which write controls get drawn, nothing more
+    await loadRole();
 
     const state = { filters, params, count: null };
     await def.render(main, state, (f) => setFilters(name, f));

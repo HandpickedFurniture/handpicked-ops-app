@@ -21,14 +21,16 @@ Three modules over the `handpicked-curtains` Supabase project (`jrevqijbzzwdcwxc
 Pages caches assets for 10 minutes, and `index.html` carries an **import map** that pins every
 module to a versioned URL. Bump the version in all three places or the deploy half-lands:
 
-| Where | Count |
+| Where | How many |
 |---|---|
-| `index.html` — 24 import-map entries, the CSS `<link>`, and the `<script type="module" src>` | 26 |
+| `index.html` — one import-map entry per file in `js/`, plus the CSS `<link>` and the `<script type="module" src>` | files in `js/` + 2 |
 | `BUILD` in `js/config.js` — the footer label, and how you confirm what is live | 1 |
 
 ```bash
-sed -i 's/2026-08-11\.2/<new-version>/g' index.html js/config.js
-grep -o "2026-[0-9.-]*" index.html | sort | uniq -c   # must be one line, count 26
+sed -i 's/<old-version>/<new-version>/g' index.html js/config.js
+grep -o "2026-[0-9.-]*" index.html | sort | uniq -c    # must be ONE line
+diff <(grep -oE '"\./js/[A-Za-z0-9._-]+\.js"' index.html | tr -d '"' | sed 's|\./js/||' | sort -u) \
+     <(ls js/ | sort)                                   # must print nothing
 ```
 
 Then `git commit && git push origin main`; Pages rebuilds in ~45s. Confirm the footer reads the new

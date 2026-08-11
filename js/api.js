@@ -8,6 +8,7 @@
  * "no rows with no filters" as an error, not as empty.
  */
 import { SB_URL, SB_KEY, STORAGE_PREFIX } from "./config.js";
+import { tr } from "./i18n.js";   // i18n imports only config, so this cannot cycle back here
 
 const SESSION_KEY = STORAGE_PREFIX + "session";
 const QUEUE_KEY = STORAGE_PREFIX + "queue";
@@ -34,6 +35,28 @@ export function currentActor() {
   if (!session || !session.user) return null;
   const m = session.user.user_metadata || {};
   return m.full_name || m.name || session.user.email || null;
+}
+
+/* ---------------------------------------------------------------- role
+ * Cached per session for the UI only: it decides which buttons to draw. It is NOT the access
+ * boundary - RLS is, because this app ships its publishable key and every signed-in person holds a
+ * real bearer token they could point at PostgREST themselves. Treat a stale or spoofed value here
+ * as cosmetic; the database refuses the write either way.
+ * Unknown role means full access, matching fn_is_viewer()'s "no row = ops" default, so a failed
+ * lookup never silently locks a coordinator out of their own job. */
+let role = null;
+
+export function currentRole() { return role || "ops"; }
+export function isViewer() { return role === "viewer"; }
+
+export async function loadRole() {
+  role = null;
+  if (!isSignedIn() || !session.user) return currentRole();
+  try {
+    const rows = await api(`/rest/v1/app_roles?select=role&user_id=eq.${session.user.id}`);
+    if (rows && rows.length) role = rows[0].role;
+  } catch (e) { /* leave it at ops - see above */ }
+  return currentRole();
 }
 
 function setSession(s) {
@@ -110,7 +133,20 @@ async function freshToken() {
 }
 
 /* ---------------------------------------------------------------- fetch */
+/* Two calls a viewer must still be allowed to make: the rate card is a read dressed as an RPC, and
+ * photo access logging has to record a viewer opening a photo - that is precisely the person the
+ * audit trail exists to cover. Everything else that is not a GET is refused here.
+ *
+ * This is one choke point rather than a hunt through every module for buttons to hide, so a write
+ * path added later is refused by default instead of being quietly forgotten. It is still only the
+ * second line: RLS is the boundary, and it refuses these same calls independently. */
+const VIEWER_ALLOWED = /\/rpc\/(fn_ops_rate_for|fn_ops_log_photo_access)$/;
+
 export async function api(path, opts = {}, retry = true) {
+  const method = (opts.method || "GET").toUpperCase();
+  if (method !== "GET" && method !== "HEAD" && isViewer() && !VIEWER_ALLOWED.test(path)) {
+    throw new Error(tr("role.readOnly"));
+  }
   const token = await freshToken();
   const r = await fetch(SB_URL + path, {
     ...opts,

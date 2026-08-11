@@ -5,7 +5,7 @@
  * TRANSLATED. Reverse that and writes start failing their CHECK.
  */
 
-export const BUILD = "2026-08-11.2";
+export const BUILD = "2026-08-11.5";
 
 /* Supabase project "handpicked-curtains". The publishable key is safe to ship: every table is
  * RLS-locked to the `authenticated` role and `anon` has no policy at all. The bearer token on each
@@ -142,6 +142,35 @@ export const DISPATCH_STATES = [
   { value: "qc_passed",     key: "disp.qcPass",  tone: "ok" },
   { value: "qc_failed",     key: "disp.qcFail",  tone: "bad" },
   { value: "issue",         key: "disp.issue",   tone: "bad" },
+];
+
+/* ---------------------------------------------------------------- inventory vocabularies
+ * Both are CHECK-constrained on inventory_items, so these are values, not labels - see the header.
+ * The item_code prefix for each category is decided in fn_ops_next_item_code, NOT here: the code is
+ * generated inside the same statement that inserts the row, so two tablets adding an item at the
+ * same moment cannot land on the same one. */
+export const UOM_OPTIONS = [
+  { value: "pieces", key: "inv.uomPieces" },
+  { value: "meters", key: "inv.uomMeters" },
+  { value: "sqmt",   key: "inv.uomSqmt" },
+];
+
+export const ITEM_CATEGORIES = [
+  { value: "Fixer Tools",     key: "inv.catFixerTools" },
+  { value: "Fixer Materials", key: "inv.catFixerMaterials" },
+  { value: "Tailors",         key: "inv.catTailors" },
+  { value: "Consumables",     key: "inv.catConsumables" },
+  { value: "Others",          key: "inv.catOthers" },
+];
+
+/* ---------------------------------------------------------------- roles
+ * app_roles.role. 'ops' is the access everyone had before roles existed; 'viewer' reads everything
+ * and writes nothing. The UI hides write controls for a viewer, but that is courtesy only - the
+ * real boundary is RLS, because the app ships its publishable key and a viewer holds a genuine
+ * bearer token they could point at PostgREST directly. */
+export const APP_ROLES = [
+  { value: "ops",    key: "role.ops" },
+  { value: "viewer", key: "role.viewer" },
 ];
 
 /* ---------------------------------------------------------------- adjustments

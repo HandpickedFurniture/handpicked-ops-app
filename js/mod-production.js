@@ -7,7 +7,7 @@
  * Cards on mobile, a dense table from 1024px - production coordinators work on a laptop, installers
  * on a phone.
  */
-import { apiAll, isSignedIn, submit, currentActor, queueDepth } from "./api.js";
+import { apiAll, isSignedIn, submit, currentActor, queueDepth, isViewer } from "./api.js";
 import { tr, tv } from "./i18n.js";
 import { docButton, openLatest } from "./docs.js";
 import {
@@ -252,8 +252,8 @@ function cardView(rows) {
     const card = el(`
       <div class="ocard b-${esc(r.date_bucket)}${(r.dispatch_qc_failed || r.dispatch_issue) ? " qcfail" : ""}">
         <div class="ohead">
-          <input type="checkbox" class="oselect" data-sel value="${esc(r.order_id)}"
-                 aria-label="${esc(r.order_id)}">
+          ${isViewer() ? "" : `<input type="checkbox" class="oselect" data-sel value="${esc(r.order_id)}"
+                 aria-label="${esc(r.order_id)}">`}
           <div class="ometa">
             <div class="row" style="gap:6px">
               <span class="oid">${esc(r.order_id)}</span>
@@ -278,8 +278,10 @@ function cardView(rows) {
         </div>
         <div class="dhost"></div>
       </div>`);
-    // the whole header opens the drawer, so ticking the box must not also expand the card
-    card.querySelector("input[data-sel]").addEventListener("click", (e) => e.stopPropagation());
+    // the whole header opens the drawer, so ticking the box must not also expand the card.
+    // Absent for a viewer, who has no bulk actions to select for.
+    const cardBox = card.querySelector("input[data-sel]");
+    if (cardBox) cardBox.addEventListener("click", (e) => e.stopPropagation());
     wireExpand(card, r.order_id);
     list.appendChild(card);
   });
@@ -296,16 +298,20 @@ function tableView(rows) {
   /* Percentage widths + table-layout:fixed, so the 12 columns always divide up the container rather
    * than growing past it. Coordinators read this list all day; scrolling sideways to find out
    * whether an order's fabric had landed was the single most-complained-about thing here. */
+  /* A viewer gets no select column at all: its only purpose is bulk writes. Dropping it also drops
+   * its <col>, so the percentages still add to 100 and the table still fits exactly. */
+  const pick = !isViewer();
   const table = el(`
     <table class="dense fit">
       <colgroup>
-        <col style="width:3%"><col style="width:8%"><col style="width:8%"><col style="width:5%">
+        ${pick ? '<col style="width:3%">' : ""}
+        <col style="width:${pick ? 8 : 9}%"><col style="width:8%"><col style="width:5%">
         <col style="width:12%"><col style="width:5%"><col style="width:13%"><col style="width:12%">
-        <col style="width:9%"><col style="width:8%"><col style="width:10%"><col style="width:7%">
+        <col style="width:9%"><col style="width:8%"><col style="width:10%"><col style="width:${pick ? 7 : 9}%">
       </colgroup>
       <thead><tr>
-        <th class="selcol"><input type="checkbox" data-selall
-            aria-label="${esc(tr("bulk.selectAll"))}" title="${esc(tr("bulk.selectAll"))}"></th>
+        ${pick ? `<th class="selcol"><input type="checkbox" data-selall
+            aria-label="${esc(tr("bulk.selectAll"))}" title="${esc(tr("bulk.selectAll"))}"></th>` : ""}
         <th data-sort="order_id">${esc(tr("col.order"))}</th>
         <th data-sort="installation_date">${esc(tr("col.install"))}</th>
         <th data-sort="city">${esc(tr("col.city"))}</th>
@@ -325,8 +331,8 @@ function tableView(rows) {
   rows.forEach((r) => {
     const tr1 = el(`
       <tr class="${(r.dispatch_qc_failed || r.dispatch_issue) ? "qcfail" : ""}">
-        <td class="selcol"><input type="checkbox" data-sel value="${esc(r.order_id)}"
-            aria-label="${esc(r.order_id)}"></td>
+        ${pick ? `<td class="selcol"><input type="checkbox" data-sel value="${esc(r.order_id)}"
+            aria-label="${esc(r.order_id)}"></td>` : ""}
         <td><b>${esc(r.order_id)}</b>
             <span class="chip mute">v${esc(r.version_no ?? 1)}</span>
             <div>${bucketChip(r)}</div></td>
@@ -358,7 +364,7 @@ function tableView(rows) {
     if (pdfBtn) pdfBtn.addEventListener("click", () => openLatest(r.order_id));
 
     // colspan must track the header count above
-    const host = el(`<tr class="dhostrow"><td colspan="12" style="padding:0"></td></tr>`);
+    const host = el(`<tr class="dhostrow"><td colspan="${pick ? 12 : 11}" style="padding:0"></td></tr>`);
     host.style.display = "none";
     let opened = false;
     tr1.querySelector("[data-open]").addEventListener("click", async () => {
@@ -411,7 +417,7 @@ function bulkBar(rows, selected, listEl) {
   };
 
   const update = () => {
-    root.hidden = selected.size === 0;
+    root.hidden = selected.size === 0 || isViewer();
     root.querySelector(".selcount").textContent = tr("act.selected", { n: selected.size });
 
     /* Three things pin to the top of the window: the app header, this bar, then the column titles.
