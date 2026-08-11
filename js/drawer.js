@@ -308,8 +308,11 @@ function contractorRow(contractor, otherName, label, hit, orderId, refresh) {
         ${failed && hit.qc_note ? `<div class="err" style="margin-top:4px">${esc(hit.qc_note)}</div>` : ""}
       </div>
       <div class="cell-actions row">
-        ${DISPATCH_SUBSTATES.map((s) => `<button class="btn sm ${
-          hit && hit.substate === s.value ? "primary" : ""}" data-sub="${s.value}">${esc(tr(s.key))}</button>`).join("")}
+        ${DISPATCH_SUBSTATES.map((s) => {
+          const on = hit && hit.substate === s.value;
+          return `<button class="btn sm ${on ? "primary" : ""}" data-sub="${s.value}"${
+            on ? ` title="${esc(tr("disp.toggleOff"))}"` : ""}>${esc(tr(s.key))}</button>`;
+        }).join("")}
       </div>
     </div>`);
 
@@ -322,7 +325,9 @@ function contractorRow(contractor, otherName, label, hit, orderId, refresh) {
 
   row.querySelectorAll("[data-sub]").forEach((b) => {
     b.addEventListener("click", async () => {
-      const sub = b.dataset.sub;
+      // Tapping the state it is already in takes it back to "Not sent". Marking the wrong tailor as
+      // sent used to be a one-way door - the only way back was a coordinator asking for a SQL fix.
+      const sub = hit && hit.substate === b.dataset.sub ? null : b.dataset.sub;
 
       // A failure or an issue must say what went wrong; the database rejects a blank one anyway, and
       // asking here explains why instead of surfacing a constraint error.
@@ -343,7 +348,9 @@ function contractorRow(contractor, otherName, label, hit, orderId, refresh) {
           p_other_name: otherName, p_actor: currentActor(),
           p_note: null, p_items: null, p_qc_note: qcNote,
         });
-        if (sub === "qc_passed") {
+        if (sub === null) {
+          toast(tr("disp.cleared"), "ok");
+        } else if (sub === "qc_passed") {
           toast(res && res.all_passed
             ? `${tr("disp.packedAuto")} (${res.units_marked_packed || 0})`
             : tr("disp.qcPartial"), res && res.all_passed ? "ok" : "");

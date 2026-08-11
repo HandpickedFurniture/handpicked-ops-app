@@ -5,7 +5,7 @@
  * TRANSLATED. Reverse that and writes start failing their CHECK.
  */
 
-export const BUILD = "2026-08-09.4";
+export const BUILD = "2026-08-11.2";
 
 /* Supabase project "handpicked-curtains". The publishable key is safe to ship: every table is
  * RLS-locked to the `authenticated` role and `anon` has no policy at all. The bearer token on each
@@ -118,6 +118,30 @@ export const PRODUCTION_STATES = [
   // ranked above 'packed' in the view: panels that failed QC are not finished, however far prep got
   { value: "qc_failed",       key: "ps.qcFailed",  tone: "bad" },
   { value: "cancelled",       key: "ps.cancelled", tone: "bad" },
+];
+
+/* v_ops_order_roster.fabric_recv_state - how much of an order's FABRIC has landed, ignoring
+ * materials. Derived in the view from recv_fab_done / recv_fab_total, so the filter runs in Postgres
+ * rather than over a page of rows. */
+export const FABRIC_RECV_STATES = [
+  { value: "not_received", key: "fs.none",    tone: "mute" },
+  { value: "partial",      key: "fs.partial", tone: "warn" },
+  { value: "received",     key: "fs.full",    tone: "ok" },
+];
+
+/* v_ops_order_roster.dispatch_state - one outwork state for a whole order, so the Ext Tailor filter
+ * is a single equality rather than a search through the dispatch array. Derived in the view: an
+ * issue or a failed check wins outright, otherwise it reports the LEAST advanced tailor, because an
+ * order split between two of them is only as far along as the one still holding panels.
+ * These are DISPATCH_SUBSTATES plus not_sent, which is the absence of any order_dispatch row. */
+export const DISPATCH_STATES = [
+  { value: "not_sent",      key: "disp.notSent", tone: "mute" },
+  { value: "planned",       key: "disp.planned", tone: "info" },
+  { value: "sent",          key: "disp.sent",    tone: "warn" },
+  { value: "received_back", key: "disp.back",    tone: "info" },
+  { value: "qc_passed",     key: "disp.qcPass",  tone: "ok" },
+  { value: "qc_failed",     key: "disp.qcFail",  tone: "bad" },
+  { value: "issue",         key: "disp.issue",   tone: "bad" },
 ];
 
 /* ---------------------------------------------------------------- adjustments

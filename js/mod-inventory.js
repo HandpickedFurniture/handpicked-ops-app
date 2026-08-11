@@ -15,7 +15,9 @@ import { MOVE_REASONS, LOCATION_KINDS } from "./config.js";
 import {
   $, esc, el, chip, num, fmtDate, fmtDateTime, toast, loading, modal, selectHtml, downloadCsv,
 } from "./ui.js";
-import { photoStrip, locationSelect } from "./photos.js";
+import {
+  photoStrip, locationSelect, newestPhotoByContext, signedUrlMap, uploadPhoto, viewUrl, openLightbox,
+} from "./photos.js";
 import { wireNewLocation } from "./mod-transfer.js";
 import { syncBar } from "./sync.js";
 
@@ -82,15 +84,71 @@ export async function render(mount, state) {
   const low = rows.filter((r) => r.needs_reorder).length;
   if (low) box.appendChild(el(`<div class="banner warn">${esc(tr("inv.needsReorder"))}: ${low}</div>`));
 
+  /* The picture for each item, for the whole page in two requests rather than two per row: one to
+   * find the newest photo per item, one to sign them all. A stores clerk identifies a bracket or a
+   * finial by sight far quicker than by code, which is the whole point of showing these here. */
+  const withPhotos = rows.filter((r) => r.photo_count);
+  const newest = await newestPhotoByContext("inventory", withPhotos.map((r) => r.id));
+  const urls = await signedUrlMap(Array.from(newest.values()));
+
   const list = el(`<div class="olist"></div>`);
-  rows.forEach((r) => list.appendChild(itemCard(r, reload)));
+  rows.forEach((r) => {
+    const photo = newest.get(r.id) || null;
+    list.appendChild(itemCard(r, reload, photo, photo ? urls.get(photo.id) : null));
+  });
   box.appendChild(list);
 }
 
-function itemCard(r, reload) {
+/* The picture tile on an item row. With a photo it opens full size; without one it IS the button
+ * that adds the first picture, so an item never sits there with no obvious way to give it a face. */
+function itemThumb(r, photo, url, reload) {
+  const tile = el(`
+    <label class="itemthumb${photo ? "" : " empty"}" title="${esc(photo ? tr("photo.open") : tr("photo.add"))}">
+      ${url ? `<img src="${esc(url)}" alt="${esc(r.name)}" loading="lazy">`
+            : `<span class="ph">${photo ? "🖼️" : "📷"}</span>`}
+      <input type="file" accept="image/*" capture="environment" hidden>
+      <span class="badge">＋</span>
+    </label>`);
+
+  const input = tile.querySelector("input");
+  const img = tile.querySelector("img");
+  if (img) img.addEventListener("error", () => { img.remove(); tile.classList.add("empty"); });
+
+  const upload = async (file) => {
+    if (!file) return;
+    tile.classList.add("busy");
+    try {
+      await uploadPhoto(file, {
+        context: "inventory", context_id: r.id,
+        context_label: `${r.item_code} — ${r.name}`,
+        location_code: r.location_code || null,
+      });
+      toast(tr("photo.saved", { n: 1 }), "ok");
+      reload();
+    } catch (e) {
+      toast(e.message || String(e), "bad");
+      tile.classList.remove("busy");
+    }
+  };
+  input.addEventListener("change", () => { const f = input.files && input.files[0]; input.value = ""; upload(f); });
+
+  // the whole card header opens the panel - the tile has to keep its clicks to itself
+  tile.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    // the little + always adds; the tile body opens the picture once there is one
+    if (!photo || e.target.closest(".badge")) return;      // fall through to the file input
+    e.preventDefault();
+    try { openLightbox(await viewUrl(photo), photo); }
+    catch (err) { toast(err.message, "bad"); }
+  });
+  return tile;
+}
+
+function itemCard(r, reload, photo, url) {
   const c = el(`
     <div class="ocard ${r.needs_reorder ? "b-overdue" : ""}">
       <div class="ohead">
+        <span data-thumbslot></span>
         <div class="ometa">
           <div class="row" style="gap:6px">
             <span class="oid">${esc(r.item_code)}</span>
@@ -108,6 +166,8 @@ function itemCard(r, reload) {
       </div>
       <div class="dhost"></div>
     </div>`);
+
+  c.querySelector("[data-thumbslot]").replaceWith(itemThumb(r, photo, url, reload));
 
   const head = c.querySelector(".ohead");
   const host = c.querySelector(".dhost");

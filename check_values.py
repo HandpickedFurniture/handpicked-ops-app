@@ -33,6 +33,12 @@ EXPECTED = {
     # likewise production_state, derived in the same view
     "PRODUCTION_STATES": {"awaiting_fabric", "ordered", "fabric_in", "in_production",
                           "packed", "qc_failed", "cancelled"},
+    # also derived in v_ops_order_roster, and filtered on by equality - a value that drifts out of
+    # step with the view's CASE silently returns nothing rather than erroring
+    "FABRIC_RECV_STATES": {"not_received", "partial", "received"},
+    # DISPATCH_SUBSTATES plus not_sent, which is the absence of any order_dispatch row
+    "DISPATCH_STATES": {"not_sent", "planned", "sent", "received_back",
+                        "qc_passed", "qc_failed", "issue"},
     "TRANSFER_STATUSES": {"in_progress", "ready", "returned", "partially_returned",
                           "extra_materials", "cancelled", "issue"},
     "MOVE_REASONS": {"purchase", "consumption", "adjustment", "return",

@@ -144,12 +144,53 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--brand);outline-o
 .bar.part > i{background:var(--accent);}
 
 table.dense{width:100%;border-collapse:collapse;font-size:13px;}
-table.dense th{position:sticky;top:0;background:var(--info-bg);text-align:left;padding:8px 9px;
+/* --stickytop is set by the module when a bar pins above the table (see bulkBar); 0 everywhere else */
+table.dense th{position:sticky;top:var(--stickytop,0px);background:var(--info-bg);text-align:left;padding:8px 9px;
   font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--brand);
   border-bottom:2px solid var(--line);cursor:pointer;white-space:nowrap;z-index:5;}
 table.dense td{padding:8px 9px;border-bottom:1px solid var(--line);vertical-align:top;}
 table.dense tr:hover td{background:#fafcfd;}
 .scrollx{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+
+/* ---------------------------------------------------------------- fit-to-width table
+   Production's list divides the container up by percentage instead of sizing to its content, so
+   every column is on screen at once. Content wraps inside its cell rather than widening it. */
+table.dense.fit{table-layout:fixed;width:100%;}
+table.dense.fit th,table.dense.fit td{padding:7px 6px;white-space:normal;overflow-wrap:anywhere;}
+table.dense.fit th{font-size:10px;letter-spacing:0;}
+/* chips are nowrap everywhere else; in here a long one has to be able to break, or its intrinsic
+   width pushes past the column and bleeds over the neighbouring cell */
+table.dense.fit .chip{max-width:100%;white-space:normal;font-size:11px;padding:2px 7px;}
+table.dense.fit th.selcol,table.dense.fit td.selcol{padding-left:4px;padding-right:2px;}
+/* the two receiving bars share one column, each still labelled - never colour alone */
+table.dense.fit .recvline{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);}
+table.dense.fit .recvline + .recvline{margin-top:3px;}
+table.dense.fit .bar{width:30px;}
+table.dense.fit .progress{font-size:11px;gap:3px;}
+/* stacked via block children, NOT display:flex on the td - that drops it out of the table
+   formatting context and the colgroup widths stop applying */
+table.dense.fit .actcell .btn{display:block;width:100%;text-align:center;}
+table.dense.fit .actcell .btn + .btn{margin-top:4px;}
+table.dense.fit .dispcell{font-size:11px;}
+
+/* ---------------------------------------------------------------- bulk selection */
+th.selcol,td.selcol{width:34px;cursor:default;padding-left:11px;}
+.selcol input,.oselect{width:18px;height:18px;accent-color:var(--brand);cursor:pointer;}
+.oselect{flex:none;margin-top:3px;}
+table.dense tr.selected td{background:var(--info-bg);}
+.ocard.selected{box-shadow:inset 0 0 0 2px var(--brand);}
+/* sticky so the actions stay reachable after scrolling a long list to tick the last order */
+.selbar{position:sticky;top:0;z-index:20;display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+  background:var(--brand);color:#fff;border-radius:var(--radius);padding:9px 12px;margin-bottom:10px;}
+/* display:flex above beats the UA's [hidden]{display:none}, so restate it - without this the bar
+   sits there reading "0 selected" with nothing ticked */
+.selbar[hidden]{display:none;}
+.selbar .selcount{margin-right:auto;font-size:14px;}
+/* the bar is brand-coloured, so .btn.primary's own white text would land on white - restate the
+   colour here rather than only the background */
+.selbar .btn{background:#fff;border-color:#fff;color:var(--brand);}
+.selbar .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;}
+.selbar .btn.ghost{background:transparent;border-color:rgba(255,255,255,.6);color:#fff;}
 
 /* ---------------------------------------------------------------- drawer */
 .drawer{border-top:1px solid var(--line);background:#fbfdfe;padding:12px 13px;}
@@ -235,9 +276,26 @@ table.dense tr:hover td{background:#fafcfd;}
 .photostrip label.btn{display:inline-flex;align-items:center;gap:6px;cursor:pointer;}
 .thumbs{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;}
 .thumb{width:52px;height:52px;border:1.5px solid var(--line);border-radius:9px;background:var(--mute-bg);
-  font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;}
+  font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;
+  overflow:hidden;}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block;}
 .thumb:hover{border-color:var(--brand);}
 .thumb.gone{opacity:.45;border-style:dashed;}
+
+/* ---------------------------------------------------------------- inventory item picture
+   The tile on each stock row: the picture when there is one, the way to add one when there is not. */
+.itemthumb{position:relative;flex:none;width:64px;height:64px;border-radius:10px;overflow:hidden;
+  border:1.5px solid var(--line);background:var(--mute-bg);cursor:pointer;display:flex;
+  align-items:center;justify-content:center;}
+.itemthumb img{width:100%;height:100%;object-fit:cover;display:block;}
+.itemthumb .ph{font-size:24px;color:var(--muted);}
+.itemthumb.empty{border-style:dashed;}
+.itemthumb:hover{border-color:var(--brand);}
+.itemthumb.busy{opacity:.5;pointer-events:none;}
+.itemthumb .badge{position:absolute;right:2px;bottom:2px;width:19px;height:19px;border-radius:50%;
+  background:var(--brand);color:#fff;font-size:12px;font-weight:700;line-height:19px;
+  text-align:center;border:1.5px solid var(--card);}
+body.big .itemthumb{width:84px;height:84px;}
 .lightbox img{width:100%;height:auto;border-radius:11px;background:var(--mute-bg);}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;}
 

@@ -14,8 +14,33 @@ Three modules over the `handpicked-curtains` Supabase project (`jrevqijbzzwdcwxc
 | Theme | Light only — `Context_overview.docx` says avoid dark mode |
 
 > **ES modules do not work over `file://`.** Open the preview URL; double-clicking `index.html`
-> gives a blank page. Pages caches assets for 10 minutes — bump `BUILD` in `js/config.js` and the
-> `?v=` query on the two tags in `index.html` when you deploy, then hard-refresh.
+> gives a blank page.
+
+### Deploying
+
+Pages caches assets for 10 minutes, and `index.html` carries an **import map** that pins every
+module to a versioned URL. Bump the version in all three places or the deploy half-lands:
+
+| Where | Count |
+|---|---|
+| `index.html` — 24 import-map entries, the CSS `<link>`, and the `<script type="module" src>` | 26 |
+| `BUILD` in `js/config.js` — the footer label, and how you confirm what is live | 1 |
+
+```bash
+sed -i 's/2026-08-11\.2/<new-version>/g' index.html js/config.js
+grep -o "2026-[0-9.-]*" index.html | sort | uniq -c   # must be one line, count 26
+```
+
+Then `git commit && git push origin main`; Pages rebuilds in ~45s. Confirm the footer reads the new
+build. A plain reload can still serve the cached `index.html` — hard-refresh, or open the site with a
+throwaway document query (`…/?x=1`), which the hash router ignores.
+
+**Why the import map.** A `?v=` on `app.js` alone versioned exactly one file: every
+`import "./ui.js"` inside it resolved to an unversioned URL and came straight back out of cache, so
+a redeploy served new HTML around old modules. The map fixes that for imports — and the `?v=` on the
+`<script src>` is still needed, because a map governs module *specifiers*, not a script element's
+`src`. **When you add or rename a file in `js/`, add it to the map** or it will silently never
+update.
 
 ---
 

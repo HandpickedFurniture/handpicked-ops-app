@@ -22,6 +22,10 @@ import { micField, wireMics } from "./voice.js";
 import { photoStrip } from "./photos.js";
 import { syncBar } from "./sync.js";
 
+/* v_ops_status_board carries production_state but not the roster's fabric/tailor columns, so this
+ * module opts into that one filter only - see OPTIONAL in filters.js. */
+const CAPS = { prodstate: true };
+
 const BOARD_COLS = [
   "order_id", "customer_name", "city", "city_source", "installation_date", "date_bucket",
   "sheet_status", "version_no", "window_count", "status", "ready", "comment",
@@ -75,14 +79,14 @@ export async function render(mount, state, setFilters) {
 
   const bar = $("#fbar", mount);
   const box = $("#board", mount);
-  const paintBar = () => renderFilterBar(bar, state, OPTIONS, setFilters);
+  const paintBar = () => renderFilterBar(bar, state, OPTIONS, setFilters, CAPS);
   paintBar();
 
   loading(true, tr("t.loading"));
   let rows = [];
   try {
     rows = await apiAll(
-      `/rest/v1/v_ops_status_board?select=${BOARD_COLS}&order=installation_date.asc.nullslast${toQuery(state.filters)}`,
+      `/rest/v1/v_ops_status_board?select=${BOARD_COLS}&order=installation_date.asc.nullslast${toQuery(state.filters, CAPS)}`,
       200);
   } catch (e) {
     loading(false);
@@ -96,7 +100,7 @@ export async function render(mount, state, setFilters) {
 
   if (!rows.length) {
     box.innerHTML = `<div class="card"><span class="muted">${
-      esc(activeCount(state.filters) ? tr("t.empty") : tr("t.emptyUnfiltered"))}</span></div>`;
+      esc(activeCount(state.filters, CAPS) ? tr("t.empty") : tr("t.emptyUnfiltered"))}</span></div>`;
     return;
   }
 

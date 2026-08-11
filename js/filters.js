@@ -7,13 +7,21 @@
  * the cheapest possible "share this list".
  */
 import { tr } from "./i18n.js";
-import { DATE_BUCKETS } from "./config.js";
+import { DATE_BUCKETS, FABRIC_RECV_STATES, DISPATCH_STATES, PRODUCTION_STATES } from "./config.js";
 import { $, esc, el, selectHtml } from "./ui.js";
 
 export const FIELDS = [
   "order", "from", "to", "sheet", "city", "customer",
-  "stitch", "commercial", "wref", "comment", "fab1", "fab2", "bucket", "q", "alt",
+  "stitch", "commercial", "wref", "comment", "fab1", "fab2", "bucket", "q", "alt", "fabstatus",
+  "tailor", "prodstate",
 ];
+
+/* Fields whose column only exists on SOME of the views this bar filters. The caller opts in; a
+ * module that does not gets neither the control nor the predicate, rather than a 400 on a column
+ * the view has never heard of.
+ *
+ * fabstatus and tailor are roster-only; prodstate is on the roster AND the status board. */
+const OPTIONAL = ["fabstatus", "tailor", "prodstate"];
 
 export function readHash() {
   const raw = location.hash.replace(/^#\/?/, "");
@@ -32,12 +40,12 @@ export function writeHash(route, filters, extra) {
   location.hash = "/" + route + (qs ? "?" + qs : "");
 }
 
-export function activeCount(f) {
-  return FIELDS.filter((k) => f[k]).length;
+export function activeCount(f, caps) {
+  return FIELDS.filter((k) => f[k] && (!OPTIONAL.includes(k) || (caps && caps[k]))).length;
 }
 
 /* Build the PostgREST query string fragment for the current filters. */
-export function toQuery(f) {
+export function toQuery(f, caps) {
   const q = [];
   const ilike = (col, v) => `${col}=ilike.*${encodeURIComponent(String(v).replace(/[*,]/g, " ").trim())}*`;
   const contains = (col, v) => `${col}=cs.{${encodeURIComponent('"' + String(v).replace(/"/g, '\\"') + '"')}}`;
@@ -50,6 +58,10 @@ export function toQuery(f) {
   // `alteration` is exposed on the roster AND the status board, so this one predicate works in
   // every module rather than needing a per-module special case
   if (f.alt)        q.push(`alteration=is.${f.alt === "yes"}`);
+  // see OPTIONAL - each of these only exists on some of the views this bar drives
+  if (f.fabstatus && caps && caps.fabstatus) q.push(`fabric_recv_state=eq.${encodeURIComponent(f.fabstatus)}`);
+  if (f.tailor    && caps && caps.tailor)    q.push(`dispatch_state=eq.${encodeURIComponent(f.tailor)}`);
+  if (f.prodstate && caps && caps.prodstate) q.push(`production_state=eq.${encodeURIComponent(f.prodstate)}`);
 
   // 492 of 641 orders have no city at all, so "unknown" has to be selectable rather than
   // silently excluded
@@ -88,9 +100,9 @@ export function deriveOptions(rows) {
   };
 }
 
-export function renderFilterBar(mount, state, opts, onChange) {
+export function renderFilterBar(mount, state, opts, onChange, caps) {
   const f = state.filters;
-  const n = activeCount(f);
+  const n = activeCount(f, caps);
   const collapsed = n === 0;
 
   const sel = (name, list, placeholder) =>
@@ -134,6 +146,18 @@ export function renderFilterBar(mount, state, opts, onChange) {
                ${selectHtml("alt", [{ value: "yes", label: tr("f.alterationYes") },
                                     { value: "no",  label: tr("f.alterationNo") }],
                             f.alt || "", tr("f.any"))}</div>
+          ${caps && caps.fabstatus ? `<div><label class="f">${esc(tr("f.fabricStatus"))}</label>
+               ${selectHtml("fabstatus",
+                   FABRIC_RECV_STATES.map((s) => ({ value: s.value, label: tr(s.key) })),
+                   f.fabstatus || "", tr("f.any"))}</div>` : ""}
+          ${caps && caps.tailor ? `<div><label class="f">${esc(tr("disp.title"))}</label>
+               ${selectHtml("tailor",
+                   DISPATCH_STATES.map((s) => ({ value: s.value, label: tr(s.key) })),
+                   f.tailor || "", tr("f.any"))}</div>` : ""}
+          ${caps && caps.prodstate ? `<div><label class="f">${esc(tr("f.prodStatus"))}</label>
+               ${selectHtml("prodstate",
+                   PRODUCTION_STATES.map((s) => ({ value: s.value, label: tr(s.key) })),
+                   f.prodstate || "", tr("f.any"))}</div>` : ""}
         </div>
         <div class="row" style="justify-content:flex-end">
           <button class="btn ghost" data-clear>${esc(tr("f.clear"))}</button>

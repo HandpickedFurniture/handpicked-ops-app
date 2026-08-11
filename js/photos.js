@@ -165,7 +165,8 @@ async function putGcs(path, blob) {
 }
 
 /* ---------------------------------------------------------------- viewing */
-/* Minting a signed URL is the moment a person actually sees the image, so it is logged. */
+/* Minting a signed URL is the moment a person actually sees the image, so it is logged.
+ * Pass purpose === null to skip the log - only for callers that log the batch themselves. */
 export async function viewUrl(photo, purpose) {
   let url;
   if (photo.storage_backend === "gcs") {
@@ -193,10 +194,97 @@ export async function viewUrl(photo, purpose) {
     // signedURL comes back relative, e.g. "/object/sign/ops-photos/..."
     url = SB_URL + "/storage/v1" + (j.signedURL.startsWith("/") ? "" : "/") + j.signedURL;
   }
-  rpc("fn_ops_log_photo_access", {
-    p_ids: [photo.id], p_actor: currentActor(), p_purpose: purpose || "view",
-  }).catch(() => {});
+  if (purpose !== null) {
+    rpc("fn_ops_log_photo_access", {
+      p_ids: [photo.id], p_actor: currentActor(), p_purpose: purpose || "view",
+    }).catch(() => {});
+  }
   return url;
+}
+
+/* ---------------------------------------------------------------- bulk signing
+ * A list of thumbnails needs a signed URL per image, and doing that one request at a time turns a
+ * screen of 40 items into 40 round trips. Supabase signs a whole array of paths in one call.
+ *
+ * These ARE the real bytes (there is no separate small rendition), so showing one is a view and gets
+ * logged - but deduped per session with purpose 'thumbnail'. Without the dedupe, a list that
+ * repaints on every save would bury the deliberate "someone opened this photo" rows in the audit
+ * trail, which is the only reason that log exists.
+ */
+const thumbLogged = new Set();
+
+function logThumbnails(photos) {
+  const ids = photos.map((p) => p.id).filter((id) => id && !thumbLogged.has(id));
+  if (!ids.length) return;
+  ids.forEach((id) => thumbLogged.add(id));
+  rpc("fn_ops_log_photo_access", {
+    p_ids: ids, p_actor: currentActor(), p_purpose: "thumbnail",
+  }).catch(() => {});
+}
+
+/* photos -> Map(photo.id -> signed url). Missing entries just mean that image will not render;
+ * a thumbnail is decoration and must never break the list it sits in. */
+export async function signedUrlMap(photos) {
+  const out = new Map();
+  const list = (photos || []).filter((p) => p && p.object_path);
+  if (!list.length) return out;
+
+  const byBucket = new Map();
+  list.filter((p) => p.storage_backend !== "gcs").forEach((p) => {
+    const b = p.bucket || PHOTO_BUCKET;
+    if (!byBucket.has(b)) byBucket.set(b, []);
+    byBucket.get(b).push(p);
+  });
+
+  for (const [bucket, group] of byBucket) {
+    try {
+      const s = getSession();
+      if (!s || !s.access_token) break;
+      const r = await fetch(`${SB_URL}/storage/v1/object/sign/${bucket}`, {
+        method: "POST",
+        headers: {
+          apikey: SB_KEY, Authorization: "Bearer " + s.access_token,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ expiresIn: 600, paths: group.map((p) => p.object_path) }),
+      });
+      const j = await r.json().catch(() => null);
+      if (!r.ok || !Array.isArray(j)) continue;
+      j.forEach((row, i) => {
+        const signed = row && (row.signedURL || row.signedUrl);
+        if (!signed) return;
+        // match on path where the API echoes it, fall back to position
+        const hit = (row.path && group.find((p) => p.object_path === row.path)) || group[i];
+        if (hit) out.set(hit.id, SB_URL + "/storage/v1" + (signed.startsWith("/") ? "" : "/") + signed);
+      });
+    } catch (e) { /* leave these unsigned */ }
+  }
+
+  // no bulk equivalent on the Google side; it is one call each, and logging is handled below
+  for (const p of list.filter((x) => x.storage_backend === "gcs")) {
+    try { out.set(p.id, await viewUrl(p, null)); } catch (e) { /* skip */ }
+  }
+
+  logThumbnails(list.filter((p) => out.has(p.id)));
+  return out;
+}
+
+/* The newest surviving photo per context_id - what a list shows as "the picture of this thing". */
+export async function newestPhotoByContext(context, ids) {
+  const map = new Map();
+  const wanted = (ids || []).filter((x) => x !== null && x !== undefined);
+  if (!wanted.length) return map;
+  let rows = [];
+  try {
+    rows = await api("/rest/v1/order_photos"
+      + "?select=id,context_id,object_path,bucket,storage_backend,caption,location_code,uploaded_by,uploaded_at"
+      + `&context=eq.${encodeURIComponent(context)}`
+      + `&context_id=in.(${wanted.join(",")})`
+      + "&deleted_at=is.null&order=uploaded_at.desc");
+  } catch (e) { return map; }
+  // ordered newest first, so the first row seen for an id is the one to keep
+  rows.forEach((p) => { if (!map.has(p.context_id)) map.set(p.context_id, p); });
+  return map;
 }
 
 /* ---------------------------------------------------------------- locations */
@@ -261,7 +349,9 @@ export function photoStrip(meta, opts = {}) {
     try { rows = await api(q); } catch (e) { return; }
     countEl.textContent = rows.length ? tr("photo.count", { n: rows.length }) : "";
     thumbs.innerHTML = "";
-    rows.forEach((p) => thumbs.appendChild(thumb(p)));
+    // one signing call for the whole strip, not one per thumbnail
+    const urls = await signedUrlMap(rows);
+    rows.forEach((p) => thumbs.appendChild(thumb(p, urls.get(p.id))));
   }
 
   input.addEventListener("change", async () => {
@@ -286,8 +376,16 @@ export function photoStrip(meta, opts = {}) {
   return box;
 }
 
-function thumb(p) {
-  const t = el(`<button class="thumb" title="${esc(p.caption || p.object_path)}">🖼️</button>`);
+/* Shows the picture itself. The emoji this used to render told you a photo existed but not what was
+ * in it, so every check meant opening each one in turn. Falls back to the emoji when signing failed
+ * or the image will not load. */
+function thumb(p, url) {
+  const t = el(`<button class="thumb" title="${esc(p.caption || p.object_path)}">${
+    url ? `<img src="${esc(url)}" alt="${esc(p.caption || "")}" loading="lazy">` : "🖼️"}</button>`);
+  const img = t.querySelector("img");
+  if (img) img.addEventListener("error", () => { t.textContent = "🖼️"; });
+  // always re-sign on open rather than reusing the thumbnail's URL: that one expires in 10 minutes,
+  // and opening a photo deliberately is the thing the access log is actually for
   t.addEventListener("click", async () => {
     try { openLightbox(await viewUrl(p), p); }
     catch (e) { toast(e.message, "bad"); }
