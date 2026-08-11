@@ -182,6 +182,21 @@ export async function submit(fn, args) {
   return flush();
 }
 
+/* Take one item out of the queue as it stands NOW, rather than out of a snapshot.
+ *
+ * submit() appends straight to localStorage and then calls flush(), which returns immediately while
+ * an earlier flush is still running - and startQueueWatcher() means one can be in flight at any
+ * moment. Writing a snapshot back after an await therefore erases everything queued during that
+ * await. With bulk actions that is not one lost tap but a whole batch, and runBulk() would then
+ * report success, because queueDepth() reads zero.
+ *
+ * Removing by id rather than by position keeps this correct however the queue moved underneath. */
+function dropQueued(id) {
+  const cur = readQueue(QUEUE_KEY).filter((x) => x.id !== id);
+  writeQueue(QUEUE_KEY, cur);
+  return cur;
+}
+
 let flushing = false;
 export async function flush() {
   if (flushing) return;
@@ -199,13 +214,13 @@ export async function flush() {
           const failed = readQueue(FAILED_KEY);
           failed.push({ ...item, error: e.message });
           writeQueue(FAILED_KEY, failed);
-          q.shift(); writeQueue(QUEUE_KEY, q);
+          q = dropQueued(item.id);
           continue;
         }
         break;                                              // network/5xx - try again later
       }
-      q.shift();
-      writeQueue(QUEUE_KEY, q);
+      // picks up anything queued while that request was in flight, and drains it too
+      q = dropQueued(item.id);
     }
   } finally { flushing = false; }
 }
