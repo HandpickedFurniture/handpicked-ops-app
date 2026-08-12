@@ -23,7 +23,8 @@ EXPECTED = {
     # the app must write ONLY these six.
     "PREP_STAGES": {"cutting", "hemming", "ironing", "marking_measurement", "taping", "folding_packing"},
     "DISPATCH_CONTRACTORS": {"farooq", "jamal", "shahzad", "other"},
-    "DISPATCH_SUBSTATES": {"planned", "sent", "received_back", "qc_passed", "qc_failed", "issue"},
+    "DISPATCH_SUBSTATES": {"planned", "sent", "received_back", "qc_passed", "paid",
+                           "qc_failed", "issue"},
     "CHARGE_TYPES": {"alteration", "pickup", "drop_off", "moving", "removal", "extra_track",
                      "scaffolding", "additional_visit", "tieback", "other"},
     "ADJ_STATUSES": {"new", "reviewed", "invoiced", "dropped"},
@@ -38,7 +39,7 @@ EXPECTED = {
     "FABRIC_RECV_STATES": {"not_received", "partial", "received"},
     # DISPATCH_SUBSTATES plus not_sent, which is the absence of any order_dispatch row
     "DISPATCH_STATES": {"not_sent", "planned", "sent", "received_back",
-                        "qc_passed", "qc_failed", "issue"},
+                        "qc_passed", "paid", "qc_failed", "issue"},
     "TRANSFER_STATUSES": {"in_progress", "ready", "returned", "partially_returned",
                           "extra_materials", "cancelled", "issue"},
     "MOVE_REASONS": {"purchase", "consumption", "adjustment", "return",

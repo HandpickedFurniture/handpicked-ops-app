@@ -5,7 +5,7 @@
  * TRANSLATED. Reverse that and writes start failing their CHECK.
  */
 
-export const BUILD = "2026-08-12.3";
+export const BUILD = "2026-08-12.4";
 
 /* Supabase project "handpicked-curtains". The publishable key is safe to ship: every table is
  * RLS-locked to the `authenticated` role and `anon` has no policy at all. The bearer token on each
@@ -65,14 +65,20 @@ export const DISPATCH_CONTRACTORS = [
   { value: "other",   key: "disp.other" },
 ];
 
-/* planned -> sent -> received_back -> qc_passed | qc_failed.
+/* planned -> sent -> received_back -> qc_passed -> paid, with qc_failed | issue off to the side.
  * Passing QC is what closes the production loop: fn_ops_set_dispatch then marks the order's panels
- * "Completed - folded & packed", but only once EVERY contractor on the order has passed. */
+ * "Completed - folded & packed", but only once EVERY contractor on the order has passed.
+ *
+ * `paid` is a rung ABOVE qc_passed, not a state beside it: settling with the last tailor still
+ * closes production. order_dispatch carries a payment axis of its own (payment_status / paid_at)
+ * that the Dragon Mart report reads, and fn_ops_set_dispatch keeps the two in step in both
+ * directions - moving a row back off paid returns it to unpaid. */
 export const DISPATCH_SUBSTATES = [
   { value: "planned",       key: "disp.planned",  tone: "info" },
   { value: "sent",          key: "disp.sent",     tone: "warn" },
   { value: "received_back", key: "disp.back",     tone: "info" },
   { value: "qc_passed",     key: "disp.qcPass",   tone: "ok" },
+  { value: "paid",          key: "disp.paid",     tone: "ok" },
   { value: "qc_failed",     key: "disp.qcFail",   tone: "bad" },
   // work stalled at the tailor - distinct from qc_failed, which is work that came back and failed
   { value: "issue",         key: "disp.issue",    tone: "bad" },
@@ -133,13 +139,17 @@ export const FABRIC_RECV_STATES = [
  * is a single equality rather than a search through the dispatch array. Derived in the view: an
  * issue or a failed check wins outright, otherwise it reports the LEAST advanced tailor, because an
  * order split between two of them is only as far along as the one still holding panels.
- * These are DISPATCH_SUBSTATES plus not_sent, which is the absence of any order_dispatch row. */
+ * These are DISPATCH_SUBSTATES plus not_sent, which is the absence of any order_dispatch row.
+ *
+ * ORDER MATTERS BEYOND THE DROPDOWN: mod-production sorts its Tailors column by an order's position
+ * in this list, so it reads least-advanced first with the two problem states last. */
 export const DISPATCH_STATES = [
   { value: "not_sent",      key: "disp.notSent", tone: "mute" },
   { value: "planned",       key: "disp.planned", tone: "info" },
   { value: "sent",          key: "disp.sent",    tone: "warn" },
   { value: "received_back", key: "disp.back",    tone: "info" },
   { value: "qc_passed",     key: "disp.qcPass",  tone: "ok" },
+  { value: "paid",          key: "disp.paid",    tone: "ok" },
   { value: "qc_failed",     key: "disp.qcFail",  tone: "bad" },
   { value: "issue",         key: "disp.issue",   tone: "bad" },
 ];

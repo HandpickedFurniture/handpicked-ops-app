@@ -11,8 +11,8 @@ import { apiAll, isSignedIn, submit, currentActor, queueDepth, isViewer } from "
 import { tr, tv } from "./i18n.js";
 import { docButton, openLatest } from "./docs.js";
 import {
-  SPECIAL_COLS, DATE_BUCKETS, PAGE_SIZE, bucketOf, DISPATCH_SUBSTATES, PRODUCTION_STATES,
-  PREP_STAGES, DISPATCH_CONTRACTORS,
+  SPECIAL_COLS, DATE_BUCKETS, PAGE_SIZE, bucketOf, DISPATCH_SUBSTATES, DISPATCH_STATES,
+  PRODUCTION_STATES, PREP_STAGES, DISPATCH_CONTRACTORS,
 } from "./config.js";
 import { syncBar } from "./sync.js";
 import {
@@ -39,12 +39,18 @@ const ROSTER_COLS = [
   "recv_fab_total", "recv_fab_done", "recv_mat_total", "recv_mat_done",
   "prep_max_rank", "owl_curtains", "owl_blinds", "owl_total", "issue_flag",
   "stitching_types", "commercial_names", "window_refs", "fabric_1_codes", "fabric_2_codes",
-  "fabric_recv_state",
+  "fabric_recv_state", "dispatch_state",
   ...SPECIAL_COLS.map((s) => s.col),
 ].join(",");
 
-let OPTIONS = null;      // filter dropdown values, derived once from the unfiltered roster
-let SORT = "installation_date.asc.nullslast";
+/* The order rows are FETCHED in. Not the order they are shown in - that is SORT below - but a
+ * deterministic one, because apiAll pages the roster with Range headers and two rows sharing an
+ * installation date could otherwise swap places between page 1 and page 2, arriving twice or not at
+ * all. order_id is the tiebreak that makes the paging repeatable. */
+const FETCH_ORDER = "installation_date.asc.nullslast,order_id.asc";
+
+let OPTIONS = null;      // filter checkbox values, derived once from the unfiltered roster
+let SORT = { col: "installation_date", dir: "asc" };
 let DOCS = {};           // order_id -> { has_pdf, doc_count } for the PDF column
 
 export async function render(mount, state, setFilters) {
@@ -71,7 +77,7 @@ export async function render(mount, state, setFilters) {
   let rows = [];
   try {
     rows = await apiAll(
-      `/rest/v1/v_ops_order_roster?select=${ROSTER_COLS}&order=${SORT}${toQuery(state.filters, CAPS)}`,
+      `/rest/v1/v_ops_order_roster?select=${ROSTER_COLS}&order=${FETCH_ORDER}${toQuery(state.filters, CAPS)}`,
       PAGE_SIZE);
   } catch (e) {
     loading(false);
@@ -132,8 +138,9 @@ export async function render(mount, state, setFilters) {
   box.appendChild(bar2);
 
   const isWide = window.matchMedia("(min-width:1024px)").matches;
-  const listEl = isWide ? tableView(rows) : cardView(rows);
   const selected = new Set();
+  // the cards have no column titles to click, but they still honour whatever sort was last chosen
+  const listEl = isWide ? tableView(rows, selected) : cardView(sortRows(rows));
   const bulk = bulkBar(rows, selected, listEl);
   box.appendChild(bulk.root);
   box.appendChild(listEl);
@@ -171,6 +178,70 @@ export async function render(mount, state, setFilters) {
   });
 }
 
+/* ---------------------------------------------------------------- sorting
+ * Clicking a column title sorts by it; clicking it again reverses. Every column that carries data
+ * sorts, including the three assembled here out of several view columns.
+ *
+ * The sort runs IN THE BROWSER over the rows already fetched, not as a different PostgREST `order=`.
+ * apiAll has paged the whole filtered roster into memory before any of this draws, so a client sort
+ * is over everything rather than over one page; a click costs no round trip, where re-fetching 600
+ * orders took seconds; and Special requirements, Fabrics and Tailors are built out of several
+ * columns each (or out of a jsonb array) and could not be expressed as an `order=` at all.
+ */
+const frac = (done, total) => (Number(total) ? Number(done) / Number(total) : -1);
+
+const SORT_KEYS = {
+  order_id:          (r) => r.order_id || "",
+  installation_date: (r) => r.installation_date || "",
+  city:              (r) => r.city || "",
+  customer_name:     (r) => r.customer_name || "",
+  meters:            (r) => Number(r.fabric_meters_total) || 0,
+  // by fabric code, so the orders sharing a roll end up next to each other - which is the reason
+  // anyone sorts this column: one cutting session, one fabric
+  fabrics:           (r) => (r.fabrics || []).map((x) => x.code).join(" "),
+  // how much special work the order carries, over every requirement at once
+  special:           (r) => SPECIAL_COLS.reduce((a, s) => a + (Number(r[s.col]) || 0), 0),
+  receiving:         (r) => frac(r.recv_fab_done, r.recv_fab_total),
+  // the stage reached dominates; how much of it is done breaks the ties inside a stage
+  prep:              (r) => Number(r.prep_max_rank || 0) + Math.max(0, frac(r.prep_done, r.prep_total)),
+  // position on the dispatch ladder - see DISPATCH_STATES, whose order is exactly this ranking
+  dispatch:          (r) => DISPATCH_STATES.findIndex((s) => s.value === (r.dispatch_state || "not_sent")),
+};
+
+/* Returns a sorted COPY: the caller's array stays in fetch order, which is what the index tiebreak
+ * below leans on to keep equal rows in installation-date order whatever column is on top.
+ *
+ * Blanks sort last in BOTH directions, matching the nullslast the server used to apply - reversing
+ * a column should not fill the top of the screen with the orders that have nothing in it. */
+function sortRows(rows) {
+  const key = SORT_KEYS[SORT.col];
+  if (!key) return rows.slice();
+  const dir = SORT.dir === "desc" ? -1 : 1;
+  const blank = (v) => v === null || v === undefined || v === "";
+  return rows
+    .map((r, i) => ({ r, i, k: key(r) }))
+    .sort((a, b) => {
+      if (blank(a.k) !== blank(b.k)) return blank(a.k) ? 1 : -1;
+      if (!blank(a.k)) {
+        const c = typeof a.k === "number" && typeof b.k === "number"
+          ? a.k - b.k
+          : String(a.k).localeCompare(String(b.k), undefined, { numeric: true, sensitivity: "base" });
+        if (c) return c * dir;
+      }
+      return a.i - b.i;
+    })
+    .map((x) => x.r);
+}
+
+const sortState = (id) => (SORT.col === id ? (SORT.dir === "desc" ? "descending" : "ascending") : "none");
+const sortGlyph = (id) => (SORT.col === id ? (SORT.dir === "desc" ? "▼" : "▲") : "↕");
+
+/* A sortable column title. tabindex + the keydown handler below make it reachable without a mouse,
+ * which a <th> is not by default. */
+const sortableTh = (id, label, extra = "") =>
+  `<th data-sort="${esc(id)}" tabindex="0" aria-sort="${sortState(id)}"${extra}>${esc(label)}<span
+      class="sarrow" aria-hidden="true">${sortGlyph(id)}</span></th>`;
+
 /* ---------------------------------------------------------------- shared cell builders */
 function fabricCell(r) {
   const fabs = r.fabrics || [];
@@ -199,7 +270,9 @@ function dispatchCell(r) {
   return d.map((x) => {
     const name = x.contractor === "other" ? (x.other_name || "other") : x.contractor;
     const s = DISPATCH_SUBSTATES.find((y) => y.value === x.substate) || { tone: "info" };
-    const glyph = x.substate === "qc_passed" ? "✓"
+    // paid is the end of the line, so it gets the second tick rather than a repeat of qc_passed's
+    const glyph = x.substate === "paid" ? "✓✓"
+      : x.substate === "qc_passed" ? "✓"
       : (x.substate === "qc_failed" || x.substate === "issue") ? "!"
       : x.substate === "received_back" ? "↩" : "›";
     const bad = x.substate === "qc_failed" || x.substate === "issue";
@@ -289,7 +362,7 @@ function cardView(rows) {
 }
 
 /* ---------------------------------------------------------------- desktop */
-function tableView(rows) {
+function tableView(rows, selected) {
   /* No .scrollx here, unlike the other modules' tables. It is not just unnecessary now the columns
    * fit - overflow-x:auto also makes the wrapper a scroll container, which is what was quietly
    * breaking the sticky header: the column titles were sticking to a box that scrolled away with
@@ -312,23 +385,23 @@ function tableView(rows) {
       <thead><tr>
         ${pick ? `<th class="selcol"><input type="checkbox" data-selall
             aria-label="${esc(tr("bulk.selectAll"))}" title="${esc(tr("bulk.selectAll"))}"></th>` : ""}
-        <th data-sort="order_id">${esc(tr("col.order"))}</th>
-        <th data-sort="installation_date">${esc(tr("col.install"))}</th>
-        <th data-sort="city">${esc(tr("col.city"))}</th>
-        <th data-sort="customer_name">${esc(tr("col.customer"))}</th>
-        <th data-sort="fabric_meters_total" title="${esc(tr("t.metersNote"))}">${esc(tr("col.meters"))}</th>
-        <th>${esc(tr("col.fabrics"))}</th>
-        <th>${esc(tr("col.special"))}</th>
-        <th data-sort="recv_fab_done">${esc(tr("col.receiving"))}</th>
-        <th data-sort="prep_max_rank">${esc(tr("col.prep"))}</th>
-        <th>${esc(tr("disp.title"))}</th>
+        ${sortableTh("order_id", tr("col.order"))}
+        ${sortableTh("installation_date", tr("col.install"))}
+        ${sortableTh("city", tr("col.city"))}
+        ${sortableTh("customer_name", tr("col.customer"))}
+        ${sortableTh("meters", tr("col.meters"), ` title="${esc(tr("t.metersNote"))}"`)}
+        ${sortableTh("fabrics", tr("col.fabrics"))}
+        ${sortableTh("special", tr("col.special"))}
+        ${sortableTh("receiving", tr("col.receiving"))}
+        ${sortableTh("prep", tr("col.prep"))}
+        ${sortableTh("dispatch", tr("disp.title"))}
         <th>${esc(tr("col.actions"))}</th>
       </tr></thead>
       <tbody></tbody>
     </table>`);
 
   const tb = table.querySelector("tbody");
-  rows.forEach((r) => {
+  const addRow = (r) => {
     const tr1 = el(`
       <tr class="${(r.dispatch_qc_failed || r.dispatch_issue) ? "qcfail" : ""}">
         ${pick ? `<td class="selcol"><input type="checkbox" data-sel value="${esc(r.order_id)}"
@@ -377,13 +450,37 @@ function tableView(rows) {
     });
     tb.appendChild(tr1);
     tb.appendChild(host);
-  });
+  };
 
-  table.querySelectorAll("[data-sort]").forEach((th) => {
-    th.addEventListener("click", () => {
-      const col = th.dataset.sort;
-      SORT = SORT.startsWith(col + ".asc") ? col + ".desc.nullslast" : col + ".asc.nullslast";
-      window.dispatchEvent(new CustomEvent("ops:rerender"));
+  /* Redraw the body in the current sort order.
+   *
+   * The ticks are restored from `selected` rather than left to survive the rebuild: an order stays
+   * selected across a re-sort even though the checkbox that carried it has been replaced. Any drawer
+   * that was open closes, as it did when this re-fetched instead of re-sorting. */
+  const fill = () => {
+    tb.innerHTML = "";
+    sortRows(rows).forEach(addRow);
+    tb.querySelectorAll("input[data-sel]").forEach((cb) => {
+      cb.checked = selected.has(cb.value);
+      cb.closest("tr").classList.toggle("selected", cb.checked);
+    });
+    table.querySelectorAll("th[data-sort]").forEach((th) => {
+      const id = th.dataset.sort;
+      th.setAttribute("aria-sort", sortState(id));
+      th.querySelector(".sarrow").textContent = sortGlyph(id);
+    });
+  };
+  fill();
+
+  const onSort = (id) => {
+    if (SORT.col === id) SORT.dir = SORT.dir === "asc" ? "desc" : "asc";
+    else SORT = { col: id, dir: "asc" };
+    fill();
+  };
+  table.querySelectorAll("th[data-sort]").forEach((th) => {
+    th.addEventListener("click", () => onSort(th.dataset.sort));
+    th.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSort(th.dataset.sort); }
     });
   });
 

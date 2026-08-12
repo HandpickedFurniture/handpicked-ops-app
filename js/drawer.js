@@ -295,6 +295,7 @@ function contractorRow(contractor, otherName, label, hit, orderId, refresh) {
       <div class="uname">${esc(label)}
         ${failed ? chip(tr("disp.qcFail"), "bad", "!") : ""}
         ${hit && hit.substate === "qc_passed" ? chip(tr("disp.qcPass"), "ok", "✓") : ""}
+        ${hit && hit.substate === "paid" ? chip(tr("disp.paid"), "ok", "✓✓") : ""}
         <!-- the current state, spelled out under the name: the highlighted button alone was easy to
              miss on a phone, and this row is read far more often than it is clicked -->
         <div class="dispstate">${hit
@@ -304,6 +305,7 @@ function contractorRow(contractor, otherName, label, hit, orderId, refresh) {
         <div class="usub">${hit && hit.sent_at ? esc(tr("disp.sent")) + " " + esc(fmtDateTime(hit.sent_at)) : ""}
           ${hit && hit.received_back_at ? " · " + esc(tr("disp.back")) + " " + esc(fmtDateTime(hit.received_back_at)) : ""}
           ${hit && hit.qc_at ? " · " + esc(tr("qc.title")) + " " + esc(fmtDateTime(hit.qc_at)) : ""}
+          ${hit && hit.paid_at ? " · " + esc(tr("disp.paid")) + " " + esc(fmtDateTime(hit.paid_at)) : ""}
           ${hit && hit.items_count ? " · " + esc(hit.items_count) + " " + esc(tr("disp.items")) : ""}</div>
         ${failed && hit.qc_note ? `<div class="err" style="margin-top:4px">${esc(hit.qc_note)}</div>` : ""}
       </div>
@@ -350,7 +352,9 @@ function contractorRow(contractor, otherName, label, hit, orderId, refresh) {
         });
         if (sub === null) {
           toast(tr("disp.cleared"), "ok");
-        } else if (sub === "qc_passed") {
+        } else if (sub === "qc_passed" || sub === "paid") {
+          // paid sits above qc_passed on the ladder, so settling with the last tailor closes
+          // production exactly as passing the check does - and has to say so
           toast(res && res.all_passed
             ? `${tr("disp.packedAuto")} (${res.units_marked_packed || 0})`
             : tr("disp.qcPartial"), res && res.all_passed ? "ok" : "");

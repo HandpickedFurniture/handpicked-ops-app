@@ -116,6 +116,32 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--brand);outline-o
 .bucketrow button{border:1.5px solid var(--line);background:var(--card);border-radius:10px;
   padding:7px 11px;font-size:13px;font-weight:700;cursor:pointer;color:var(--txt);}
 .bucketrow button.on{border-color:var(--brand);background:var(--info-bg);}
+/* The date buckets keep their chip shape but are real checkboxes now, so more than one bucket can
+   be on at a time - "today and tomorrow" is one list, not two visits to the filter. */
+.bucketrow label{display:inline-flex;gap:6px;align-items:center;border:1.5px solid var(--line);
+  background:var(--card);border-radius:10px;padding:6px 11px;font-size:13px;font-weight:700;
+  cursor:pointer;color:var(--txt);}
+.bucketrow label.on{border-color:var(--brand);background:var(--info-bg);}
+.bucketrow input{width:16px;height:16px;flex:none;accent-color:var(--brand);cursor:pointer;}
+
+/* ---------------------------------------------------------------- checkbox filter lists
+   Every value filter is a list of checkboxes rather than a dropdown, so a coordinator can say
+   "Dubai and Abu Dhabi" in one pass. Long lists scroll inside a fixed box and get their own search
+   field: window ref has ~2,500 distinct values, and 2,500 rows of DOM rebuilt on every render is
+   not a filter, it is a stall. */
+.cbfield{border:1.5px solid var(--line);border-radius:10px;background:var(--card);overflow:hidden;}
+.cbfield .cbsearch{width:100%;border:0;border-bottom:1px solid var(--line);border-radius:0;
+  min-height:38px;padding:7px 10px;font-size:13px;}
+.cbopts{max-height:170px;overflow-y:auto;padding:3px;}
+.cbopts label{display:flex;gap:8px;align-items:center;padding:5px 7px;border-radius:7px;
+  font-size:13px;line-height:1.3;cursor:pointer;overflow-wrap:anywhere;}
+.cbopts label:hover{background:var(--info-bg);}
+.cbopts input{width:17px;height:17px;flex:none;accent-color:var(--brand);cursor:pointer;}
+.cbnone,.cbmore{font-size:11px;color:var(--muted);padding:6px 9px;}
+.cbmore{border-top:1px solid var(--line);background:var(--mute-bg);}
+body.big .cbopts label{font-size:15px;padding:8px;}
+body.big .cbopts input{width:21px;height:21px;}
+body.big .cbopts{max-height:230px;}
 
 /* ---------------------------------------------------------------- order list
    Cards on mobile, a dense sticky-header table from 1024px. */
@@ -147,7 +173,16 @@ table.dense{width:100%;border-collapse:collapse;font-size:13px;}
 /* --stickytop is set by the module when a bar pins above the table (see bulkBar); 0 everywhere else */
 table.dense th{position:sticky;top:var(--stickytop,0px);background:var(--info-bg);text-align:left;padding:8px 9px;
   font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--brand);
-  border-bottom:2px solid var(--line);cursor:pointer;white-space:nowrap;z-index:5;}
+  border-bottom:2px solid var(--line);cursor:default;white-space:nowrap;z-index:5;}
+/* Only the columns that actually sort look clickable. The blanket cursor:pointer this replaces
+   promised a sort on Actions and the tick box that was never coming. */
+table.dense th[data-sort]{cursor:pointer;user-select:none;}
+table.dense th[data-sort]:hover{background:#d6e8ef;}
+table.dense th[data-sort]:focus-visible{outline:2px solid var(--brand);outline-offset:-2px;}
+/* The arrow is faint until the column is the one being sorted on - never colour alone, it is a
+   different glyph (↕ / ▲ / ▼) as well as a different weight. */
+.sarrow{font-size:9px;margin-left:3px;opacity:.35;}
+th[aria-sort="ascending"] .sarrow,th[aria-sort="descending"] .sarrow{opacity:1;}
 table.dense td{padding:8px 9px;border-bottom:1px solid var(--line);vertical-align:top;}
 table.dense tr:hover td{background:#fafcfd;}
 .scrollx{overflow-x:auto;-webkit-overflow-scrolling:touch;}

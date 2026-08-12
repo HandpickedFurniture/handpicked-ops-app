@@ -17,7 +17,7 @@ import {
 import {
   $, esc, el, chip, aed, aed0, num, fmtDate, today, toast, loading, selectHtml, downloadCsv, copyText,
 } from "./ui.js";
-import { renderFilterBar, toQuery, deriveOptions, writeHash } from "./filters.js";
+import { renderFilterBar, toQuery, deriveOptions, writeHash, has, toggle } from "./filters.js";
 import { chartCard, ORDINAL_RAMP } from "./charts.js";
 
 const COLS = [
@@ -108,11 +108,12 @@ export async function render(mount, state, setFilters) {
 
   const tiles = el(`<div class="tiles"></div>`);
   DATE_BUCKETS.forEach((b) => {
-    const t = el(`<button class="tile b-${b.value} ${state.filters.bucket === b.value ? "on" : ""}">
+    // the bucket filter takes any number of values now, so a tile ticks itself on or off rather
+    // than replacing whatever was picked before
+    const t = el(`<button class="tile b-${b.value} ${has(state.filters, "bucket", b.value) ? "on" : ""}">
         <div class="tn">${counts[b.value]}</div>
         <div class="tl">${esc(b.glyph)} ${esc(tr(b.key))}</div></button>`);
-    t.addEventListener("click", () =>
-      setFilters({ ...state.filters, bucket: state.filters.bucket === b.value ? "" : b.value }));
+    t.addEventListener("click", () => setFilters(toggle(state.filters, "bucket", b.value)));
     tiles.appendChild(t);
   });
   box.appendChild(tiles);

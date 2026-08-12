@@ -51,7 +51,10 @@ update.
 **1. Production tracking** (`#/production`) — one row per order with installation date, city, PO
 version, every fabric code with its meterage, and a count for each special requirement (roller
 blinds, baton sticks, pelmet boxes, roman blinds, motors, tie backs, scaffolding…). Expand a row for
-the drawer.
+the drawer. Every column title sorts, ascending then descending — including the three built out of
+several columns each (Fabrics by code, Special requirements by total, Tailors by ladder position).
+The sort runs in the browser over the rows already fetched, so it costs no round trip and covers the
+whole filtered set rather than a page.
 
 **2. Order status** (`#/status`) — ready, team assigned, order status, **multiple visits** each with
 their own outcome and team, internal + Slack comments, and chargeable extras.
@@ -73,6 +76,25 @@ drift out of step with its own history.
 to, date range, uploader and location. Shows the checksum, which store holds the bytes, and the view
 count. Removed photos are still listed with who removed them and why.
 
+### The shared filter bar
+
+Production, Order status, Transfers and the dashboard all mount the same bar (`js/filters.js`).
+Every value filter is a **list of checkboxes**, so it takes any number of values at once: "Dubai and
+Abu Dhabi", "today and tomorrow", "sent and received back". Values within a field are OR-ed and the
+fields are AND-ed. Scalar columns become PostgREST `in.(…)`, array columns become `ov.{…}` (overlap,
+ie "holds any of these"), and ticking *Unknown city* alongside a real one becomes a single
+`or=(city.is.null,city.in.(…))` — as two predicates it would AND itself down to nothing.
+
+Long lists get their own search box and draw at most 150 rows at a time: window ref has ~2,500
+distinct values and fabric 1 has ~455. Whatever is already ticked is always drawn, however far the
+search has narrowed past it.
+
+Multi-values ride in the hash as a **repeated key** (`?city=Dubai&city=Sharjah`) rather than a joined
+string — three option values contain a comma, and `URLSearchParams` gets the escaping right where a
+separator of our own would need rules nobody would remember. One-value links written before any of
+this still read back correctly, so a `#/production?bucket=overdue` sitting in somebody's WhatsApp
+keeps working.
+
 ## The 14 stages, and where each one lives
 
 The stages sit at three different grains, because they are about three different things.
@@ -81,7 +103,12 @@ The stages sit at three different grains, because they are about three different
 |---|---|---|
 | 1 Ordered · 2 Received · 3 Out of stock · 4 Fabric quality check | order × fabric | `receiving_expectations` (`status`, plus an independent `qc_result` axis) |
 | 5 Cutting · 6 Hemming · 7 Ironing · 8 Marking & measurement · 9 Taping · 10 Completed–folded & packed | order × window × layer | `preparation_events` |
-| 11–14 Sent to Farooq / Jamal / Shahzad / Other, each **planned → sent → received back** | order | `order_dispatch` |
+| 11–14 Sent to Farooq / Jamal / Shahzad / Other, each **planned → sent → received back → quality check success → paid** | order | `order_dispatch` |
+
+`paid` is a rung above `qc_passed`, not a state beside it: settling with the last tailor closes
+production exactly as passing the check does. `order_dispatch` carries a payment axis of its own
+(`payment_status` / `paid_at`, read by the Dragon Mart report) and `fn_ops_set_dispatch` keeps the
+two in step in both directions — moving a row back off `paid` returns it to `unpaid`.
 
 QC is deliberately a separate axis from status: a fabric can be both `received` and quality-checked.
 
