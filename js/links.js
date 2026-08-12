@@ -80,6 +80,7 @@ export const LINK_GROUPS = [
 export const APP_TILES = [
   { hash: "#/production", key: "nav.production", icon: "✂️",  desc: "home.dProduction" },
   { hash: "#/status",     key: "nav.status",     icon: "🚚",  desc: "home.dInstall" },
+  { hash: "#/schedule",   key: "nav.schedule",   icon: "🗓️", desc: "home.dSchedule" },
   { hash: "#/transfer",   key: "nav.transfer",   icon: "📦",  desc: "home.dTransfer" },
   { hash: "#/inventory",  key: "nav.inventory",  icon: "🔩",  desc: "home.dInventory" },
   { hash: "#/insights",   key: "nav.insights",   icon: "📊",  desc: "home.dInsights" },

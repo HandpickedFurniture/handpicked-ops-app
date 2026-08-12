@@ -15,7 +15,7 @@ import {
   ORDER_STATUSES, STATUS_TONE, CHARGE_TYPES, ADJ_STATUSES, TRANSFER_STATUSES, SPECIAL_COLS,
 } from "./config.js";
 import {
-  $, esc, el, chip, aed, num, fmtDate, toast, loading, modal, selectHtml, confirmSheet,
+  $, esc, el, chip, aed, num, fmtDate, toast, loading, modal, selectHtml, confirmSheet, orderLabel,
 } from "./ui.js";
 import { renderFilterBar, toQuery, deriveOptions, activeCount } from "./filters.js";
 import { micField, wireMics } from "./voice.js";
@@ -356,7 +356,7 @@ function wireMemberSelects(root) {
 
 function openVisitSheet(r, v, reload) {
   const m = modal(`
-    <h3>${esc(tr("st.visit", { n: v.visit_no }))} — ${esc(r.order_id)}</h3>
+    <h3>${esc(tr("st.visit", { n: v.visit_no }))} — ${esc(orderLabel(r))}</h3>
     <div class="grid2" style="margin-top:12px">
       <div><label class="f">${esc(tr("st.visitDate"))}</label>
         <input type="date" name="vdate" value="${esc(v.visit_date || "")}"></div>
@@ -510,7 +510,7 @@ function adjustmentsSection(r, rows, reload) {
 
 function openAdjustmentSheet(r, reload) {
   const m = modal(`
-    <h3>${esc(tr("adj.add"))} — ${esc(r.order_id)}</h3>
+    <h3>${esc(tr("adj.add"))} — ${esc(orderLabel(r))}</h3>
     <div class="grid2" style="margin-top:12px">
       <div><label class="f">${esc(tr("adj.type"))}</label>
         ${selectHtml("atype", CHARGE_TYPES.map((c) => ({ value: c.value, label: tr(c.key) })),

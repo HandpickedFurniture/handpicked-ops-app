@@ -140,7 +140,11 @@ async function freshToken() {
  * This is one choke point rather than a hunt through every module for buttons to hide, so a write
  * path added later is refused by default instead of being quietly forgotten. It is still only the
  * second line: RLS is the boundary, and it refuses these same calls independently. */
-const VIEWER_ALLOWED = /\/rpc\/(fn_ops_rate_for|fn_ops_log_photo_access)$/;
+/* The fn_sched_* entries below are reads that PostgREST only exposes as POST /rpc. Without them a
+ * viewer could not open the Schedule board at all. Each is `stable` and writes nothing; the mutating
+ * schedule functions (build, move, finalize, ...) are deliberately absent and stay refused. */
+const VIEWER_ALLOWED =
+  /\/rpc\/(fn_ops_rate_for|fn_ops_log_photo_access|fn_sched_board|fn_sched_run_for|fn_sched_next_working_day|fn_sched_suggest_teams|fn_sched_eta_explain)$/;
 
 export async function api(path, opts = {}, retry = true) {
   const method = (opts.method || "GET").toUpperCase();

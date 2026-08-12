@@ -42,6 +42,13 @@ export function daysSince(iso) {
   return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
 }
 
+/* An order is always "<id> <customer>". A bare order number is meaningless on a WhatsApp message
+ * or a modal heading, and two orders for the same customer are told apart only by the number - so
+ * neither half is ever dropped. Cards and tables already show the two in adjacent elements; this is
+ * for the places that render an order inline as one string. */
+export const orderLabel = (r) =>
+  r ? [r.order_id, r.customer_name].filter(Boolean).join(" ").trim() : "";
+
 export function toast(msg, kind) {
   const t = el(`<div class="toast ${kind || ""}">${esc(msg)}</div>`);
   document.body.appendChild(t);

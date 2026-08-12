@@ -5,7 +5,7 @@
  * TRANSLATED. Reverse that and writes start failing their CHECK.
  */
 
-export const BUILD = "2026-08-11.5";
+export const BUILD = "2026-08-12.3";
 
 /* Supabase project "handpicked-curtains". The publishable key is safe to ship: every table is
  * RLS-locked to the `authenticated` role and `anon` has no policy at all. The bearer token on each
@@ -285,6 +285,28 @@ export const PHOTO_CONTEXTS = [
   { value: "transfer",     key: "nav.transfer" },
   { value: "inventory",    key: "nav.inventory" },
   { value: "other",        key: "chg.other" },
+];
+
+/* ---------------------------------------------------------------- schedule
+ * These two are NOT written by the browser - fn_sched_* computes them server-side and the module
+ * only reads them back - so they are absent from check_values.py, which guards values the app
+ * writes to CHECK-constrained columns. The strings must still match sched_run_team.util_band and
+ * sched_stop.counts->>'tag' or the card renders untoned.
+ *
+ * Bands are on (on-site minutes + travel) / usable minutes, so a team can be "stretched" on driving
+ * alone - which is exactly the case a coordinator needs to see before it becomes a late arrival. */
+export const UTIL_BANDS = [
+  { value: "under",     key: "sch.band.under",     tone: "ok"   },
+  { value: "optimum",   key: "sch.band.optimum",   tone: "ok"   },
+  { value: "stretched", key: "sch.band.stretched", tone: "warn" },
+  { value: "over",      key: "sch.band.over",      tone: "bad"  },
+];
+
+export const STOP_TAGS = [
+  { value: "new",        key: "sch.tag.new" },
+  { value: "issue",      key: "sch.tag.issue" },
+  { value: "alteration", key: "sch.tag.alteration" },
+  { value: "manual",     key: "sch.tag.manual" },
 ];
 
 export const PAGE_SIZE = 200;

@@ -386,3 +386,88 @@ table.dense tfoot th{position:sticky;bottom:0;background:var(--info-bg);border-t
 .pending{position:relative;}
 .pending::after{content:"";position:absolute;top:2px;right:2px;width:7px;height:7px;
   border-radius:50%;background:var(--accent);}
+
+/* ---------------------------------------------------------------- schedule
+ * The board scrolls horizontally, one column per team. Cards are tinted by the TEAM's utilisation
+ * band, not by anything about the order itself, so a coordinator can see an overloaded column at a
+ * glance without reading a number. Emaar orders override that tint - a wrongly crewed Emaar job is
+ * a bigger problem than an unevenly loaded day.
+ *
+ * Never colour-only: every tint is paired with a percentage, a chip or a glyph, per the rule the
+ * rest of this stylesheet follows. */
+.schhead{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.schdate{display:flex;align-items:center;gap:10px;}
+.schdateinner{text-align:center;}
+.schdatelabel{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
+.schdatebig{font-size:24px;font-weight:700;color:var(--brand);line-height:1.15;}
+.schdateinner input[type=date]{margin-top:4px;font-size:12px;padding:3px 6px;}
+.schver{display:flex;align-items:center;gap:8px;}
+
+.schbtns{flex-wrap:wrap;gap:8px;align-items:center;}
+.spacer{flex:1;}
+.btn.schbig{font-size:16px;padding:12px 22px;min-height:48px;font-weight:700;
+  box-shadow:0 2px 0 var(--brand-dark);}
+.schinstr{margin-top:10px;}
+.schinstr textarea{width:100%;}
+.sm{font-size:11px;}
+.warnbit{color:var(--warn);}
+.schsuggest{background:var(--info-bg);border-left:3px solid var(--brand);padding:8px 10px;
+  border-radius:6px;margin:6px 0 12px;}
+.rchk{display:flex;justify-content:center;}
+
+.schfloatcard{margin-top:12px;}
+.schfloat{display:flex;gap:8px;overflow-x:auto;padding:8px 2px 2px;min-height:56px;align-items:flex-start;}
+.schfloat .schcard{flex:0 0 200px;}
+
+.schboard{display:flex;gap:12px;overflow-x:auto;padding:12px 2px 8px;align-items:flex-start;}
+.schcol{flex:0 0 250px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+  display:flex;flex-direction:column;overflow:hidden;}
+.schcolhead{padding:10px;border-bottom:1px solid var(--line);background:var(--mute-bg);}
+.schcolmeta{margin-top:6px;}
+.schmembers{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;min-height:26px;}
+.schmem{display:inline-flex;align-items:center;gap:3px;font-size:12px;background:var(--card);
+  border:1px solid var(--line);border-radius:12px;padding:2px 8px 2px 4px;}
+.schstops{padding:8px;display:flex;flex-direction:column;gap:2px;min-height:70px;}
+
+.grip{cursor:grab;color:var(--muted);font-style:normal;font-size:13px;line-height:1;
+  padding:2px 3px;touch-action:none;flex:none;}
+.grip:active{cursor:grabbing;}
+
+.schcard{border:1px solid var(--line);border-left:4px solid var(--muted);border-radius:10px;
+  background:var(--card);padding:7px 8px;font-size:12px;}
+.schcardtop{display:flex;align-items:center;gap:5px;}
+.schtime{font-weight:700;font-size:13px;color:var(--brand);}
+.schlate{font-size:11px;font-weight:700;color:var(--danger);}
+.schtag{margin-left:auto;}
+.schmenu{border:0;background:none;cursor:pointer;font-size:15px;line-height:1;color:var(--muted);
+  padding:0 2px;min-height:24px;}
+.schoid{font-weight:600;margin-top:2px;word-break:break-word;}
+.schsub{font-size:11px;}
+.schbits{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px;font-size:11px;color:var(--txt);}
+.schfoot{display:flex;align-items:center;gap:5px;margin-top:5px;flex-wrap:wrap;}
+.schetabtn{border:1px solid var(--line);background:var(--mute-bg);border-radius:8px;cursor:pointer;
+  font-size:11px;padding:2px 6px;min-height:26px;}
+.schtravel{font-size:10px;color:var(--muted);text-align:center;padding:2px 0;}
+
+/* team utilisation -> card tint. Paired with the % chip in the column head. */
+.schcol.b-under     .schcard{background:#dff0e2;border-left-color:#1a7f37;}
+.schcol.b-optimum   .schcard{background:#f2faf3;border-left-color:#5cb85c;}
+.schcol.b-stretched .schcard{background:#fdeef0;border-left-color:#e08a97;}
+.schcol.b-over      .schcard{background:#fbdbdb;border-left-color:var(--danger);}
+/* Emaar must beat the band tint above, which is `.schcol.b-x .schcard` at 0-3-0. A bare
+ * `.schcard.emaar` is 0-2-0 and silently loses, painting Emaar jobs the same green as the rest. */
+.schboard .schcard.emaar, .schfloat .schcard.emaar{background:#fff4e0;border-left-color:var(--accent);}
+.schcard.late-warn{box-shadow:inset 0 0 0 1px var(--warn);}
+.schcard.late-bad{box-shadow:inset 0 0 0 2px var(--danger);}
+
+/* drag feedback */
+.dragghost{position:fixed;z-index:80;pointer-events:none;opacity:.92;
+  box-shadow:0 8px 20px rgba(0,0,0,.22);transform:rotate(1.5deg);}
+.dragsrc{opacity:.35;}
+.dropline{height:3px;border-radius:2px;background:var(--accent);margin:2px 0;}
+
+@media (max-width:700px){
+  .schcol{flex:0 0 82vw;}
+  .schfloat .schcard{flex:0 0 74vw;}
+  .schdatebig{font-size:20px;}
+}
