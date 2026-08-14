@@ -462,6 +462,11 @@ tr.qcfail:hover td{background:#fbdfdb;}
 .askmsg.bot b{display:block;margin-bottom:3px;color:var(--brand);}
 .askmsg.bot div{overflow-wrap:anywhere;}
 .askquick{gap:6px;flex-wrap:wrap;margin-top:8px;}
+/* .withmic makes its own first child flex:1, but is itself a content-sized item of the row around
+   it - so the question field came out 197px inside a 657px card. min-width:0 lets it shrink below
+   the input's intrinsic width instead of forcing the Ask button off the end on a phone. */
+.askbox .withmic{flex:1;min-width:0;}
+.askbox .withmic > :first-child{width:100%;}
 body.big .askmsg{font-size:15px;}
 
 /* ---------------------------------------------------------------- kit to order ahead
