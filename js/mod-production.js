@@ -52,6 +52,7 @@ const FETCH_ORDER = "installation_date.asc.nullslast,order_id.asc";
 let OPTIONS = null;      // filter checkbox values, derived once from the unfiltered roster
 let SORT = { col: "installation_date", dir: "asc" };
 let DOCS = {};           // order_id -> { has_pdf, doc_count } for the PDF column
+let REVIEW = {};         // order_id -> line-review roll-up, for the unread / follow-up chips
 
 export async function render(mount, state, setFilters) {
   if (!isSignedIn()) return;
@@ -96,6 +97,14 @@ export async function render(mount, state, setFilters) {
     DOCS = Object.fromEntries(docs.map((d) => [d.order_id, d]));
   } catch (e) { DOCS = {}; }
 
+  /* How far the coordinators have read this order's lines. One roll-up row per order rather than
+   * the 4,409 lines behind them - see v_ops_order_review_summary. */
+  try {
+    const rev = await apiAll(
+      "/rest/v1/v_ops_order_review_summary?select=order_id,lines,lines_read,open_follow_ups");
+    REVIEW = Object.fromEntries(rev.map((x) => [x.order_id, x]));
+  } catch (e) { REVIEW = {}; }
+
   if (!rows.length) {
     // "no rows with no filters" is an auth failure, not an empty result: anon has no policy on these
     // tables, so a bad bearer returns 200 with [] and never 401s
@@ -113,7 +122,7 @@ export async function render(mount, state, setFilters) {
       <div class="tot"><b>${esc(num(sum("owl_curtains")))}</b><span>${esc(tr("col.owlCurtains"))}</span></div>
       <div class="tot"><b>${esc(num(sum("owl_blinds")))}</b><span>${esc(tr("col.owlBlinds"))}</span></div>
       <div class="tot"><b>${esc(num(sum("owl_total")))}</b><span>${esc(tr("col.owlTotal"))}</span></div>
-      <div class="tot"><b>${esc(num(sum("fabric_meters_total")))}</b><span>${esc(tr("col.meters"))}</span></div>
+      <div class="tot"><b>${esc(num(sum("meters_sent_total")))}</b><span>${esc(tr("col.metersSent"))}</span></div>
       <div class="tot"><b>${esc(num(sum("n_motor")))}</b><span>${esc(tr("sp.motor"))}</span></div>
       <div class="tot"><b>${esc(num(sum("n_roman")))}</b><span>${esc(tr("sp.roman"))}</span></div>
       <div class="tot"><b>${esc(num(sum("n_roller")))}</b><span>${esc(tr("sp.roller"))}</span></div>
@@ -195,7 +204,7 @@ const SORT_KEYS = {
   installation_date: (r) => r.installation_date || "",
   city:              (r) => r.city || "",
   customer_name:     (r) => r.customer_name || "",
-  meters:            (r) => Number(r.fabric_meters_total) || 0,
+  meters:            (r) => Number(r.meters_sent_total) || 0,
   // by fabric code, so the orders sharing a roll end up next to each other - which is the reason
   // anyone sorts this column: one cutting session, one fabric
   fabrics:           (r) => (r.fabrics || []).map((x) => x.code).join(" "),
@@ -296,7 +305,8 @@ function stageCell(r) {
   const rank = Number(r.prep_max_rank || 0);
   if (!rank) return `<span class="muted">—</span>`;
   const s = PREP_STAGES[rank - 1];
-  const done = rank === PREP_STAGES.length;
+  // packed and stacked are both finished work; only Started is still in progress
+  const done = rank >= 2;
   return chip(tr(s.key), done ? "ok" : "info", done ? "✓" : "›")
     + `<div class="muted" style="font-size:11px">${esc(r.prep_done)}/${esc(r.prep_total)}</div>`;
 }
@@ -313,6 +323,17 @@ function flagChips(r) {
   if (r.recv_oos)           c.push(chip(tr("recv.oos"), "bad", "!"));
   if (r.recv_qc_fail)       c.push(chip(tr("qc.title"), "bad", "!"));
   if (r.adj_new)            c.push(chip(`${tr("col.adjustments")} ${r.adj_new}`, "warn", "!"));
+  /* Line review, from the Comments page. Unread lines are shown as a count rather than a bar: the
+   * useful question on this list is "is there anything nobody has looked at", not "how far along". */
+  const rv = REVIEW[r.order_id];
+  if (rv && Number(rv.lines)) {
+    const unread = Number(rv.lines) - Number(rv.lines_read);
+    if (unread > 0) c.push(chip(`${tr("rev.unread")} ${unread}/${rv.lines}`, "mute", "○"));
+    else c.push(chip(tr("rev.read"), "ok", "✓"));
+    if (Number(rv.open_follow_ups)) {
+      c.push(chip(tr("rev.open", { n: rv.open_follow_ups }), "warn", "!"));
+    }
+  }
   if (!r.city)              c.push(chip(tr("t.cityUnknown"), "mute", "?"));
   else if (r.city_source === "sheet") c.push(chip(tr("t.citySheet"), "mute"));
   return c.join(" ");
@@ -336,7 +357,7 @@ function cardView(rows) {
             <div class="oname">${esc(r.customer_name || "—")}</div>
             <div class="osub">${esc(r.city || tr("t.cityUnknown"))} · ${esc(fmtDate(r.installation_date))}
               · ${esc(r.window_count)} ${esc(tr("col.windows").toLowerCase())}
-              · ${esc(num(r.fabric_meters_total))} m
+              · ${esc(num(r.meters_sent_total))} m
               ${r.sheet_status ? " · " + esc(r.sheet_status) : ""}</div>
             <div class="ochips">${flagChips(r)}</div>
             <div class="ochips">${fabricCell(r)}</div>
@@ -389,7 +410,7 @@ function tableView(rows, selected) {
         ${sortableTh("installation_date", tr("col.install"))}
         ${sortableTh("city", tr("col.city"))}
         ${sortableTh("customer_name", tr("col.customer"))}
-        ${sortableTh("meters", tr("col.meters"), ` title="${esc(tr("t.metersNote"))}"`)}
+        ${sortableTh("meters", tr("col.metersSent"), ` title="${esc(tr("t.metersNote"))}"`)}
         ${sortableTh("fabrics", tr("col.fabrics"))}
         ${sortableTh("special", tr("col.special"))}
         ${sortableTh("receiving", tr("col.receiving"))}
@@ -414,10 +435,13 @@ function tableView(rows, selected) {
         <td>${esc(r.city || "—")}${r.city_source === "sheet" ? '<div class="muted">3D</div>' : ""}</td>
         <!-- the alteration flag rides in flagChips here, so it no longer needs a column of its own -->
         <td>${esc(r.customer_name || "—")}<div>${flagChips(r)}</div></td>
-        <td><b>${esc(num(r.fabric_meters_total))}</b>
-            ${Number(r.meters_sent_total) &&
+        <!-- Metres SENT leads and the PO's planned figure sits under it. They disagree on 659 of
+             693 orders and sent is the one the floor cuts against, so it is the number in bold. -->
+        <td><b>${esc(num(r.meters_sent_total))}</b>
+            ${Number(r.fabric_meters_total) &&
               Math.abs(Number(r.meters_sent_total) - Number(r.fabric_meters_total)) > 0.5
-              ? `<div class="muted" title="${esc(tr("t.metersNote"))}">(${esc(num(r.meters_sent_total))} sent)</div>`
+              ? `<div class="muted" title="${esc(tr("t.metersNote"))}">${
+                   esc(tr("col.meters"))} ${esc(num(r.fabric_meters_total))}</div>`
               : ""}</td>
         <td>${fabricCell(r)}</td>
         <td>${specialCell(r)}</td>
@@ -563,7 +587,8 @@ function csvRow(r) {
     sheet_status: r.sheet_status || "",
     version: r.version_no ?? 1,
     windows: r.window_count,
-    meters: r.fabric_meters_total,
+    meters_sent: r.meters_sent_total,
+    meters_planned: r.fabric_meters_total,
     fabric_status: r.fabric_recv_state || "",
     fabric_received: `${r.recv_fab_done}/${r.recv_fab_total}`,
     materials_received: `${r.recv_mat_done}/${r.recv_mat_total}`,

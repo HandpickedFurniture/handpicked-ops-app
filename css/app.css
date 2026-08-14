@@ -129,8 +129,27 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--brand);outline-o
    "Dubai and Abu Dhabi" in one pass. Long lists scroll inside a fixed box and get their own search
    field: window ref has ~2,500 distinct values, and 2,500 rows of DOM rebuilt on every render is
    not a filter, it is a stall. */
-.cbfield{border:1.5px solid var(--line);border-radius:10px;background:var(--card);overflow:hidden;}
-.cbfield .cbsearch{width:100%;border:0;border-bottom:1px solid var(--line);border-radius:0;
+/* Each filter is a button that opens its list. Eleven lists sitting open pushed the orders
+   themselves off the bottom of the screen; folded away they cost about what the old dropdowns did,
+   and multi-select survives. */
+.fchips{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0;}
+.cbf{position:relative;}
+.cbbtn{display:inline-flex;align-items:center;gap:6px;border:1.5px solid var(--line);
+  background:var(--card);color:var(--txt);border-radius:10px;padding:8px 11px;font-size:13px;
+  font-weight:600;cursor:pointer;font-family:inherit;min-height:38px;}
+.cbbtn:hover{border-color:var(--brand);}
+.cbbtn[aria-expanded="true"]{border-color:var(--brand);background:var(--info-bg);}
+.cbcaret{font-size:10px;color:var(--muted);}
+/* the count is what tells you a folded-away filter is doing something */
+.cbn:not(:empty){background:var(--brand);color:#fff;border-radius:999px;padding:1px 7px;
+  font-size:11px;font-weight:700;}
+.cbpop{position:absolute;top:calc(100% + 4px);left:0;z-index:40;min-width:240px;max-width:320px;
+  border:1.5px solid var(--brand);border-radius:10px;background:var(--card);overflow:hidden;
+  box-shadow:0 8px 24px rgba(10,30,40,.18);}
+.cbpop[hidden]{display:none;}
+/* a popover near the right edge would otherwise run off screen */
+.fchips .cbf:nth-child(n+4) .cbpop{left:auto;right:0;}
+.cbpop .cbsearch{width:100%;border:0;border-bottom:1px solid var(--line);border-radius:0;
   min-height:38px;padding:7px 10px;font-size:13px;}
 .cbopts{max-height:170px;overflow-y:auto;padding:3px;}
 .cbopts label{display:flex;gap:8px;align-items:center;padding:5px 7px;border-radius:7px;
@@ -142,6 +161,39 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--brand);outline-o
 body.big .cbopts label{font-size:15px;padding:8px;}
 body.big .cbopts input{width:21px;height:21px;}
 body.big .cbopts{max-height:230px;}
+
+/* ---------------------------------------------------------------- line review (Comments)
+   4,409 lines that coordinators have to read every one of. Everything here is in service of not
+   losing your place: the order block you are in, the lines you have already done, and the handful
+   that procurement has to act on before anything can be made. */
+.revwrap{overflow-x:auto;}
+table.rev{width:100%;border-collapse:collapse;font-size:12px;}
+table.rev th{position:sticky;top:var(--stickytop,0px);background:var(--info-bg);text-align:left;
+  padding:7px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.03em;color:var(--brand);
+  border-bottom:2px solid var(--line);white-space:nowrap;z-index:5;}
+table.rev td{padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top;
+  max-width:230px;overflow-wrap:anywhere;}
+/* Banded BY ORDER, not by row: an order is the thing you read as one block, and a 12-window order
+   striped row by row reads as twelve unrelated things. */
+table.rev tr.ordA td{background:var(--card);}
+table.rev tr.ordB td{background:#f4f8fa;}
+table.rev tr.isread td{opacity:.62;}
+table.rev tr:hover td{background:#eef6f9;}
+table.rev tr.firstofblock td{border-top:2px solid var(--line);}
+/* Bright, and never colour alone - the cell carries the requirement as a chip too. */
+td.procreq{background:#fff3c4 !important;box-shadow:inset 3px 0 0 var(--accent);}
+tr.isread td.procreq{background:#fdf6dd !important;}
+.revmarks{display:flex;gap:4px;flex-wrap:wrap;align-items:center;}
+.revmarks button{border:1.5px solid var(--line);background:var(--card);border-radius:999px;
+  padding:3px 9px;font-size:11px;font-weight:700;cursor:pointer;color:var(--muted);
+  font-family:inherit;white-space:nowrap;}
+.revmarks button.on{border-color:var(--brand);background:var(--info-bg);color:var(--brand);}
+.revmarks button.on.done{border-color:var(--ok);background:var(--ok-bg,#e7f6ec);color:var(--ok);}
+.revmarks button:disabled{opacity:.5;cursor:not-allowed;}
+.revprogress{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:700;}
+.revprogress .bar{width:120px;height:9px;}
+body.big table.rev{font-size:14px;}
+body.big .revmarks button{font-size:13px;padding:6px 12px;}
 
 /* ---------------------------------------------------------------- order list
    Cards on mobile, a dense sticky-header table from 1024px. */

@@ -16,7 +16,10 @@
  * or slow upload must never block a coordinator from marking work done. The status write goes
  * through the offline queue in api.js; the photo reports its own success or failure.
  */
-import { SB_URL, SB_KEY, PHOTO_BUCKET, PHOTO_MAX_PX, PHOTO_QUALITY, STORAGE_PREFIX } from "./config.js";
+import {
+  SB_URL, SB_KEY, PHOTO_BUCKET, PHOTO_MAX_PX, PHOTO_QUALITY, STORAGE_PREFIX,
+  PHOTO_RETRIES, PHOTO_RETRY_MS,
+} from "./config.js";
 import { api, rpc, getSession, currentActor } from "./api.js";
 import { tr } from "./i18n.js";
 import { esc, el, toast, modal, fmtDateTime, num } from "./ui.js";
@@ -71,25 +74,71 @@ export function forgetBackendProbe() {
 
 /* ---------------------------------------------------------------- image handling */
 /* A raw phone photo is 3-6 MB. Downscaling on-device keeps uploads viable on mobile data, which is
- * where these are actually taken. Long edge 1600px stays legible for damage evidence. */
-function downscale(file) {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const scale = Math.min(1, PHOTO_MAX_PX / Math.max(img.width, img.height));
-      const w = Math.max(1, Math.round(img.width * scale));
-      const h = Math.max(1, Math.round(img.height * scale));
-      const c = document.createElement("canvas");
-      c.width = w; c.height = h;
-      c.getContext("2d").drawImage(img, 0, 0, w, h);
-      c.toBlob((b) => (b ? resolve(b) : reject(new Error("Could not process that image"))),
-        "image/jpeg", PHOTO_QUALITY);
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Could not read that image")); };
-    img.src = url;
-  });
+ * where these are actually taken. Long edge 1280px at q0.65 lands around 120-200 KB and is still
+ * legible for damage evidence.
+ *
+ * createImageBitmap, NOT `new Image()` + object URL. The old path decoded a 12-megapixel JPEG on the
+ * main thread into a full-size bitmap before drawing it: on a mid-range phone that freezes the UI
+ * for seconds and, often enough, is simply killed for memory - which is what "the photo doesn't
+ * upload or takes too long" actually was. createImageBitmap decodes off-thread and can downsample
+ * during the decode, so the full-size bitmap never exists.
+ *
+ * resizeQuality/resizeWidth are ignored by browsers that do not implement them; the canvas draw
+ * below still produces the right size, just via a slower path. */
+async function downscale(file) {
+  const dims = (w, h) => {
+    const scale = Math.min(1, PHOTO_MAX_PX / Math.max(w, h));
+    return [Math.max(1, Math.round(w * scale)), Math.max(1, Math.round(h * scale))];
+  };
+
+  let bmp = null;
+  try {
+    // probe the real dimensions first, so resizeWidth/Height ask for the right thing
+    const probe = await createImageBitmap(file);
+    const [w, h] = dims(probe.width, probe.height);
+    if (w === probe.width && h === probe.height) {
+      bmp = probe;
+    } else {
+      bmp = await createImageBitmap(file, {
+        resizeWidth: w, resizeHeight: h, resizeQuality: "high",
+      });
+      probe.close?.();
+    }
+  } catch (e) {
+    /* HEIC from an iPhone, or any format this browser cannot decode. Uploading the original beats
+     * refusing the evidence: the bytes are bigger, but the photo exists. */
+    if (file.size > 12 * 1024 * 1024) {
+      throw new Error(tr("photo.tooBig"));
+    }
+    return file;
+  }
+
+  const c = document.createElement("canvas");
+  c.width = bmp.width; c.height = bmp.height;
+  c.getContext("2d").drawImage(bmp, 0, 0, bmp.width, bmp.height);
+  bmp.close?.();
+
+  const blob = await new Promise((resolve) =>
+    c.toBlob(resolve, "image/jpeg", PHOTO_QUALITY));
+  // a canvas that failed to encode gives null; the original is still better than nothing
+  return blob || file;
+}
+
+/* Retry the bytes, not the whole upload. A van in a lift drops one request, not the session, and a
+ * photo that fails once is usually never retaken - so a widening pause beats a red toast. */
+async function withRetry(fn, label) {
+  let last;
+  for (let i = 0; i < PHOTO_RETRIES; i++) {
+    try { return await fn(); } catch (e) {
+      last = e;
+      // a 4xx will fail identically next time - only wait out what looks transient
+      if (e && e.status && e.status >= 400 && e.status < 500) break;
+      if (i < PHOTO_RETRIES - 1) {
+        await new Promise((r) => setTimeout(r, PHOTO_RETRY_MS * Math.pow(2, i)));
+      }
+    }
+  }
+  throw last || new Error(label || "Upload failed");
 }
 
 /* Hashed at upload time, from the browser, so the stored bytes can later be shown to be the same
@@ -110,11 +159,16 @@ export async function uploadPhoto(file, meta) {
   const be = await backend();
 
   const year = new Date().getFullYear();
-  const name = crypto.randomUUID() + ".jpg";
+  // the extension follows what downscale actually produced - it hands back the ORIGINAL when the
+  // browser could not decode it (HEIC), and calling that .jpg would mislabel the stored bytes
+  const jpeg = blob.type === "image/jpeg";
+  const ext = jpeg ? "jpg" : ((blob.type || "").split("/")[1] || "bin");
+  const type = jpeg ? "image/jpeg" : (blob.type || "application/octet-stream");
+  const name = crypto.randomUUID() + "." + ext;
   const path = `${meta.order_id || "general"}/${meta.context}/${year}/${name}`;
 
-  if (be === "gcs") await putGcs(path, blob);
-  else await putSupabase(path, blob);
+  if (be === "gcs") await withRetry(() => putGcs(path, blob, type), "Google Cloud upload failed");
+  else await withRetry(() => putSupabase(path, blob, type), "Upload failed");
 
   return rpc("fn_ops_record_photo", {
     p_context: meta.context,
@@ -124,7 +178,7 @@ export async function uploadPhoto(file, meta) {
     p_context_id: meta.context_id || null,
     p_context_label: meta.context_label || null,
     p_backend: be,
-    p_content_type: "image/jpeg",
+    p_content_type: type,
     p_size_bytes: blob.size,
     p_sha256: hash,
     p_caption: meta.caption || null,
@@ -135,33 +189,48 @@ export async function uploadPhoto(file, meta) {
   });
 }
 
-async function putSupabase(path, blob) {
+async function putSupabase(path, blob, type) {
   const s = getSession();
   if (!s || !s.access_token) throw new Error(tr("auth.required"));
   const r = await fetch(`${SB_URL}/storage/v1/object/${PHOTO_BUCKET}/${encodeURI(path)}`, {
     method: "POST",
-    headers: { apikey: SB_KEY, Authorization: "Bearer " + s.access_token, "Content-Type": "image/jpeg" },
+    headers: {
+      apikey: SB_KEY, Authorization: "Bearer " + s.access_token,
+      "Content-Type": type || "image/jpeg",
+    },
     body: blob,
   });
   if (!r.ok) {
     let m = "Upload failed (" + r.status + ")";
     try { const j = await r.json(); m = j.message || j.error || m; } catch (e) {}
-    throw new Error(m);
+    // carried so withRetry can tell a dead 4xx from a flaky connection
+    const err = new Error(m);
+    err.status = r.status;
+    throw err;
   }
 }
 
-async function putGcs(path, blob) {
+async function putGcs(path, blob, type) {
   const s = getSession();
+  const ct = type || "image/jpeg";
   const r = await fetch(SB_URL + "/functions/v1/photo-signed-url", {
     method: "POST",
     headers: { apikey: SB_KEY, Authorization: "Bearer " + s.access_token, "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "upload", path, contentType: "image/jpeg" }),
+    body: JSON.stringify({ action: "upload", path, contentType: ct }),
   });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok || !j.url) throw new Error(j.error || "Could not get an upload link");
+  if (!r.ok || !j.url) {
+    const err = new Error(j.error || "Could not get an upload link");
+    err.status = r.status;
+    throw err;
+  }
 
-  const up = await fetch(j.url, { method: "PUT", headers: { "Content-Type": "image/jpeg" }, body: blob });
-  if (!up.ok) throw new Error("Google Cloud upload failed (" + up.status + ")");
+  const up = await fetch(j.url, { method: "PUT", headers: { "Content-Type": ct }, body: blob });
+  if (!up.ok) {
+    const err = new Error("Google Cloud upload failed (" + up.status + ")");
+    err.status = up.status;
+    throw err;
+  }
 }
 
 /* ---------------------------------------------------------------- viewing */

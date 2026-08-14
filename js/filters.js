@@ -17,15 +17,20 @@
  * in somebody's WhatsApp keeps working.
  */
 import { tr } from "./i18n.js";
-import { DATE_BUCKETS, FABRIC_RECV_STATES, DISPATCH_STATES, PRODUCTION_STATES } from "./config.js";
+import {
+  DATE_BUCKETS, FABRIC_RECV_STATES, DISPATCH_STATES, PRODUCTION_STATES,
+  PROCUREMENT_REQS, LINE_REVIEW_STATUSES,
+} from "./config.js";
 import { esc, el } from "./ui.js";
 
-/* Free text and dates - one value each. */
-export const TEXT_FIELDS = ["order", "from", "to", "customer", "comment", "q"];
+/* Free text and dates - one value each. `comment` was dropped on 14 Aug: it searched the same
+ * search_blob as `customer` and `q` already do, so it was a third box competing for the same
+ * matches while making the bar taller. */
+export const TEXT_FIELDS = ["order", "from", "to", "customer", "q"];
 /* Everything picked from a list - any number of values each. */
 export const MULTI_FIELDS = [
   "bucket", "sheet", "city", "stitch", "commercial", "wref", "fab1", "fab2",
-  "alt", "fabstatus", "tailor", "prodstate",
+  "alt", "fabstatus", "tailor", "prodstate", "procurement", "review",
 ];
 export const FIELDS = [...TEXT_FIELDS, ...MULTI_FIELDS];
 
@@ -33,8 +38,9 @@ export const FIELDS = [...TEXT_FIELDS, ...MULTI_FIELDS];
  * module that does not gets neither the control nor the predicate, rather than a 400 on a column
  * the view has never heard of.
  *
- * fabstatus and tailor are roster-only; prodstate is on the roster AND the status board. */
-const OPTIONAL = ["fabstatus", "tailor", "prodstate"];
+ * fabstatus and tailor are roster-only; prodstate is on the roster AND the status board;
+ * procurement and review exist only on v_ops_line_review, which the Comments page reads. */
+const OPTIONAL = ["fabstatus", "tailor", "prodstate", "procurement", "review"];
 
 /* The selected values of one multi-field, always as a list.
  *
@@ -107,6 +113,24 @@ export function toQuery(f, caps) {
   if (m("fabstatus").length && caps && caps.fabstatus) q.push(inList("fabric_recv_state", m("fabstatus")));
   if (m("tailor").length    && caps && caps.tailor)    q.push(inList("dispatch_state", m("tailor")));
   if (m("prodstate").length && caps && caps.prodstate) q.push(inList("production_state", m("prodstate")));
+  if (m("procurement").length && caps && caps.procurement) {
+    q.push(overlaps("procurement_req", m("procurement")));
+  }
+
+  /* Line review marks. "Unread" is the ABSENCE of a mark rather than a value in the array, so
+   * picking it alongside real marks needs one or= for the same reason the city filter does. */
+  if (caps && caps.review) {
+    const rev = m("review");
+    const marks = rev.filter((s) => s !== "unread");
+    const unread = rev.includes("unread");
+    if (unread && marks.length) {
+      q.push(`or=${encodeURIComponent(`(is_read.is.false,marks.ov.{${marks.map(quote).join(",")}})`)}`);
+    } else if (unread) {
+      q.push("is_read=is.false");
+    } else if (marks.length) {
+      q.push(overlaps("marks", marks));
+    }
+  }
 
   /* 492 of 641 orders have no city at all, so "unknown" has to be selectable rather than silently
    * excluded - and now it can be ticked ALONGSIDE real cities. That needs a single or=(), because
@@ -121,9 +145,8 @@ export function toQuery(f, caps) {
     q.push(inList("city", named));
   }
 
-  // customer name, optional comment and free text all live in the prebuilt lowercase search_blob
+  // customer name and free text both live in the prebuilt lowercase search_blob
   if (f.customer) q.push(ilike("search_blob", f.customer.toLowerCase()));
-  if (f.comment)  q.push(ilike("search_blob", f.comment.toLowerCase()));
   if (f.q)        q.push(ilike("search_blob", f.q.toLowerCase()));
 
   if (m("stitch").length)     q.push(overlaps("stitching_types", m("stitch")));
@@ -162,6 +185,12 @@ const CB_CAP = 150;
 const plain = (v) => ({ value: v, label: v });
 const fromCfg = (s) => ({ value: s.value, label: tr(s.key) });
 
+/* Clicking outside a popover closes it. Registered ONCE for the module rather than once per render:
+ * the bar is rebuilt on every render, and a per-render document listener would pile up, each one
+ * holding a detached bar alive. Each render just hands over its own closer. */
+let closeOpenPopovers = () => {};
+document.addEventListener("click", () => closeOpenPopovers());
+
 export function renderFilterBar(mount, state, opts, onChange, caps) {
   const f = state.filters;
   const n = activeCount(f, caps);
@@ -182,6 +211,9 @@ export function renderFilterBar(mount, state, opts, onChange, caps) {
     fabstatus: FABRIC_RECV_STATES.map(fromCfg),
     tailor: DISPATCH_STATES.map(fromCfg),
     prodstate: PRODUCTION_STATES.map(fromCfg),
+    procurement: PROCUREMENT_REQS.map(fromCfg),
+    // unread leads, because it is the state every line starts in and the one being worked down
+    review: [{ value: "unread", label: tr("rev.unread") }, ...LINE_REVIEW_STATUSES.map(fromCfg)],
   };
 
   /* Staged selections. The bar has always committed on Apply rather than on every keystroke, and
@@ -193,17 +225,26 @@ export function renderFilterBar(mount, state, opts, onChange, caps) {
   const picks = {};
   MULTI_FIELDS.forEach((k) => { picks[k] = new Set(vals(f, k)); });
 
-  /* A field: its label, a search box once the list is long, and the checkboxes themselves (painted
-   * by paintOpts once the bar is in the DOM). */
+  /* A field: a button carrying its label and how many values are picked, and a panel of checkboxes
+   * that opens on click.
+   *
+   * The lists used to sit open on the page. That is a better control and a worse filter bar: eleven
+   * of them stacked three deep pushed the orders themselves off the bottom of the screen, which is
+   * the thing people came to look at. Folding each into a popover keeps multi-select - "Dubai and
+   * Abu Dhabi" in one pass - at roughly the height of the dropdowns it replaced. */
   const cbField = (name, label) => {
     const long = (OPTS[name] || []).length > CB_SEARCH_OVER;
     return `
-      <div><label class="f" id="lbl-${esc(name)}">${esc(label)}<span data-count="${esc(name)}"></span></label>
-        <div class="cbfield" data-field="${esc(name)}" role="group" aria-labelledby="lbl-${esc(name)}">
+      <div class="cbf" data-field="${esc(name)}">
+        <button type="button" class="cbbtn" data-open="${esc(name)}" aria-expanded="false"
+                aria-haspopup="true"><span class="cblabel">${esc(label)}</span><span
+                class="cbn" data-count="${esc(name)}"></span><span class="cbcaret">▾</span></button>
+        <div class="cbpop" role="group" aria-label="${esc(label)}" hidden>
           ${long ? `<input type="search" class="cbsearch" data-search="${esc(name)}"
                  placeholder="${esc(tr("f.narrow"))}" aria-label="${esc(label)} — ${esc(tr("f.narrow"))}">` : ""}
           <div class="cbopts"></div>
-        </div></div>`;
+        </div>
+      </div>`;
   };
 
   const bar = el(`
@@ -222,25 +263,27 @@ export function renderFilterBar(mount, state, opts, onChange, caps) {
         <div class="fgrid">
           <div><label class="f">${esc(tr("f.orderId"))}</label>
                <input type="text" name="order" value="${esc(f.order || "")}" inputmode="numeric"></div>
+          <div><label class="f">${esc(tr("f.customer"))}</label>
+               <input type="text" name="customer" value="${esc(f.customer || "")}"></div>
           <div><label class="f">${esc(tr("f.dateFrom"))}</label>
                <input type="date" name="from" value="${esc(f.from || "")}"></div>
           <div><label class="f">${esc(tr("f.dateTo"))}</label>
                <input type="date" name="to" value="${esc(f.to || "")}"></div>
-          ${cbField("sheet", tr("f.sheetStatus"))}
+        </div>
+        <div class="fchips">
           ${cbField("city", tr("f.city"))}
-          <div><label class="f">${esc(tr("f.customer"))}</label>
-               <input type="text" name="customer" value="${esc(f.customer || "")}"></div>
+          ${cbField("sheet", tr("f.sheetStatus"))}
           ${cbField("stitch", tr("f.stitching"))}
           ${cbField("commercial", tr("f.commercial"))}
           ${cbField("wref", tr("f.windowRef"))}
-          <div><label class="f">${esc(tr("f.comment"))}</label>
-               <input type="text" name="comment" value="${esc(f.comment || "")}"></div>
           ${cbField("fab1", tr("f.fabric1"))}
           ${cbField("fab2", tr("f.fabric2"))}
           ${cbField("alt", tr("f.alteration"))}
           ${caps && caps.fabstatus ? cbField("fabstatus", tr("f.fabricStatus")) : ""}
           ${caps && caps.tailor ? cbField("tailor", tr("disp.title")) : ""}
           ${caps && caps.prodstate ? cbField("prodstate", tr("f.prodStatus")) : ""}
+          ${caps && caps.procurement ? cbField("procurement", tr("proc.title")) : ""}
+          ${caps && caps.review ? cbField("review", tr("rev.marks")) : ""}
         </div>
         <div class="row" style="justify-content:flex-end">
           <button class="btn ghost" data-clear>${esc(tr("f.clear"))}</button>
@@ -295,6 +338,36 @@ export function renderFilterBar(mount, state, opts, onChange, caps) {
   };
 
   bar.querySelector(".fsummary").addEventListener("click", () => bar.classList.toggle("collapsed"));
+
+  /* One popover open at a time, closing on a click anywhere else or on Escape. A list stays open
+   * while it is being ticked - closing on every tick would make picking three cities three trips. */
+  const closePops = (except) => {
+    bar.querySelectorAll(".cbf").forEach((box) => {
+      if (box === except) return;
+      box.querySelector(".cbpop").hidden = true;
+      box.querySelector(".cbbtn").setAttribute("aria-expanded", "false");
+    });
+  };
+  bar.querySelectorAll("[data-open]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const box = btn.closest(".cbf");
+      const pop = box.querySelector(".cbpop");
+      const opening = pop.hidden;
+      closePops(box);
+      pop.hidden = !opening;
+      btn.setAttribute("aria-expanded", String(opening));
+      if (opening) {
+        const s = pop.querySelector(".cbsearch");
+        if (s) s.focus();
+      }
+    });
+  });
+  bar.querySelectorAll(".cbpop").forEach((p) => p.addEventListener("click", (e) => e.stopPropagation()));
+  bar.addEventListener("click", () => closePops(null));
+  bar.addEventListener("keydown", (e) => { if (e.key === "Escape") closePops(null); });
+  // hand this render's closer to the one document-level listener - see closeOpenPopovers
+  closeOpenPopovers = () => closePops(null);
 
   bar.addEventListener("change", (e) => {
     if (!e.target.matches("input[data-cb]")) return;

@@ -24,7 +24,7 @@ const COLS = [
   "order_id", "customer_name", "city", "installation_date", "date_bucket", "sheet_status",
   "status", "ready", "team_no", "team_name", "team_assigned", "visit_count",
   "has_adjustment", "adjustment_count", "alteration", "adj_pending",
-  "production_state", "owl_total", "window_count", "fabric_meters_total",
+  "production_state", "owl_total", "window_count", "fabric_meters_total", "meters_sent_total",
   "production_hold", "cancelled",
   "stitching_types", "commercial_names", "window_refs", "fabric_1_codes", "fabric_2_codes",
 ].join(",");
@@ -137,7 +137,8 @@ export async function render(mount, state, setFilters) {
   /* ---- charts */
   const prodRows = PRODUCTION_STATES.map((s, i) => {
     const inState = rows.filter((r) => r.production_state === s.value);
-    const metres = inState.reduce((a, r) => a + (Number(r.fabric_meters_total) || 0), 0);
+    // metres SENT, matching Production and Reports - see col.metersSent
+    const metres = inState.reduce((a, r) => a + (Number(r.meters_sent_total) || 0), 0);
     return {
       label: tr(s.key),
       value: inState.length,

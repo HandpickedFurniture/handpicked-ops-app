@@ -5,7 +5,7 @@
  * TRANSLATED. Reverse that and writes start failing their CHECK.
  */
 
-export const BUILD = "2026-08-12.4";
+export const BUILD = "2026-08-14.1";
 
 /* Supabase project "handpicked-curtains". The publishable key is safe to ship: every table is
  * RLS-locked to the `authenticated` role and `anon` has no policy at all. The bearer token on each
@@ -19,20 +19,26 @@ export const STORAGE_PREFIX = "kops_";
  * The bucket name is the same on both backends, so switching Supabase -> Google Cloud Storage does
  * not rewrite any stored path. Which backend is live is detected at runtime (see js/photos.js), not
  * configured here.
- * A phone photo is 3-6 MB raw; 1600px long edge at q0.72 lands around 200-350 KB, which is still
+ * A phone photo is 3-6 MB raw; 1280px long edge at q0.65 lands around 120-200 KB, which is still
  * legible for damage evidence and survives mobile data in a lift. */
 export const PHOTO_BUCKET  = "ops-photos";
-export const PHOTO_MAX_PX  = 1600;
-export const PHOTO_QUALITY = 0.72;
+export const PHOTO_MAX_PX  = 1280;
+export const PHOTO_QUALITY = 0.65;
+/* Uploads fail on mobile data far more often than they fail for any other reason, and a failed
+ * evidence photo is usually never retaken. Three attempts with a widening gap turns most of them
+ * into a slight pause instead. */
+export const PHOTO_RETRIES    = 3;
+export const PHOTO_RETRY_MS   = 1200;
 
 /* ---------------------------------------------------------------- stages
- * Stage 1-4: order x fabric, on receiving_expectations.status (+ an independent qc_result axis).
- * Stage 5-10: window x layer, on preparation_events.stage.
- * Stage 11-14: order, on order_dispatch.
+ * Fabric receiving: order x fabric, on receiving_expectations.status (+ an independent qc_result).
+ * Preparation:      window x layer, on preparation_events.stage - see PREP_STAGES.
+ * Outwork:          order, on order_dispatch - see DISPATCH_SUBSTATES.
  *
  * preparation_events' CHECK still permits four legacy values from an earlier design
- * (follow_up_supplier, received, out_of_stock_fabric, fabric_quality_check). The app writes only the
- * six below - this list is the constraint that matters. */
+ * (follow_up_supplier, received, out_of_stock_fabric, fabric_quality_check) and the four stages
+ * dropped in Aug 2026. The app writes only what PREP_STAGES lists - that is the constraint that
+ * matters, and check_values.py enforces it. */
 export const RECV_STATUSES = [
   { value: "pending",      key: "recv.pending",  tone: "wait" },
   { value: "ordered",      key: "recv.ordered",  tone: "wait" },
@@ -49,14 +55,28 @@ export const QC_RESULTS = [
   { value: "wrong_fabric",        key: "qc.wrong",        tone: "bad" },
 ];
 
+/* Started -> Packed -> Stacking.
+ *
+ * 'cutting' is LABELLED "Started" and keeps its stored value: renaming it would invalidate every
+ * existing preparation_events row and fn_ops_set_dispatch's folding_packing call, for no gain. The
+ * CHECK constraint still permits hemming / ironing / marking_measurement / taping - three historical
+ * rows use hemming - but nothing writes them any more, and v_ops_order_roster folds all four onto
+ * rank 1 so those panels still read as Started rather than disappearing off the ladder. */
 export const PREP_STAGES = [
-  { value: "cutting",             key: "prep.cutting" },
-  { value: "hemming",             key: "prep.hemming" },
-  { value: "ironing",             key: "prep.ironing" },
-  { value: "marking_measurement", key: "prep.marking" },
-  { value: "taping",              key: "prep.taping" },
-  { value: "folding_packing",     key: "prep.packed" },
+  { value: "cutting",         key: "prep.started" },
+  { value: "folding_packing", key: "prep.packed" },
+  { value: "stacking",        key: "prep.stacking" },
 ];
+
+/* Where a packed order physically goes. Constrained the same way in preparation_events' CHECK, so a
+ * value invented here is refused by the database rather than quietly stored. */
+export const STACK_FLOORS = [
+  { value: "G", key: "stack.floorG" },
+  { value: "F", key: "stack.floorF" },
+];
+export const STACK_RACKS  = Array.from({ length: 10 }, (_, i) => `R${i + 1}`);
+export const STACK_SHELVES = Array.from({ length: 9 }, (_, i) => `S${i + 1}`);
+export const STACK_ZONES  = Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i));
 
 export const DISPATCH_CONTRACTORS = [
   { value: "farooq",  key: "disp.farooq" },
@@ -152,6 +172,32 @@ export const DISPATCH_STATES = [
   { value: "paid",          key: "disp.paid",    tone: "ok" },
   { value: "qc_failed",     key: "disp.qcFail",  tone: "bad" },
   { value: "issue",         key: "disp.issue",   tone: "bad" },
+];
+
+/* ---------------------------------------------------------------- line review
+ * line_review_mark.status. A coordinator has to read every line of every order; these are what they
+ * can record against one.
+ *
+ * UNREAD IS NOT IN THIS LIST, deliberately. It is the ABSENCE of any mark, so 4,409 lines need no
+ * rows at all to start in the right state, and "unread" can never drift out of step with the marks
+ * beside it. The UI shows it as a chip like the rest. */
+export const LINE_REVIEW_STATUSES = [
+  { value: "read",                  key: "rev.read",           tone: "ok" },
+  { value: "follow_up_production",  key: "rev.fuProduction",   tone: "warn" },
+  { value: "follow_up_installation",key: "rev.fuInstallation", tone: "warn" },
+  { value: "follow_up_procurement", key: "rev.fuProcurement",  tone: "warn" },
+  { value: "ask_coordinators",      key: "rev.askCoord",       tone: "info" },
+  { value: "installed",             key: "rev.installed",      tone: "ok" },
+];
+
+/* v_ops_line_review.procurement_req - what procurement has to act on before this line can be made.
+ * Derived in the view, not here; these are the labels and the filter's options. A roman blind only
+ * counts when the line is ours to produce, since a fixing-only roman is somebody else's stock -
+ * see the view for the supplier_type test. */
+export const PROCUREMENT_REQS = [
+  { value: "roman_production", key: "proc.roman" },
+  { value: "pelmet",           key: "proc.pelmet" },
+  { value: "eyelet",           key: "proc.eyelet" },
 ];
 
 /* ---------------------------------------------------------------- inventory vocabularies

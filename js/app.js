@@ -15,6 +15,7 @@ import { readHash, writeHash } from "./filters.js";
 import { logoSvg, installFavicon } from "./brand.js";
 import * as home from "./mod-home.js";
 import * as production from "./mod-production.js";
+import * as prep from "./mod-prep.js";
 import * as status from "./mod-status.js";
 import * as schedule from "./mod-schedule.js";
 import * as transfer from "./mod-transfer.js";
@@ -27,6 +28,7 @@ import * as insights from "./mod-insights.js";
 const ROUTES = {
   home:       { key: "nav.home",       render: (m, s) => home.render(m, s) },
   production: { key: "nav.production", render: (m, s, f) => production.render(m, s, f) },
+  prep:       { key: "nav.prep",       render: (m, s, f) => prep.render(m, s, f) },
   status:     { key: "nav.status",     render: (m, s, f) => status.render(m, s, f) },
   schedule:   { key: "nav.schedule",   render: (m, s, f) => schedule.render(m, s, f) },
   transfer:   { key: "nav.transfer",   render: (m, s, f) => transfer.render(m, s, f) },
@@ -77,7 +79,7 @@ function paintQueue() {
     : f ? `<span class="qbadge fail" title="${esc(tr("t.failed", { n: f }))}">${f} !</span>` : "";
 }
 
-const TAB_ICON = { home: "🏠", production: "✂️", status: "🚚", schedule: "🗓️",
+const TAB_ICON = { home: "🏠", production: "✂️", prep: "🧵", status: "🚚", schedule: "🗓️",
                    transfer: "📦", inventory: "🔩", insights: "📊" };
 
 function paintTabs() {

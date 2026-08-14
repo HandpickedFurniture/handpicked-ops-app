@@ -32,7 +32,10 @@ export async function render(mount, state, setFilters) {
   if (!isSignedIn()) return;
 
   const shown = visibleSections();
-  const secId = state.params.get("sec") || "dashboard";
+  /* Reports → Comments is the default landing screen: it is the one section people are expected to
+   * work THROUGH rather than glance at, and an unread line nobody opened is the failure this whole
+   * section exists to prevent. The dashboard is a click away. */
+  const secId = state.params.get("sec") || "reports";
   // a viewer following a ?sec=roles link lands on the dashboard rather than an empty tab
   const sec = shown.find((s) => s.id === secId) || shown[0];
 

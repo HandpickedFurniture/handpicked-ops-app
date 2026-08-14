@@ -14,7 +14,7 @@ import { tr, tv } from "./i18n.js";
 import { MOVE_REASONS, LOCATION_KINDS, UOM_OPTIONS, ITEM_CATEGORIES } from "./config.js";
 import {
   $, esc, el, chip, num, fmtDate, fmtDateTime, toast, loading, modal, selectHtml, downloadCsv,
-  today,
+  today, confirmSheet,
 } from "./ui.js";
 import {
   photoStrip, locationSelect, newestPhotoByContext, signedUrlMap, uploadPhoto, viewUrl, openLightbox,
@@ -215,16 +215,18 @@ function itemCard(r, reload, photo, url, selected, bulk) {
         ${isViewer() ? "" : `<input type="checkbox" data-isel value="${esc(r.id)}"
             aria-label="${esc(r.item_code)}" style="flex:none;margin-top:4px">`}
         <span data-thumbslot></span>
+        <!-- Name first and bold, SKU beneath it. People look for "gromment pliers", not for
+             FT-0042 - the code is how the shelf is labelled, not how the item is recognised. -->
         <div class="ometa">
           <div class="row" style="gap:6px">
-            <span class="oid">${esc(r.item_code)}</span>
+            <span class="oid">${esc(r.name)}</span>
             ${chip(`${num(r.on_hand)} ${r.uom}`, r.needs_reorder ? "bad" : "ok",
                    r.needs_reorder ? "!" : "")}
             ${r.reorder_flagged ? chip(tr("inv.onOrder"), "warn", "↻") : ""}
             ${r.location_code ? chip(r.location_code, "info") : ""}
             ${r.photo_count ? chip(String(r.photo_count), "mute", "📷") : ""}
           </div>
-          <div class="oname">${esc(r.name)}</div>
+          <div class="osub mono">${esc(r.item_code)}</div>
           <div class="osub">${esc(r.category || "")}
             ${r.reorder_level ? " · " + esc(tr("inv.reorder")) + " " + esc(num(r.reorder_level)) : ""}
             ${r.stock_cover_days ? " · " + esc(r.stock_cover_days) + "d" : ""}
@@ -266,6 +268,29 @@ async function itemPanel(host, r, reload) {
   } catch (e) { /* the panel is still useful without history */ }
 
   const wrap = el(`<div class="drawer"></div>`);
+
+  /* Edit and remove. Removing DEACTIVATES: stock on hand is the sum of the movement ledger, so a
+   * hard delete would either orphan the history or destroy the evidence behind the number. The RPC
+   * refuses while anything is still on hand, since hiding a real quantity from every count is worse
+   * than leaving a tidy-up undone. */
+  if (!isViewer()) {
+    const admin = el(`
+      <div class="dsec row" style="justify-content:flex-end;gap:8px">
+        <button class="btn sm" data-edit>${esc(tr("inv.editItem"))}</button>
+        <button class="btn ghost sm" data-del>${esc(tr("inv.deleteItem"))}</button>
+      </div>`);
+    admin.querySelector("[data-edit]").addEventListener("click", () => openItemSheet(r, reload));
+    admin.querySelector("[data-del]").addEventListener("click", async () => {
+      if (!await confirmSheet(`${tr("inv.deleteItem")} — ${r.item_code}`, tr("inv.deleteConfirm"))) return;
+      try {
+        await rpc("fn_ops_set_inventory_item_active",
+                  { p_item_id: r.id, p_active: false, p_actor: currentActor() });
+        toast(tr("t.saved"), "ok");
+        reload();
+      } catch (e) { toast(e.message || String(e), "bad"); }
+    });
+    wrap.appendChild(admin);
+  }
 
   const act = el(`
     <div class="dsec">
@@ -498,87 +523,104 @@ async function packsSection(r, act, reload) {
  * The photo is picked here but can only be uploaded after the insert returns an id, since a photo
  * is addressed by the item it belongs to. The item is saved either way: a failed photo leaves a
  * registered item with no picture, never a lost item. */
+/* Also the EDIT sheet: pass an item to prefill and update it instead of inserting.
+ *
+ * No Location field. Where a thing physically sits changes every time it is moved, and the move
+ * panel below already records that against the movement that caused it - so a location typed once
+ * at registration was a second, staler answer to a question already answered properly. */
 function openItemSheet(item, reload) {
-  locationSelect("iloc", (item && item.location_code) || "").then((locHtml) => {
-    const m = modal(`
-      <h3>${esc(tr("inv.addItem"))}</h3>
-      <div class="grid2" style="margin-top:12px">
-        <div><label class="f">${esc(tr("inv.name"))}</label>
-          <input type="text" name="iname" autofocus></div>
-        <div><label class="f">${esc(tr("inv.code"))}</label>
-          <input type="text" value="${esc(tr("inv.codeAuto"))}" disabled></div>
-        <div><label class="f">${esc(tr("inv.uomLabel"))}</label>
-          ${selectHtml("iuom", UOM_OPTIONS.map((u) => ({ value: u.value, label: tr(u.key) })), "pieces")}</div>
-        <div><label class="f">${esc(tr("inv.category"))}</label>
-          ${selectHtml("icat", ITEM_CATEGORIES.map((c) => ({ value: c.value, label: tr(c.key) })),
-                       "", tr("inv.catPick"))}</div>
-        <div><label class="f">${esc(tr("inv.reorder"))}</label>
-          <input type="number" name="ireorder" step="0.01" value="0"></div>
-        <div><label class="f">${esc(tr("inv.stockCover"))}</label>
-          <input type="number" name="icover" step="1" min="0" placeholder="30"></div>
-        <div><label class="f">${esc(tr("loc.title"))}</label>${locHtml}</div>
-        <div><label class="f">${esc(tr("inv.photoOptional"))}</label>
-          <label class="btn" style="display:flex;align-items:center;gap:8px;cursor:pointer">
-            📷 <span data-photoname>${esc(tr("photo.add"))}</span>
-            <input type="file" accept="image/*" capture="environment" name="iphoto" hidden>
-          </label></div>
-      </div>
-      <div class="muted" style="margin-top:8px;font-size:12px">${esc(tr("inv.stockCoverHint"))}</div>
-      <div id="ierr" class="err hidden" style="margin-top:10px"></div>
-      <div class="row" style="justify-content:flex-end;margin-top:14px">
-        <button class="btn ghost" data-no>${esc(tr("act.cancel"))}</button>
-        <button class="btn primary" data-yes>${esc(tr("act.save"))}</button>
-      </div>`);
+  const editing = !!(item && item.id);
+  const v = (x) => esc(x === null || x === undefined ? "" : String(x));
+  const m = modal(`
+    <h3>${esc(editing ? tr("inv.editItem") : tr("inv.addItem"))}</h3>
+    <div class="grid2" style="margin-top:12px">
+      <div><label class="f">${esc(tr("inv.name"))}</label>
+        <input type="text" name="iname" value="${v(item && item.name)}" autofocus></div>
+      <div><label class="f">${esc(tr("inv.code"))}</label>
+        <input type="text" value="${editing ? v(item.item_code) : esc(tr("inv.codeAuto"))}" disabled></div>
+      <div><label class="f">${esc(tr("inv.uomLabel"))}</label>
+        ${selectHtml("iuom", UOM_OPTIONS.map((u) => ({ value: u.value, label: tr(u.key) })),
+                     (item && item.uom) || "pieces")}</div>
+      <div><label class="f">${esc(tr("inv.category"))}</label>
+        ${selectHtml("icat", ITEM_CATEGORIES.map((c) => ({ value: c.value, label: tr(c.key) })),
+                     (item && item.category) || "", tr("inv.catPick"))}</div>
+      <div><label class="f">${esc(tr("inv.reorder"))}</label>
+        <input type="number" name="ireorder" step="0.01" value="${v((item && item.reorder_level) ?? 0)}"></div>
+      <div><label class="f">${esc(tr("inv.stockCover"))}</label>
+        <input type="number" name="icover" step="1" min="0" placeholder="30"
+               value="${v(item && item.stock_cover_days)}"></div>
+      <div><label class="f">${esc(tr("inv.photoOptional"))}</label>
+        <label class="btn" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          📷 <span data-photoname>${esc(tr("photo.add"))}</span>
+          <input type="file" accept="image/*" capture="environment" name="iphoto" hidden>
+        </label></div>
+    </div>
+    <div class="muted" style="margin-top:8px;font-size:12px">${esc(tr("inv.stockCoverHint"))}</div>
+    <div id="ierr" class="err hidden" style="margin-top:10px"></div>
+    <div class="row" style="justify-content:flex-end;margin-top:14px">
+      <button class="btn ghost" data-no>${esc(tr("act.cancel"))}</button>
+      <button class="btn primary" data-yes>${esc(tr("act.save"))}</button>
+    </div>`);
 
-    wireNewLocation(m.sheet.querySelector('[name="iloc"]'));
-
-    const photoInput = m.sheet.querySelector('[name="iphoto"]');
-    photoInput.addEventListener("change", () => {
-      const f = photoInput.files && photoInput.files[0];
-      m.sheet.querySelector("[data-photoname]").textContent = f ? f.name : tr("photo.add");
-    });
-
-    m.sheet.querySelector("[data-no]").onclick = m.close;
-    m.sheet.querySelector("[data-yes]").onclick = async () => {
-      const g = (n) => m.sheet.querySelector(`[name="${n}"]`).value.trim();
-      const errBox = m.sheet.querySelector("#ierr");
-      if (!g("iname")) {
-        errBox.textContent = tr("inv.name");
-        errBox.classList.remove("hidden");
-        return;
-      }
-      try {
-        const row = await rpc("fn_ops_create_inventory_item", {
-          p_name: g("iname"),
-          p_uom: g("iuom") || "pieces",
-          p_category: g("icat") || null,
-          p_reorder_level: Number(g("ireorder") || 0),
-          p_stock_cover_days: g("icover") === "" ? null : Number(g("icover")),
-          p_location_code: g("iloc") || null,
-          p_note: null,
-          p_actor: currentActor(),
-        });
-        m.close();
-
-        const file = photoInput.files && photoInput.files[0];
-        if (file && row && row.id) {
-          try {
-            await uploadPhoto(file, {
-              context: "inventory", context_id: row.id,
-              context_label: `${row.item_code} — ${row.name}`,
-              location_code: row.location_code || null,
-            });
-          } catch (e) {
-            // the item is already registered; say what failed rather than implying it all failed
-            toast(e.message || String(e), "bad");
-          }
-        }
-        toast(row && row.item_code ? `${tr("t.saved")} — ${row.item_code}` : tr("t.saved"), "ok");
-        reload();
-      } catch (e) {
-        errBox.textContent = e.message;
-        errBox.classList.remove("hidden");
-      }
-    };
+  const photoInput = m.sheet.querySelector('[name="iphoto"]');
+  photoInput.addEventListener("change", () => {
+    const f = photoInput.files && photoInput.files[0];
+    m.sheet.querySelector("[data-photoname]").textContent = f ? f.name : tr("photo.add");
   });
+
+  m.sheet.querySelector("[data-no]").onclick = m.close;
+  m.sheet.querySelector("[data-yes]").onclick = async () => {
+    const g = (n) => m.sheet.querySelector(`[name="${n}"]`).value.trim();
+    const errBox = m.sheet.querySelector("#ierr");
+    if (!g("iname")) {
+      errBox.textContent = tr("inv.name");
+      errBox.classList.remove("hidden");
+      return;
+    }
+    try {
+      const cover = g("icover") === "" ? null : Number(g("icover"));
+      const row = editing
+        ? await rpc("fn_ops_update_inventory_item", {
+            p_item_id: item.id,
+            p_name: g("iname"),
+            p_uom: g("iuom") || "pieces",
+            p_category: g("icat") || "",
+            p_reorder_level: Number(g("ireorder") || 0),
+            // -1 is the RPC's "clear it" signal; null there means "leave alone"
+            p_stock_cover_days: cover === null ? -1 : cover,
+            p_note: null,
+            p_actor: currentActor(),
+          })
+        : await rpc("fn_ops_create_inventory_item", {
+            p_name: g("iname"),
+            p_uom: g("iuom") || "pieces",
+            p_category: g("icat") || null,
+            p_reorder_level: Number(g("ireorder") || 0),
+            p_stock_cover_days: cover,
+            p_location_code: null,
+            p_note: null,
+            p_actor: currentActor(),
+          });
+      m.close();
+
+      const file = photoInput.files && photoInput.files[0];
+      if (file && row && row.id) {
+        try {
+          await uploadPhoto(file, {
+            context: "inventory", context_id: row.id,
+            context_label: `${row.item_code} — ${row.name}`,
+            location_code: row.location_code || null,
+          });
+        } catch (e) {
+          // the item is already saved; say what failed rather than implying it all failed
+          toast(e.message || String(e), "bad");
+        }
+      }
+      toast(row && row.item_code ? `${tr("t.saved")} — ${row.item_code}` : tr("t.saved"), "ok");
+      reload();
+    } catch (e) {
+      errBox.textContent = e.message;
+      errBox.classList.remove("hidden");
+    }
+  };
 }

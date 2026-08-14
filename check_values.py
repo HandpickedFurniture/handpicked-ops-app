@@ -19,9 +19,15 @@ src = open("js/config.js", encoding="utf-8").read()
 EXPECTED = {
     "RECV_STATUSES": {"pending", "ordered", "received", "partial", "out_of_stock", "cancelled"},
     "QC_RESULTS": {"ok_fabric", "damaged_fabric", "insufficient_fabric", "wrong_fabric"},
-    # preparation_events' CHECK also still permits four legacy values from an earlier design;
-    # the app must write ONLY these six.
-    "PREP_STAGES": {"cutting", "hemming", "ironing", "marking_measurement", "taping", "folding_packing"},
+    # preparation_events' CHECK still permits the four dropped stages plus four older legacy values;
+    # the app must write ONLY these three. 'cutting' is LABELLED "Started" and keeps its value.
+    "PREP_STAGES": {"cutting", "folding_packing", "stacking"},
+    # line_review_mark.status. Unread is deliberately absent - it is the ABSENCE of a mark.
+    "LINE_REVIEW_STATUSES": {"read", "follow_up_production", "follow_up_installation",
+                             "follow_up_procurement", "ask_coordinators", "installed"},
+    # derived in v_ops_line_review, and filtered on with an overlap - a value that drifts out of
+    # step with the view returns nothing rather than erroring
+    "PROCUREMENT_REQS": {"roman_production", "pelmet", "eyelet"},
     "DISPATCH_CONTRACTORS": {"farooq", "jamal", "shahzad", "other"},
     "DISPATCH_SUBSTATES": {"planned", "sent", "received_back", "qc_passed", "paid",
                            "qc_failed", "issue"},

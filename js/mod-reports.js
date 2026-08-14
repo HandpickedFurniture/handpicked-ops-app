@@ -18,6 +18,7 @@ import {
   $, esc, el, num, aed, fmtDate, today, loading, chip, downloadCsv,
 } from "./ui.js";
 import { toQuery } from "./filters.js";
+import * as comments from "./mod-comments.js";
 
 /* Each page: the view it reads, and the columns to show. `fmt` renders a cell; `total` marks a
  * column that gets summed into the totals row. */
@@ -37,7 +38,7 @@ export const REPORT_PAGES = [
       { k: "window_count", key: "col.windows", n: 1, total: 1 },
       { k: "owl_blinds", key: "col.owlBlinds", n: 1, total: 1 },
       { k: "owl_total", key: "col.owlTotal", n: 1, total: 1 },
-      { k: "fabric_meters_total", key: "col.meters", n: 1, total: 1 },
+      { k: "meters_sent_total", key: "col.metersSent", n: 1, total: 1 },
       { k: "credits", key: "rep.credits", money: 1, total: 1 },
     ],
   },
@@ -77,7 +78,7 @@ export const REPORT_PAGES = [
       { k: "_stage", key: "col.production", fmt: (_v, r) => stageCell(r) },
       { k: "window_count", key: "col.windows", n: 1, total: 1 },
       { k: "owl_curtains", key: "rep.curtains", n: 1, total: 1 },
-      { k: "fabric_meters_total", key: "rep.meter", n: 1, total: 1 },
+      { k: "meters_sent_total", key: "col.metersSent", n: 1, total: 1 },
       { k: "received_meters", key: "rep.recMeter", n: 1, total: 1 },
     ],
   },
@@ -148,20 +149,10 @@ export const REPORT_PAGES = [
       { k: "items_count", key: "disp.items", n: 1, total: 1 },
     ],
   },
-  {
-    id: "comments", key: "rep.comments", view: "v_ops_report_orders",
-    order: "installation_date.desc.nullslast",
-    extra: "&or=(optional_comments.not.is.null,installation_notes.not.is.null,production_comments.not.is.null)",
-    cols: [
-      { k: "issue_flag", key: "rep.issueFlag", fmt: (v) => chip(v || "—", v === "Issue" ? "warn" : "mute") },
-      { k: "order_id", key: "col.order", bold: true },
-      { k: "customer_name", key: "col.customer" },
-      { k: "city", key: "col.city" },
-      { k: "optional_comments", key: "col.optComments", wide: 1 },
-      { k: "installation_notes", key: "col.installNotes", wide: 1 },
-      { k: "production_comments", key: "rep.prodComments", wide: 1 },
-    ],
-  },
+  /* Comments is not a table like the eight above it - it is the per-line review screen, with its
+   * own marking, its own filters and its own paging. It keeps its place in this list so it still
+   * appears as a tab in the same row; `module` is what tells render() to hand off. */
+  { id: "comments", key: "rep.comments", module: comments },
 ];
 
 function bar(done, total) {
@@ -175,15 +166,17 @@ function stageCell(r) {
   const rank = Number(r.prep_max_rank || 0);
   if (!rank) return `<span class="muted">—</span>`;
   const s = PREP_STAGES[rank - 1];
-  return chip(tr(s.key), rank === PREP_STAGES.length ? "ok" : "info",
-              rank === PREP_STAGES.length ? "✓" : "›")
+  // packed and stacked are both finished work; only Started is still in progress
+  const done = rank >= 2;
+  return chip(tr(s.key), done ? "ok" : "info", done ? "✓" : "›")
     + `<div class="muted" style="font-size:11px">${r.prep_done}/${r.prep_total}</div>`;
 }
 
 export async function render(mount, state, setFilters) {
   if (!isSignedIn()) return;
 
-  const pageId = state.params.get("rep") || REPORT_PAGES[0].id;
+  // Comments is the default report, matching Insights' own default section - see mod-insights.js
+  const pageId = state.params.get("rep") || "comments";
   const page = REPORT_PAGES.find((p) => p.id === pageId) || REPORT_PAGES[0];
 
   mount.innerHTML = `
@@ -202,6 +195,10 @@ export async function render(mount, state, setFilters) {
   });
 
   const box = $("#repbody", mount);
+
+  // Comments brings its own filter bar, marking and paging - hand the whole panel over to it
+  if (page.module) return page.module.render(box, state, setFilters);
+
   loading(true, tr("t.loading"));
   let rows = [];
   try {
