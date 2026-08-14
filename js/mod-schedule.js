@@ -14,9 +14,9 @@
  * render() per drag is unusable on a phone, so edits mutate a module-level model and repaint only
  * #schboard. Any error falls back to the house toast + full reload.
  */
-import { api, rpc, isSignedIn, isViewer, currentActor } from "./api.js";
+import { api, rpc, isSignedIn, isViewer, currentActor, getSession } from "./api.js";
 import { tr, getLang } from "./i18n.js";
-import { UTIL_BANDS, STOP_TAGS } from "./config.js";
+import { UTIL_BANDS, STOP_TAGS, SB_URL, SB_KEY } from "./config.js";
 import { $, esc, el, num, fmtDate, toast, loading, modal, confirmSheet, orderLabel } from "./ui.js";
 import { micField, wireMics } from "./voice.js";
 import { syncBar, lastSync, syncBarHtml } from "./sync.js";
@@ -205,6 +205,32 @@ function paintActions(date) {
  * the list looking active - the exact trap that made "separate Dubai and Abu Dhabi" appear to work
  * for two days while changing nothing.
  */
+/* Call the sched-ask edge function with the signed-in user's own token, so it reads exactly what
+ * that person is allowed to read. Short timeout: the deterministic answer behind it is already
+ * correct, so waiting a long time for nicer wording is a bad trade for someone mid-shift. */
+const ASK_TIMEOUT_MS = 9000;
+
+async function askEdge(runId, question) {
+  const s = getSession();
+  if (!s || !s.access_token) throw new Error("NOT_SIGNED_IN");
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), ASK_TIMEOUT_MS);
+  try {
+    const r = await fetch(SB_URL + "/functions/v1/sched-ask", {
+      method: "POST",
+      signal: ctl.signal,
+      headers: {
+        apikey: SB_KEY,
+        Authorization: "Bearer " + s.access_token,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ run_id: runId, question }),
+    });
+    if (!r.ok) throw new Error("sched-ask " + r.status);
+    return await r.json();
+  } finally { clearTimeout(t); }
+}
+
 function wireAsk(box, run, reload) {
   const panel = $("#schask", box);
   if (!panel) return;
@@ -227,17 +253,30 @@ function wireAsk(box, run, reload) {
     if (!q) return;
     say("me", null, [q]);
     input.value = "";
+    /* The edge function phrases the answer, but it is a convenience rather than the source: it
+     * grounds itself on the same fn_sched_ask facts, and if it is missing, slow or has no API key
+     * we fall back to those facts directly. The box must keep working without a model. */
     let a;
     try {
-      a = await rpc("fn_sched_ask", { p_run_id: run.id, p_question: q });
-    } catch (e) { say("bot", null, [e.message]); return; }
+      a = await askEdge(run.id, q);
+    } catch (e) {
+      try { a = await rpc("fn_sched_ask", { p_run_id: run.id, p_question: q }); }
+      catch (e2) { say("bot", null, [e2.message]); return; }
+    }
+    if (!a.answer) a.answer = [a.title, ...(a.lines || [])].filter(Boolean).join(" ");
 
     const rules = a.proposed_rules || [];
-    if (!a.is_instruction) { say("bot", a.title, a.lines); return; }
+    if (!a.is_instruction) {
+      // one line when a model phrased it, the fact list when it did not
+      say("bot", a.llm ? null : a.title, a.llm ? [a.answer] : a.lines);
+      return;
+    }
 
     // an instruction: show what was understood and wait for a yes
     const wrap = el(`<div class="askmsg bot"><b>${esc(a.title)}</b>
-      ${(a.lines || []).map((l) => `<div>${esc(l)}</div>`).join("")}
+      ${(a.llm ? [a.answer] : (a.lines || [])).map((l) => `<div>${esc(l)}</div>`).join("")}
+      ${a.rule_source === "suggested"
+        ? `<div class="muted sm">${esc(tr("sch.askRuleGuess"))}</div>` : ""}
       <div class="row" style="gap:6px;margin-top:7px">
         <button class="btn sm primary" data-save>${esc(
           rules.length ? tr("sch.askSaveRule") : tr("sch.askSaveNote"))}</button>
