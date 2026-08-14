@@ -68,6 +68,52 @@ const PROC_COL = {
 let OPTIONS = null;
 let SHOWN = 300;     // rows drawn at once; the rest come on demand - see the Show more button
 
+/* Apply one mark to a set of lines. Shared by "Mark all" and by the selection bar, so the two can
+ * never drift into behaving differently.
+ *
+ * Sent as ONE call per chunk rather than one per line: 4,000 lines as 4,000 queued RPCs is several
+ * minutes of round trips. Still queued like every other write, so it survives a van with no signal. */
+const MARK_CHUNK = 1000;
+
+function markSheet(targetRows, after) {
+  const n = targetRows.length;
+  if (!n) return;
+  const m = modal(`
+    <h3>${esc(tr("rev.markAll", { n }))}</h3>
+    <p class="muted" style="margin:4px 0 12px">${esc(tr("rev.markAllBody", { n }))}</p>
+    <div style="margin-bottom:10px"><label class="f">${esc(tr("rev.marks"))}</label>
+      ${selectHtml("bulkstatus",
+          LINE_REVIEW_STATUSES.map((s) => ({ value: s.value, label: tr(s.key) })), "read")}</div>
+    <label style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+      <input type="checkbox" name="bulkoff"> ${esc(tr("rev.markAllRemove"))}</label>
+    <div class="row" style="justify-content:flex-end">
+      <button class="btn ghost" data-no>${esc(tr("act.cancel"))}</button>
+      <button class="btn primary" data-yes>${esc(tr("act.save"))}</button>
+    </div>`);
+
+  m.sheet.querySelector("[data-no]").onclick = m.close;
+  m.sheet.querySelector("[data-yes]").onclick = async () => {
+    const status = m.sheet.querySelector('[name="bulkstatus"]').value;
+    const on = !m.sheet.querySelector('[name="bulkoff"]').checked;
+    m.close();
+    if (!await confirmSheet(tr("rev.markAll", { n }), tr("rev.markAllConfirm", { n }))) return;
+
+    loading(true, tr("bulk.working", { n }));
+    try {
+      for (let i = 0; i < n; i += MARK_CHUNK) {
+        await submit("fn_ops_set_line_review_bulk", {
+          p_line_ids: targetRows.slice(i, i + MARK_CHUNK).map((r) => r.line_id),
+          p_status: status, p_on: on,
+          p_actor: currentActor(), p_op: crypto.randomUUID(),
+        });
+      }
+    } finally { loading(false); }
+    if (after) after();
+    toast(queueDepth() ? tr("t.queued") : tr("bulk.done", { n }), "ok");
+    window.dispatchEvent(new CustomEvent("ops:rerender"));
+  };
+}
+
 export async function render(mount, state, setFilters) {
   if (!isSignedIn()) return;
 
@@ -132,47 +178,7 @@ export async function render(mount, state, setFilters) {
    * read an order they never saw. The count in the button is the real number, and the confirmation
    * repeats it. */
   const markAllBtn = head.querySelector("[data-markall]");
-  if (markAllBtn) {
-    markAllBtn.addEventListener("click", async () => {
-      const m = modal(`
-        <h3>${esc(tr("rev.markAll", { n: rows.length }))}</h3>
-        <p class="muted" style="margin:4px 0 12px">${esc(tr("rev.markAllBody", { n: rows.length }))}</p>
-        <div style="margin-bottom:10px"><label class="f">${esc(tr("rev.marks"))}</label>
-          ${selectHtml("bulkstatus",
-              LINE_REVIEW_STATUSES.map((s) => ({ value: s.value, label: tr(s.key) })), "read")}</div>
-        <label class="cbrow" style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
-          <input type="checkbox" name="bulkoff"> ${esc(tr("rev.markAllRemove"))}</label>
-        <div class="row" style="justify-content:flex-end">
-          <button class="btn ghost" data-no>${esc(tr("act.cancel"))}</button>
-          <button class="btn primary" data-yes>${esc(tr("act.save"))}</button>
-        </div>`);
-      m.sheet.querySelector("[data-no]").onclick = m.close;
-      m.sheet.querySelector("[data-yes]").onclick = async () => {
-        const status = m.sheet.querySelector('[name="bulkstatus"]').value;
-        const on = !m.sheet.querySelector('[name="bulkoff"]').checked;
-        m.close();
-        if (!await confirmSheet(tr("rev.markAll", { n: rows.length }),
-                                tr("rev.markAllConfirm", { n: rows.length }))) return;
-
-        /* One call per chunk, not per line: 4,000 lines as 4,000 queued RPCs is several minutes of
-         * round trips. Chunked rather than sent whole so the request body stays a sane size, and
-         * queued like every other write so it survives a van with no signal. */
-        const CHUNK = 1000;
-        loading(true, tr("bulk.working", { n: rows.length }));
-        try {
-          for (let i = 0; i < rows.length; i += CHUNK) {
-            await submit("fn_ops_set_line_review_bulk", {
-              p_line_ids: rows.slice(i, i + CHUNK).map((r) => r.line_id),
-              p_status: status, p_on: on,
-              p_actor: currentActor(), p_op: crypto.randomUUID(),
-            });
-          }
-        } finally { loading(false); }
-        toast(queueDepth() ? tr("t.queued") : tr("bulk.done", { n: rows.length }), "ok");
-        window.dispatchEvent(new CustomEvent("ops:rerender"));
-      };
-    });
-  }
+  if (markAllBtn) markAllBtn.addEventListener("click", () => markSheet(rows));
 
   const refreshHead = () => {
     head.querySelector("[data-progress]").textContent =
@@ -193,10 +199,55 @@ export async function render(mount, state, setFilters) {
       return o;
     })));
 
+  /* Row selection, for marking a subset rather than the whole filter.
+   *
+   * The tick box in the header selects the rows CURRENTLY DRAWN, which is not the same as the rows
+   * the filter matched - 300 against 4,463 here. Conflating the two is how somebody ends up believing
+   * they signed off an order they never saw, so the bar says which of the two it is holding and
+   * offers to widen it explicitly. */
+  const selected = new Set();
+  let wholeFilter = false;
+
+  const selbar = el(`
+    <div class="selbar" hidden>
+      <b class="selcount"></b>
+      <button class="btn sm" data-act="all">${esc(tr("rev.selectMatching", { n: rows.length }))}</button>
+      <button class="btn sm primary" data-act="mark">${esc(tr("rev.markSelected"))}</button>
+      <button class="btn ghost sm" data-act="none">${esc(tr("bulk.clear"))}</button>
+    </div>`);
+  box.appendChild(selbar);
+
+  const selCount = () => (wholeFilter ? rows.length : selected.size);
+  const updateSel = () => {
+    selbar.hidden = selCount() === 0 || isViewer();
+    selbar.querySelector(".selcount").textContent = tr("act.selected", { n: selCount() });
+    // widening only makes sense while a partial set is held
+    selbar.querySelector('[data-act="all"]').hidden = wholeFilter || rows.length === selected.size;
+    selbar.querySelectorAll("tr");
+  };
+
+  const clearSel = () => {
+    selected.clear(); wholeFilter = false;
+    box.querySelectorAll("input[data-sel], input[data-selall]").forEach((cb) => { cb.checked = false; });
+    box.querySelectorAll("table.rev tbody tr.selected").forEach((t) => t.classList.remove("selected"));
+    updateSel();
+  };
+
+  selbar.querySelector('[data-act="none"]').addEventListener("click", clearSel);
+  selbar.querySelector('[data-act="all"]').addEventListener("click", () => {
+    wholeFilter = true;
+    updateSel();
+    toast(tr("rev.selectedMatching", { n: rows.length }), "");
+  });
+  selbar.querySelector('[data-act="mark"]').addEventListener("click", () =>
+    markSheet(wholeFilter ? rows : rows.filter((r) => selected.has(String(r.line_id))), clearSel));
+
   const wrap = el(`<div class="card revwrap" style="padding:0"></div>`);
   const table = el(`
     <table class="rev">
       <thead><tr>
+        ${isViewer() ? "" : `<th class="selcol"><input type="checkbox" data-selall
+              aria-label="${esc(tr("bulk.selectAll"))}" title="${esc(tr("bulk.selectAll"))}"></th>`}
         <th>${esc(tr("col.order"))}</th>
         ${isViewer() ? "" : `<th>${esc(tr("rev.read"))}</th>`}
         <th>${esc(tr("rev.marks"))}</th>
@@ -236,6 +287,8 @@ export async function render(mount, state, setFilters) {
     const tr1 = el(`
       <tr class="ord${bandOf.get(r.line_id) ? "B" : "A"}${r.is_read ? " isread" : ""}${
           isFirstOfOrder ? " firstofblock" : ""}" data-line="${esc(r.line_id)}">
+        ${isViewer() ? "" : `<td class="selcol"><input type="checkbox" data-sel
+              value="${esc(r.line_id)}" aria-label="${esc(r.window_ref || r.line_id)}"></td>`}
         <td>${isFirstOfOrder
               ? `<b>${esc(r.order_id)}</b><div class="muted">${esc(r.customer_name || "")}</div>`
               : `<span class="muted">${esc(r.order_id)}</span>`}</td>
@@ -339,6 +392,25 @@ export async function render(mount, state, setFilters) {
 
     return tr1;
   }
+
+  /* Ticking is delegated, so it keeps working as Show more appends rows. The header box covers the
+   * DRAWN rows only - widening to the whole filter is a separate, explicit choice in the bar. */
+  wrap.addEventListener("change", (e) => {
+    const t = e.target;
+    if (t.matches("input[data-selall]")) {
+      wrap.querySelectorAll("input[data-sel]").forEach((cb) => {
+        cb.checked = t.checked;
+        cb.closest("tr").classList.toggle("selected", t.checked);
+        if (t.checked) selected.add(cb.value); else selected.delete(cb.value);
+      });
+      wholeFilter = false;
+    } else if (t.matches("input[data-sel]")) {
+      if (t.checked) selected.add(t.value); else selected.delete(t.value);
+      t.closest("tr").classList.toggle("selected", t.checked);
+      wholeFilter = false;
+    } else return;
+    updateSel();
+  });
 
   let drawn = 0;
   function draw() {

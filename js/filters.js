@@ -348,6 +348,27 @@ export function renderFilterBar(mount, state, opts, onChange, caps) {
       box.querySelector(".cbbtn").setAttribute("aria-expanded", "false");
     });
   };
+  /* Put the panel where it actually fits.
+   *
+   * A fixed drop-down height is the wrong tool: every one of these hung 36-213px below the bottom of
+   * the window, so the last options were unreachable however tall the list was - and making it
+   * taller pushed it further off screen. The list is now sized to the room genuinely available, and
+   * flips above the button when there is more space up there. A seven-option list stops scrolling
+   * at all, which is what "some options are not visible" actually was. */
+  const GAP = 12;      // breathing room against the window edge
+  const MIN_LIST = 96; // below this a list is useless; flip or scroll the page instead
+  const place = (btn, pop) => {
+    const opts = pop.querySelector(".cbopts");
+    opts.style.maxHeight = "";                       // measure the natural height first
+    const chrome = pop.offsetHeight - opts.offsetHeight;   // search box + borders
+    const r = btn.getBoundingClientRect();
+    const below = window.innerHeight - r.bottom - GAP - chrome;
+    const above = r.top - GAP - chrome;
+    const up = below < Math.min(opts.scrollHeight, MIN_LIST) && above > below;
+    pop.classList.toggle("up", up);
+    opts.style.maxHeight = Math.max(MIN_LIST, Math.floor(up ? above : below)) + "px";
+  };
+
   bar.querySelectorAll("[data-open]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -358,6 +379,7 @@ export function renderFilterBar(mount, state, opts, onChange, caps) {
       pop.hidden = !opening;
       btn.setAttribute("aria-expanded", String(opening));
       if (opening) {
+        place(btn, pop);
         const s = pop.querySelector(".cbsearch");
         if (s) s.focus();
       }
