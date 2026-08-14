@@ -153,6 +153,11 @@ export async function api(path, opts = {}, retry = true) {
   }
   const token = await freshToken();
   const r = await fetch(SB_URL + path, {
+    /* PostgREST sends NO Cache-Control and no ETag, which leaves a GET open to the browser's
+     * heuristic caching. That is how a stock level updated on a phone can still read the old number
+     * on a laptop that had the page open earlier: the laptop never asked. A data API must never be
+     * heuristically cacheable, so say so explicitly rather than hoping. */
+    cache: "no-store",
     ...opts,
     headers: {
       apikey: SB_KEY,

@@ -151,7 +151,9 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--brand);outline-o
 .fchips .cbf:nth-child(n+4) .cbpop{left:auto;right:0;}
 .cbpop .cbsearch{width:100%;border:0;border-bottom:1px solid var(--line);border-radius:0;
   min-height:38px;padding:7px 10px;font-size:13px;}
-.cbopts{max-height:170px;overflow-y:auto;padding:3px;}
+/* Raised 20% on 14 Aug: at 170px the last option in several lists sat under the fold with no hint
+   it was there, which reads as a missing option rather than a scrollable one. */
+.cbopts{max-height:204px;overflow-y:auto;padding:3px;}
 .cbopts label{display:flex;gap:8px;align-items:center;padding:5px 7px;border-radius:7px;
   font-size:13px;line-height:1.3;cursor:pointer;overflow-wrap:anywhere;}
 .cbopts label:hover{background:var(--info-bg);}
@@ -160,7 +162,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--brand);outline-o
 .cbmore{border-top:1px solid var(--line);background:var(--mute-bg);}
 body.big .cbopts label{font-size:15px;padding:8px;}
 body.big .cbopts input{width:21px;height:21px;}
-body.big .cbopts{max-height:230px;}
+body.big .cbopts{max-height:276px;}
 
 /* ---------------------------------------------------------------- line review (Comments)
    4,409 lines that coordinators have to read every one of. Everything here is in service of not
@@ -444,6 +446,17 @@ tr.qcfail:hover td{background:#fbdfdb;}
 .syncstamp.bad{background:var(--bad-bg);color:var(--danger);}
 .sectionbar{display:flex;justify-content:space-between;align-items:center;gap:10px;
   flex-wrap:wrap;margin-bottom:10px;}
+
+/* ---------------------------------------------------------------- kit to order ahead
+   Bend rail, motors and scaffolding, with the order numbers rather than just a count - the only
+   question anyone asks of these is "which ones do I go and check". */
+.kitbar{display:grid;gap:7px;padding:10px 12px;border-left:4px solid var(--accent);}
+.kitrow{display:flex;gap:9px;align-items:baseline;flex-wrap:wrap;}
+.kitname{flex:none;}
+.kitids{display:flex;gap:7px;flex-wrap:wrap;font-size:12px;}
+.kitids a{color:var(--brand);font-weight:700;text-decoration:none;}
+.kitids a:hover{text-decoration:underline;}
+.ochips.kitline{gap:5px;}
 
 /* ---------------------------------------------------------------- totals strip */
 .totalsbar{display:flex;gap:6px;flex-wrap:wrap;padding:10px 12px;}

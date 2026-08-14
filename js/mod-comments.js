@@ -20,6 +20,7 @@ import { tr, tv } from "./i18n.js";
 import { LINE_REVIEW_STATUSES, PROCUREMENT_REQS, PAGE_SIZE } from "./config.js";
 import {
   $, esc, el, chip, num, toast, loading, modal, downloadCsv, today, progressBar,
+  selectHtml, confirmSheet,
 } from "./ui.js";
 import { renderFilterBar, toQuery, deriveOptions, activeCount } from "./filters.js";
 
@@ -117,10 +118,61 @@ export async function render(mount, state, setFilters) {
         <span data-open>${openCount() ? chip(tr("rev.open", { n: openCount() }), "warn", "!") : ""}</span>
       </span>
       <span class="row" style="gap:6px">
+        ${isViewer() ? "" : `<button class="btn sm primary" data-markall
+             >${esc(tr("rev.markAll", { n: rows.length }))}</button>`}
         <button class="btn sm" data-csv>${esc(tr("dash.csv"))}</button>
       </span>
     </div>`);
   box.appendChild(head);
+
+  /* Mark every line the filter returned, in one go.
+   *
+   * This acts on the WHOLE filtered set, not on what is drawn - 300 rows are on screen and 4,409 may
+   * match, and "select all" meaning "the first 300" is how a coordinator ends up believing they have
+   * read an order they never saw. The count in the button is the real number, and the confirmation
+   * repeats it. */
+  const markAllBtn = head.querySelector("[data-markall]");
+  if (markAllBtn) {
+    markAllBtn.addEventListener("click", async () => {
+      const m = modal(`
+        <h3>${esc(tr("rev.markAll", { n: rows.length }))}</h3>
+        <p class="muted" style="margin:4px 0 12px">${esc(tr("rev.markAllBody", { n: rows.length }))}</p>
+        <div style="margin-bottom:10px"><label class="f">${esc(tr("rev.marks"))}</label>
+          ${selectHtml("bulkstatus",
+              LINE_REVIEW_STATUSES.map((s) => ({ value: s.value, label: tr(s.key) })), "read")}</div>
+        <label class="cbrow" style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+          <input type="checkbox" name="bulkoff"> ${esc(tr("rev.markAllRemove"))}</label>
+        <div class="row" style="justify-content:flex-end">
+          <button class="btn ghost" data-no>${esc(tr("act.cancel"))}</button>
+          <button class="btn primary" data-yes>${esc(tr("act.save"))}</button>
+        </div>`);
+      m.sheet.querySelector("[data-no]").onclick = m.close;
+      m.sheet.querySelector("[data-yes]").onclick = async () => {
+        const status = m.sheet.querySelector('[name="bulkstatus"]').value;
+        const on = !m.sheet.querySelector('[name="bulkoff"]').checked;
+        m.close();
+        if (!await confirmSheet(tr("rev.markAll", { n: rows.length }),
+                                tr("rev.markAllConfirm", { n: rows.length }))) return;
+
+        /* One call per chunk, not per line: 4,000 lines as 4,000 queued RPCs is several minutes of
+         * round trips. Chunked rather than sent whole so the request body stays a sane size, and
+         * queued like every other write so it survives a van with no signal. */
+        const CHUNK = 1000;
+        loading(true, tr("bulk.working", { n: rows.length }));
+        try {
+          for (let i = 0; i < rows.length; i += CHUNK) {
+            await submit("fn_ops_set_line_review_bulk", {
+              p_line_ids: rows.slice(i, i + CHUNK).map((r) => r.line_id),
+              p_status: status, p_on: on,
+              p_actor: currentActor(), p_op: crypto.randomUUID(),
+            });
+          }
+        } finally { loading(false); }
+        toast(queueDepth() ? tr("t.queued") : tr("bulk.done", { n: rows.length }), "ok");
+        window.dispatchEvent(new CustomEvent("ops:rerender"));
+      };
+    });
+  }
 
   const refreshHead = () => {
     head.querySelector("[data-progress]").textContent =

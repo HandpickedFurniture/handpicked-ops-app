@@ -7,7 +7,9 @@
  * Movements arrive from three places: recorded by hand here, posted automatically by a material
  * transfer (transfer_out / transfer_in), or consumed against an order.
  */
-import { api, rpc, submit, currentActor, queueDepth, isSignedIn, isViewer } from "./api.js";
+import {
+  api, rpc, submit, currentActor, queueDepth, isSignedIn, isViewer, flush, failedWrites,
+} from "./api.js";
 /* fn_ops_pack_limit and the qty override both live in the database, so the rules hold however the
  * row arrives - not only through this screen. */
 import { tr, tv } from "./i18n.js";
@@ -37,6 +39,7 @@ export async function render(mount, state) {
       </div>
       <div class="row">
         <span id="invsync"></span>
+        <button class="btn sm" id="irefresh" title="${esc(tr("inv.refreshHint"))}">↻ ${esc(tr("inv.refresh"))}</button>
         ${isViewer() ? "" : `<button class="btn sm accent" id="iadd">+ ${esc(tr("inv.addItem"))}</button>`}
         <button class="btn sm" id="icsv">${esc(tr("dash.csv"))}</button>
       </div>
@@ -70,6 +73,27 @@ export async function render(mount, state) {
   loading(false);
 
   const reload = () => render(mount, state);
+
+  /* Push before you pull.
+   *
+   * Stock moves go through the offline queue (see submit() in api.js), so a change made on a phone
+   * that lost signal sits in THAT phone's localStorage until a flush succeeds - it never reached the
+   * server, and no amount of refreshing a laptop will show it. This button drains the queue first,
+   * then re-reads, and says which of the two actually happened. Anything the server rejected outright
+   * is parked in the failed list, where it was previously invisible behind a small header badge. */
+  $("#irefresh", mount).addEventListener("click", async () => {
+    loading(true, tr("t.loading"));
+    const before = queueDepth();
+    try { await flush(); } catch (e) { /* reported through the depth below */ }
+    const left = queueDepth();
+    const failed = failedWrites().length;
+    loading(false);
+    if (before && !left) toast(tr("inv.syncPushed", { n: before }), "ok");
+    else if (left) toast(tr("inv.syncStuck", { n: left }), "bad");
+    if (failed) toast(tr("t.failed", { n: failed }), "bad");
+    reload();
+  });
+
   const addBtn = $("#iadd", mount);
   if (addBtn) addBtn.addEventListener("click", () => openItemSheet(null, reload));
   $("#icsv", mount).addEventListener("click", () => downloadCsv("inventory.csv", rows.map((r) => ({

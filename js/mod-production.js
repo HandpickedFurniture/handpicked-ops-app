@@ -170,6 +170,27 @@ async function renderList(mount, state, setFilters) {
     </div>`);
   box.appendChild(totals);
 
+  /* ---- what has to be ordered, hired or loaded before the day starts.
+   * The totals strip above counts these, but a count does not tell you WHICH orders to go and
+   * check - and that is the only question anyone asks of it. */
+  const kitOrders = KIT_COLS.map((k) => ({
+    ...k, orders: rows.filter((r) => Number(r[k.col]) > 0),
+  })).filter((k) => k.orders.length);
+  if (kitOrders.length) {
+    const KIT_CAP = 12;   // enough to scan; past that the filter is the right tool
+    box.appendChild(el(`
+      <div class="card kitbar">
+        ${kitOrders.map((k) => `
+          <div class="kitrow">
+            <span class="kitname">${chip(`${tr(k.key)} ${k.orders.length}`, "warn", "!")}</span>
+            <span class="kitids">${k.orders.slice(0, KIT_CAP).map((r) =>
+              `<a href="#/production?order=${esc(r.order_id)}">${esc(r.order_id)}</a>`).join(" ")}${
+              k.orders.length > KIT_CAP
+                ? ` <span class="muted">+${k.orders.length - KIT_CAP}</span>` : ""}</span>
+          </div>`).join("")}
+      </div>`));
+  }
+
   const stale = rows.find((r) => r.synced_at);
   if (stale && daysSince(stale.synced_at) >= 1) {
     box.appendChild(el(`<div class="banner warn">${esc(tr("t.staleWarn"))} — ${
@@ -307,8 +328,25 @@ function fabricCell(r) {
 function specialCell(r) {
   const on = SPECIAL_COLS.filter((s) => Number(r[s.col]) > 0);
   if (!on.length) return `<span class="muted">—</span>`;
-  return on.map((s) => chip(`${tr(s.key)} ${num(r[s.col])}`, "info")).join(" ");
+  // the three that have to be ordered or hired in ahead of the day lead, and lead loudly
+  const lead = on.filter((s) => KIT_COLS.some((k) => k.col === s.col));
+  const rest = on.filter((s) => !lead.includes(s));
+  return [...lead.map((s) => chip(`${tr(s.key)} ${num(r[s.col])}`, "warn", "!")),
+          ...rest.map((s) => chip(`${tr(s.key)} ${num(r[s.col])}`, "info"))].join(" ");
 }
+
+/* Bend rail, motors and scaffolding. Singled out from the twenty special requirements because these
+ * three are the ones that stop an installation dead if nobody noticed them in time: a bent rail is
+ * ordered days ahead, a motor has to be in the van, scaffolding has to be booked. The rest can be
+ * dealt with on the day. */
+const KIT_COLS = [
+  { col: "n_bend_rail",   key: "sp.bend" },
+  { col: "n_motor",       key: "sp.motor" },
+  { col: "n_scaffolding", key: "sp.scaffolding" },
+];
+
+const kitChips = (r) => KIT_COLS.filter((k) => Number(r[k.col]) > 0)
+  .map((k) => chip(`${tr(k.key)} ${num(r[k.col])}`, "warn", "!")).join(" ");
 
 /* Tailor name, with the state written out beneath it. A coloured chip alone made you remember what
  * each colour meant; the words do not. */
@@ -399,6 +437,9 @@ function cardView(rows) {
               · ${esc(num(r.meters_sent_total))} m
               ${r.sheet_status ? " · " + esc(r.sheet_status) : ""}</div>
             <div class="ochips">${flagChips(r)}</div>
+            <!-- bend rail / motors / scaffolding get their own line above the rest: on a phone the
+                 special-requirements row runs to twenty chips and these three were lost in it -->
+            ${kitChips(r) ? `<div class="ochips kitline">${kitChips(r)}</div>` : ""}
             <div class="ochips">${fabricCell(r)}</div>
             <div class="ochips">${specialCell(r)}</div>
             <div class="ochips" style="gap:10px">
