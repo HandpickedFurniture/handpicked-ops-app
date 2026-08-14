@@ -10,6 +10,7 @@
 import { isSignedIn, isViewer } from "./api.js";
 import { tr } from "./i18n.js";
 import { $, esc, el } from "./ui.js";
+import { writeHash } from "./filters.js";
 import { syncBar } from "./sync.js";
 import * as dashboard from "./mod-dashboard.js";
 import * as reports from "./mod-reports.js";
@@ -62,5 +63,10 @@ export async function render(mount, state, setFilters) {
 
   $("#secSync", mount).appendChild(syncBar());
 
-  await sec.render($("#secBody", mount), state, setFilters);
+  /* The filter bar's own setFilters writes the hash from the filters alone, which would drop ?sec=
+   * and throw you back to the default section the moment you applied a filter anywhere else. */
+  const keepSec = (f) => writeHash("insights", f, { sec: sec.id === "reports" ? "" : sec.id,
+                                                    rep: state.params.get("rep") || "" });
+
+  await sec.render($("#secBody", mount), state, keepSec);
 }

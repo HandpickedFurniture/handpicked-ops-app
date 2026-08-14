@@ -15,7 +15,6 @@ import { readHash, writeHash } from "./filters.js";
 import { logoSvg, installFavicon } from "./brand.js";
 import * as home from "./mod-home.js";
 import * as production from "./mod-production.js";
-import * as prep from "./mod-prep.js";
 import * as status from "./mod-status.js";
 import * as schedule from "./mod-schedule.js";
 import * as transfer from "./mod-transfer.js";
@@ -28,7 +27,6 @@ import * as insights from "./mod-insights.js";
 const ROUTES = {
   home:       { key: "nav.home",       render: (m, s) => home.render(m, s) },
   production: { key: "nav.production", render: (m, s, f) => production.render(m, s, f) },
-  prep:       { key: "nav.prep",       render: (m, s, f) => prep.render(m, s, f) },
   status:     { key: "nav.status",     render: (m, s, f) => status.render(m, s, f) },
   schedule:   { key: "nav.schedule",   render: (m, s, f) => schedule.render(m, s, f) },
   transfer:   { key: "nav.transfer",   render: (m, s, f) => transfer.render(m, s, f) },
@@ -36,8 +34,10 @@ const ROUTES = {
   insights:   { key: "nav.insights",   render: (m, s, f) => insights.render(m, s, f) },
 };
 
-/* the tabs that used to be top-level, mapped to their new home */
+/* the tabs that used to be top-level, mapped to the section they became */
 const MOVED = { dashboard: "dashboard", eod: "eod", audit: "audit", reports: "reports" };
+/* Preparation went the same way, into Production rather than Insights - see mod-production.js */
+const MOVED_TO_PRODUCTION = { prep: "prep" };
 
 function setFilters(route, f) { writeHash(route, f); }
 
@@ -79,7 +79,7 @@ function paintQueue() {
     : f ? `<span class="qbadge fail" title="${esc(tr("t.failed", { n: f }))}">${f} !</span>` : "";
 }
 
-const TAB_ICON = { home: "🏠", production: "✂️", prep: "🧵", status: "🚚", schedule: "🗓️",
+const TAB_ICON = { home: "🏠", production: "✂️", status: "🚚", schedule: "🗓️",
                    transfer: "📦", inventory: "🔩", insights: "📊" };
 
 function paintTabs() {
@@ -96,11 +96,12 @@ async function route() {
   try {
     const { route: name, filters, params } = readHash();
 
-    // an old top-level link lands in the right Insights sub-section rather than 404ing to Production
-    if (MOVED[name]) {
+    // an old top-level link lands in the right sub-section rather than 404ing to Home
+    if (MOVED[name] || MOVED_TO_PRODUCTION[name]) {
+      const into = MOVED[name] ? "insights" : "production";
       const q = new URLSearchParams(location.hash.split("?")[1] || "");
-      q.set("sec", MOVED[name]);
-      location.hash = "/insights?" + q.toString();
+      q.set("sec", MOVED[name] || MOVED_TO_PRODUCTION[name]);
+      location.hash = "/" + into + "?" + q.toString();
       return;
     }
 

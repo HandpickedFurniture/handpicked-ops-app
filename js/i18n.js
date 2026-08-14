@@ -82,7 +82,7 @@ export const I18N = {
     "rev.f2New": "Fabric 2 new", "rev.f2Qty": "Fabric 2 quantity",
     "proc.title": "Procurement requirements", "proc.roman": "Roman (production)",
     "proc.pelmet": "Pelmet box", "proc.eyelet": "Eyelet / ring",
-    "col.metersSent": "Meters sent", "nav.prep": "Preparation",
+    "col.metersSent": "Meters sent", "nav.prep": "Preparation", "nav.prodList": "Orders",
     "inv.editItem": "Edit item", "inv.deleteItem": "Remove item",
     "inv.deleteConfirm": "Remove this item from the list? Its movement history is kept.",
 
@@ -439,7 +439,7 @@ export const I18N = {
     "rev.f2New": "कपड़ा 2 नया", "rev.f2Qty": "कपड़ा 2 मात्रा",
     "proc.title": "खरीद आवश्यकताएँ", "proc.roman": "रोमन (उत्पादन)",
     "proc.pelmet": "पेल्मेट बॉक्स", "proc.eyelet": "आईलेट / रिंग",
-    "col.metersSent": "भेजे गए मीटर", "nav.prep": "तैयारी",
+    "col.metersSent": "भेजे गए मीटर", "nav.prep": "तैयारी", "nav.prodList": "ऑर्डर",
     "inv.editItem": "आइटम संपादित करें", "inv.deleteItem": "आइटम हटाएँ",
     "inv.deleteConfirm": "इस आइटम को सूची से हटाएँ? इसका मूवमेंट इतिहास रखा जाएगा।",
 
@@ -798,7 +798,7 @@ export const I18N = {
     "rev.f2New": "কাপড় ২ নতুন", "rev.f2Qty": "কাপড় ২ পরিমাণ",
     "proc.title": "ক্রয়ের প্রয়োজনীয়তা", "proc.roman": "রোমান (উৎপাদন)",
     "proc.pelmet": "পেলমেট বক্স", "proc.eyelet": "আইলেট / রিং",
-    "col.metersSent": "পাঠানো মিটার", "nav.prep": "প্রস্তুতি",
+    "col.metersSent": "পাঠানো মিটার", "nav.prep": "প্রস্তুতি", "nav.prodList": "অর্ডার",
     "inv.editItem": "আইটেম সম্পাদনা", "inv.deleteItem": "আইটেম সরান",
     "inv.deleteConfirm": "এই আইটেমটি তালিকা থেকে সরাবেন? এর মুভমেন্ট ইতিহাস রাখা হবে।",
 
