@@ -79,6 +79,7 @@ export async function render(mount, state) {
       <div id="schver" class="schver"></div>
     </div>
     <div id="schactions"></div>
+    <div id="schkit"></div>
     <div id="schfloatwrap"></div>
     <div id="schboard" class="schboard"></div>`;
 
@@ -101,8 +102,57 @@ export async function render(mount, state) {
 
   paintActions(date);
   paintVersions(date);
+  paintKit(date);
   paintFloating();
   paintBoard();
+}
+
+/* Bend rail, motors and scaffolding for THIS date's orders.
+ *
+ * Singled out from the twenty special requirements because these three are the ones that stop an
+ * installation dead if nobody noticed them the day before: a bent rail is ordered days ahead, a
+ * motor has to be in the van, scaffolding has to be booked. The rest can be dealt with on site.
+ *
+ * It lives here rather than on Production because the question it answers is "what do we need for
+ * tomorrow" - which is a question about a DATE, and Production lists every open order regardless of
+ * when it installs. There, the same panel counted 43 bend rails across months of work, which is not
+ * a number anybody can act on. */
+const KIT_COLS = [
+  { col: "n_bend_rail",   key: "sp.bend" },
+  { col: "n_motor",       key: "sp.motor" },
+  { col: "n_scaffolding", key: "sp.scaffolding" },
+];
+
+async function paintKit(date) {
+  const host = $("#schkit", MOUNT);
+  if (!host) return;
+  let rows = [];
+  try {
+    rows = await api("/rest/v1/v_ops_order_roster"
+      + `?select=order_id,customer_name,city,${KIT_COLS.map((k) => k.col).join(",")}`
+      + `&installation_date=eq.${encodeURIComponent(date)}`
+      + `&or=(${KIT_COLS.map((k) => `${k.col}.gt.0`).join(",")})`);
+  } catch (e) { return; }        // the board matters more than this strip
+  if (!rows.length) return;
+
+  const groups = KIT_COLS.map((k) => ({
+    ...k,
+    orders: rows.filter((r) => Number(r[k.col]) > 0),
+    total: rows.reduce((a, r) => a + (Number(r[k.col]) || 0), 0),
+  })).filter((g) => g.orders.length);
+  if (!groups.length) return;
+
+  host.appendChild(el(`
+    <div class="card kitbar">
+      <div class="muted sm" style="margin-bottom:6px">${esc(tr("sch.kitFor", { d: fmtDate(date) }))}</div>
+      ${groups.map((g) => `
+        <div class="kitrow">
+          <span class="kitname"><span class="chip warn">! ${esc(tr(g.key))} ${esc(num(g.total))}</span></span>
+          <span class="kitids">${g.orders.map((r) =>
+            `<span title="${esc([r.customer_name, r.city].filter(Boolean).join(" · "))}"
+             >${esc(r.order_id)}${Number(r[g.col]) > 1 ? ` ×${esc(num(r[g.col]))}` : ""}</span>`).join(" ")}</span>
+        </div>`).join("")}
+    </div>`));
 }
 
 function shiftDate(date, dir) {
