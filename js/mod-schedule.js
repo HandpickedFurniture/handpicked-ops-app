@@ -15,9 +15,9 @@
  * #schboard. Any error falls back to the house toast + full reload.
  */
 import { api, rpc, isSignedIn, isViewer, currentActor } from "./api.js";
-import { tr } from "./i18n.js";
+import { tr, getLang } from "./i18n.js";
 import { UTIL_BANDS, STOP_TAGS } from "./config.js";
-import { $, esc, num, fmtDate, toast, loading, modal, confirmSheet, orderLabel } from "./ui.js";
+import { $, esc, el, num, fmtDate, toast, loading, modal, confirmSheet, orderLabel } from "./ui.js";
 import { micField, wireMics } from "./voice.js";
 import { syncBar, lastSync, syncBarHtml } from "./sync.js";
 import { dragBoard } from "./board.js";
@@ -140,12 +140,33 @@ function paintActions(date) {
         <div class="muted sm">${esc(tr("sch.instructionNote"))}</div>
       </div>`}
       ${run ? statsStrip(run) : `<div class="muted">${esc(tr("sch.noRun"))}</div>`}
-    </div>`;
+    </div>
+    ${run ? `<div class="card askbox" id="schask">
+      <div class="row" style="gap:6px;align-items:center;margin-bottom:8px">
+        <b>💬 ${esc(tr("sch.ask"))}</b>
+        <span class="muted sm">${esc(tr("sch.askNote"))}</span>
+      </div>
+      <div class="asklog" id="asklog"></div>
+      <div class="row" style="gap:6px">
+        ${micField(`<input type="text" name="askq" placeholder="${esc(tr("sch.askHint"))}">`, "askq")}
+        <button class="btn primary" id="asksend">${esc(tr("sch.askSend"))}</button>
+      </div>
+      <div class="row askquick">
+        ${[["sch.qProblems", "What is wrong with this run?"],
+           ["sch.qLoad", "How loaded is each team?"],
+           ["sch.qRules", "Which rules are active?"]]
+          .map(([k, v]) => `<button class="btn ghost sm" data-q="${esc(v)}">${esc(tr(k))}</button>`).join("")}
+      </div>
+    </div>` : ""}`;
 
   if (!ro) {
     const ta = box.querySelector('[name="schinstr"]');
     ta.addEventListener("input", () => { INSTRUCTION.text = ta.value; });
-    wireMics(box, (text, method) => { INSTRUCTION.text = text; INSTRUCTION.method = method; });
+    /* Scoped to this field's own container, not to `box`. wireMics wires every [data-mic] under the
+     * root it is given, and there are two dictation targets on this card now - passing `box` would
+     * point the question box's mic at the build instruction. */
+    wireMics(box.querySelector(".schinstr"),
+             (text, method) => { INSTRUCTION.text = text; INSTRUCTION.method = method; });
     $("#schcreate", box).addEventListener("click", () => build(date));
     const fin = $("#schfinal", box);
     if (fin) fin.addEventListener("click", () => finalize());
@@ -169,6 +190,83 @@ function paintActions(date) {
 
   $("#schrules", box).addEventListener("click", rulesSheet);
   $("#schmem", box).addEventListener("click", memorySheet);
+
+  if (run) wireAsk(box, run, reload);
+}
+
+/* ------------------------------------------------------------------ the question box
+ *
+ * Answers come from fn_sched_ask, which reads the run rather than guessing at it - so "why is this
+ * stop on team 3" gets the actual reason, not a plausible one. That matters more here than fluency:
+ * this output routes vans.
+ *
+ * An instruction is never acted on silently. The box shows which rule it recognised and waits to be
+ * confirmed, and when it recognises nothing it says so instead of storing a note that would sit in
+ * the list looking active - the exact trap that made "separate Dubai and Abu Dhabi" appear to work
+ * for two days while changing nothing.
+ */
+function wireAsk(box, run, reload) {
+  const panel = $("#schask", box);
+  if (!panel) return;
+  const log = $("#asklog", panel);
+  const input = panel.querySelector('[name="askq"]');
+  let method = "typed";
+
+  const say = (who, title, lines, extra) => {
+    log.appendChild(el(`
+      <div class="askmsg ${who}">
+        ${title ? `<b>${esc(title)}</b>` : ""}
+        ${(lines || []).map((l) => `<div>${esc(l)}</div>`).join("")}
+        ${extra || ""}
+      </div>`));
+    log.scrollTop = log.scrollHeight;
+  };
+
+  const ask = async (text) => {
+    const q = (text || "").trim();
+    if (!q) return;
+    say("me", null, [q]);
+    input.value = "";
+    let a;
+    try {
+      a = await rpc("fn_sched_ask", { p_run_id: run.id, p_question: q });
+    } catch (e) { say("bot", null, [e.message]); return; }
+
+    const rules = a.proposed_rules || [];
+    if (!a.is_instruction) { say("bot", a.title, a.lines); return; }
+
+    // an instruction: show what was understood and wait for a yes
+    const wrap = el(`<div class="askmsg bot"><b>${esc(a.title)}</b>
+      ${(a.lines || []).map((l) => `<div>${esc(l)}</div>`).join("")}
+      <div class="row" style="gap:6px;margin-top:7px">
+        <button class="btn sm primary" data-save>${esc(
+          rules.length ? tr("sch.askSaveRule") : tr("sch.askSaveNote"))}</button>
+        <button class="btn ghost sm" data-drop>${esc(tr("act.cancel"))}</button>
+      </div></div>`);
+    wrap.querySelector("[data-drop]").addEventListener("click", () => wrap.remove());
+    wrap.querySelector("[data-save]").addEventListener("click", async () => {
+      try {
+        await rpc("fn_sched_memory_add", {
+          p_body: q, p_kind: "tip", p_scope: "global", p_run: run.id,
+          p_method: method, p_lang: getLang(), p_actor: currentActor(),
+        });
+        wrap.remove();
+        say("bot", null, [rules.length
+          ? tr("sch.askSavedRule", { r: rules.join(", ") })
+          : tr("sch.askSavedNote")]);
+        // a stored rule only reaches the schedule on the next build - say so rather than imply it landed
+        if (rules.length) say("bot", null, [tr("sch.askRebuild")]);
+      } catch (e) { say("bot", null, [e.message]); }
+    });
+    log.appendChild(wrap);
+    log.scrollTop = log.scrollHeight;
+  };
+
+  $("#asksend", panel).addEventListener("click", () => ask(input.value));
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") ask(input.value); });
+  panel.querySelectorAll("[data-q]").forEach((b) =>
+    b.addEventListener("click", () => ask(b.dataset.q)));
+  wireMics(panel, (text, m) => { input.value = text; method = m; });
 }
 
 function statsStrip(run) {

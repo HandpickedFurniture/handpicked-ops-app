@@ -449,6 +449,21 @@ tr.qcfail:hover td{background:#fbdfdb;}
 .sectionbar{display:flex;justify-content:space-between;align-items:center;gap:10px;
   flex-wrap:wrap;margin-bottom:10px;}
 
+/* ---------------------------------------------------------------- schedule question box
+   A transcript rather than a single answer field, because the useful pattern is a follow-up:
+   "what is wrong" then "why is 70890 there". Answers are left-aligned and plain - they are facts
+   read out of the run, and dressing them up as a chat personality would oversell them. */
+.askbox{margin-top:10px;}
+.asklog{display:grid;gap:7px;max-height:260px;overflow-y:auto;margin-bottom:9px;}
+.asklog:empty{display:none;}
+.askmsg{border-radius:10px;padding:8px 11px;font-size:13px;line-height:1.45;}
+.askmsg.me{background:var(--brand);color:#fff;justify-self:end;max-width:85%;font-weight:600;}
+.askmsg.bot{background:var(--info-bg);border:1px solid var(--line);}
+.askmsg.bot b{display:block;margin-bottom:3px;color:var(--brand);}
+.askmsg.bot div{overflow-wrap:anywhere;}
+.askquick{gap:6px;flex-wrap:wrap;margin-top:8px;}
+body.big .askmsg{font-size:15px;}
+
 /* ---------------------------------------------------------------- kit to order ahead
    Bend rail, motors and scaffolding, with the order numbers rather than just a count - the only
    question anyone asks of these is "which ones do I go and check". */
