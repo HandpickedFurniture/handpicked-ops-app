@@ -371,33 +371,36 @@ async function drain() {
     } catch (e) {
       if (e.message === "NOT_SIGNED_IN") break;          // keep it queued for after sign-in
 
-      /* Three different failures wear the same coat, so tell them apart explicitly:
-       *   permanent  - refused before it ever left the browser (a read-only account). Never retry.
-       *   4xx        - the server understood and said no. Retrying cannot change that.
-       *   5xx        - the server broke. Worth retrying, but not forever.
-       *   no status  - fetch itself rejected: no signal, a dead lift, a tunnel. Retry indefinitely
-       *                and do NOT count it, because being offline is not the write's fault. */
-      if (e.permanent || (e.status >= 400 && e.status < 500)) {
-        park(item, e.message);
-        q = dropQueued(item.id);   // the next item slides into this index
-        continue;
+      /* THE ONLY reason to keep an item at the head and stop is that the network is gone. Everything
+       * else is about this one write and must let the rest through.
+       *
+       * That distinction was drawn too narrowly once already and it cost days: only 4xx was treated
+       * as permanent, so a PGRST203 - HTTP 300, "could not choose the best candidate function",
+       * caused by a duplicated RPC overload - fell through to the offline branch. It was retried
+       * forever at the head of the queue and stranded 33 real writes behind it. Any answer the
+       * server actually gave that is not a 5xx will say the same thing next time. */
+      if (e.offline) {
+        /* No signal, or the request timed out. RECORD WHY before stopping: a queue that says
+         * "18 waiting" and cannot say what it is waiting on is a queue nobody can diagnose. */
+        writeQueue(QUEUE_KEY, readQueue(QUEUE_KEY)
+          .map((x) => (x.id === item.id ? { ...x, lastError: e.message, lastTry: Date.now() } : x)));
+        break;
       }
       if (e.status >= 500) {
+        // the server broke. Worth retrying, but not forever, and not at everyone else's expense
         const tries = (item.tries || 0) + 1;
         if (tries >= MAX_TRIES) { park(item, e.message); q = dropQueued(item.id); continue; }
         // persist the count, or every flush would start again from one and this would never park
-        writeQueue(QUEUE_KEY,
-          readQueue(QUEUE_KEY).map((x) => (x.id === item.id ? { ...x, tries } : x)));
+        writeQueue(QUEUE_KEY, readQueue(QUEUE_KEY)
+          .map((x) => (x.id === item.id ? { ...x, tries, lastError: e.message } : x)));
         q = readQueue(QUEUE_KEY);
         i++;                       // leave it queued, but do not let it hold up the rest
         continue;
       }
-      /* No status: no signal, or the request timed out. Nothing else will go either, so stop -
-       * but RECORD WHY on the item first. A queue that says "18 waiting" and cannot say what it is
-       * waiting on is a queue nobody can diagnose, including from a screenshot. */
-      writeQueue(QUEUE_KEY, readQueue(QUEUE_KEY)
-        .map((x) => (x.id === item.id ? { ...x, lastError: e.message, lastTry: Date.now() } : x)));
-      break;
+      // refused before it left the browser, or any 3xx/4xx: it will never succeed. Park it.
+      park(item, e.message);
+      q = dropQueued(item.id);     // the next item slides into this index
+      continue;
     }
     // picks up anything queued while that request was in flight, and drains it too
     q = dropQueued(item.id);
