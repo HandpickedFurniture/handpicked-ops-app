@@ -634,6 +634,29 @@ table.dense tfoot th{position:sticky;bottom:0;background:var(--info-bg);border-t
 .schcolhead{padding:10px;border-bottom:1px solid var(--line);background:var(--mute-bg);}
 .schcolmeta{margin-top:6px;}
 .schmembers{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;min-height:26px;}
+/* Where this team's day actually is. Directly under the names, because "who" and "where" are read
+   together when a van is being loaded. */
+.schcity{margin-top:5px;}
+.schcitytag{display:inline-block;font-size:12px;font-weight:800;letter-spacing:.01em;
+  background:var(--info-bg);color:var(--brand);border:1px solid #c5d8de;border-radius:999px;
+  padding:2px 9px;}
+/* both emirates in one day is a 90-minute drive somebody should see before the van leaves */
+.schcitytag.split{background:var(--bad-bg);color:var(--danger);border-color:#f3c2bc;}
+
+/* ---------------------------------------------------------------- schedule summary
+   What the run contains and why it came out this way. An optimiser nobody can interrogate is one
+   nobody trusts - the reaction to a board that looks wrong is to drag things about instead of
+   asking what it was solving for. */
+.schsummary .sumgrid{display:grid;gap:8px;grid-template-columns:repeat(3,1fr);}
+@media(min-width:640px){.schsummary .sumgrid{grid-template-columns:repeat(5,1fr);}}
+@media(min-width:1024px){.schsummary .sumgrid{grid-template-columns:repeat(9,1fr);}}
+.schsummary .sumgrid > div{display:flex;flex-direction:column;gap:1px;padding:7px 9px;
+  background:var(--mute-bg);border-radius:9px;}
+.schsummary .sumgrid b{font-size:17px;line-height:1.15;}
+.schsummary .sumgrid span{font-size:11px;color:var(--muted);}
+.schsummary .sumwhy{margin-top:10px;padding:9px 11px;border-left:3px solid var(--brand);
+  background:var(--info-bg);border-radius:0 9px 9px 0;font-size:13px;line-height:1.5;}
+.schsummary .sumwhy b{display:block;margin-bottom:2px;color:var(--brand);}
 .schmem{display:inline-flex;align-items:center;gap:3px;font-size:12px;background:var(--card);
   border:1px solid var(--line);border-radius:12px;padding:2px 8px 2px 4px;}
 .schstops{padding:8px;display:flex;flex-direction:column;gap:2px;min-height:70px;}

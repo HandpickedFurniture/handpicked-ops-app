@@ -17,7 +17,7 @@
 import { api, rpc, isSignedIn, isViewer, currentActor, getSession } from "./api.js";
 import { tr, getLang } from "./i18n.js";
 import { UTIL_BANDS, STOP_TAGS, SB_URL, SB_KEY } from "./config.js";
-import { $, esc, el, num, fmtDate, toast, loading, modal, confirmSheet, orderLabel } from "./ui.js";
+import { $, esc, el, num, chip, fmtDate, toast, loading, modal, confirmSheet, orderLabel } from "./ui.js";
 import { micField, wireMics } from "./voice.js";
 import { syncBar, lastSync, syncBarHtml } from "./sync.js";
 import { dragBoard } from "./board.js";
@@ -79,6 +79,7 @@ export async function render(mount, state) {
       <div id="schver" class="schver"></div>
     </div>
     <div id="schactions"></div>
+    <div id="schsummary"></div>
     <div id="schkit"></div>
     <div id="schfloatwrap"></div>
     <div id="schboard" class="schboard"></div>`;
@@ -102,6 +103,7 @@ export async function render(mount, state) {
 
   paintActions(date);
   paintVersions(date);
+  paintSummary();
   paintKit(date);
   paintFloating();
   paintBoard();
@@ -428,6 +430,115 @@ function suggestSheet(s, date) {
   };
 }
 
+/* ------------------------------------------------------------------ summary
+ *
+ * What this schedule contains, and WHY it came out this way.
+ *
+ * A schedule is the output of an optimiser, and an optimiser nobody can interrogate is one nobody
+ * trusts - the reaction to a board that looks wrong is to drag things about rather than to ask what
+ * it was solving for. Everything here is read back from the run itself: the counts it recorded, the
+ * team count it was given against the one it wanted, and the sentence it wrote explaining the
+ * difference. None of it is recomputed in the browser, so the summary cannot drift from the board.
+ */
+function paintSummary() {
+  const box = $("#schsummary", MOUNT);
+  if (!box) return;
+  if (!MODEL) { box.innerHTML = ""; return; }
+
+  const run = MODEL.run || {};
+  const s = run.stats || {};
+  const stops = MODEL.stops || [];
+  const placed = stops.filter((x) => x.team_no !== null);
+
+  // totals across the stops actually on the board, from the counts the engine stored per stop
+  const sum = (k) => stops.reduce((a, x) => a + (Number((x.counts || {})[k]) || 0), 0);
+  const owl = sum("owl_total");
+  const curtains = sum("curtains_1layer") + sum("curtains_2layer");
+  const blinds = sum("blinds");
+  const revisits = stops.filter((x) => x.entry_type === "issue_resolution").length;
+
+  const cities = {};
+  stops.forEach((x) => { if (x.city) cities[x.city] = (cities[x.city] || 0) + 1; });
+
+  const hours = (m) => (Number(m) || 0) >= 60
+    ? `${Math.floor(Number(m) / 60)}h ${Math.round(Number(m) % 60)}m` : `${Math.round(Number(m) || 0)}m`;
+
+  /* Only the things somebody would act on tonight. A count of zero is not news, so it is not shown -
+   * a warning row that is always there stops being read. */
+  const watch = [
+    { n: s.floating,   key: "sch.sumFloating",  tone: "warn" },
+    { n: s.late_stops, key: "sch.sumLate",      tone: "warn" },
+    { n: s.overruns,   key: "sch.sumOverruns",  tone: "bad" },
+    { n: s.crew_short, key: "sch.sumCrewShort", tone: "bad" },
+    { n: s.anomalies,  key: "sch.sumAnomalies", tone: "warn" },
+    { n: s.emaar,      key: "sch.sumEmaar",     tone: "info" },
+  ].filter((x) => Number(x.n) > 0);
+
+  box.innerHTML = `
+    <div class="card schsummary">
+      <div class="spread" style="margin-bottom:8px">
+        <h4>${esc(tr("sch.sumTitle"))}</h4>
+        <span class="muted sm">${esc(tr("sch.sumVersion", { n: run.version_no || 1 }))}${
+          run.trigger === "cron" ? " · " + esc(tr("sch.auto")) : ""}${
+          run.created_by ? " · " + esc(run.created_by) : ""}</span>
+      </div>
+
+      <div class="sumgrid">
+        <div><b>${num(stops.length)}</b><span>${esc(tr("sch.sumStops"))}</span></div>
+        <div><b>${num(placed.length)}</b><span>${esc(tr("sch.sumPlaced"))}</span></div>
+        <div><b>${num((MODEL.teams || []).length)}</b><span>${esc(tr("sch.team"))}</span></div>
+        <div><b>${num(owl)}</b><span>${esc(tr("sch.owl"))}</span></div>
+        <div><b>${num(curtains)}</b><span>${esc(tr("rep.curtains"))}</span></div>
+        <div><b>${num(blinds)}</b><span>${esc(tr("col.owlBlinds"))}</span></div>
+        <div><b>${hours(s.work_min)}</b><span>${esc(tr("sch.sumWork"))}</span></div>
+        <div><b>${hours(s.travel_min)}</b><span>${esc(tr("sch.sumTravel"))}</span></div>
+        <div><b>${num(s.travel_km)} km</b><span>${esc(tr("sch.sumDistance"))}</span></div>
+      </div>
+
+      <div class="row" style="gap:6px;margin-top:9px;flex-wrap:wrap">
+        ${Object.entries(cities).map(([c, n]) => chip(`${c} ${n}`, "info", "📍")).join("")}
+        ${revisits ? chip(tr("sch.sumRevisits", { n: revisits }), "mute", "↺") : ""}
+        ${watch.map((w) => chip(tr(w.key, { n: w.n }), w.tone, "!")).join("")}
+      </div>
+
+      ${/* the one sentence that explains the shape of the whole board */ ""}
+      <div class="sumwhy">
+        <b>${esc(tr("sch.sumWhy"))}</b>
+        <div>${esc(tr("sch.sumTeams", {
+          used: run.team_count || (MODEL.teams || []).length,
+          want: run.suggested_team_count || run.team_count || 0 }))}</div>
+        ${run.suggest_reason ? `<div class="muted">${esc(run.suggest_reason)}</div>` : ""}
+        ${run.instruction ? `<div>${esc(tr("sch.sumInstruction", { t: run.instruction }))}</div>` : ""}
+      </div>
+
+      <button class="btn ghost sm" data-how style="margin-top:9px">${esc(tr("sch.sumHow"))}</button>
+      <div data-howbody hidden style="margin-top:8px"></div>
+    </div>`;
+
+  /* The timing rules, fetched only if somebody asks. They are the arithmetic behind every ETA on the
+   * board, and "why is this stop 95 minutes" is the second question after "why this many teams". */
+  const btn = box.querySelector("[data-how]");
+  const body = box.querySelector("[data-howbody]");
+  btn.addEventListener("click", async () => {
+    body.hidden = !body.hidden;
+    if (body.hidden || body.dataset.loaded) return;
+    body.innerHTML = `<span class="muted">${esc(tr("t.loading"))}</span>`;
+    try {
+      const rules = await api("/rest/v1/sched_rule?select=code,label,minutes,threshold_cm,step_cm,enabled&order=sort_no");
+      const on = (rules || []).filter((r) => r.enabled);
+      body.innerHTML = `
+        <div class="muted" style="margin-bottom:6px">${esc(tr("sch.sumHowBody"))}</div>
+        <table class="dense"><tbody>
+          ${on.map((r) => `<tr><td>${esc(r.label)}</td><td style="white-space:nowrap"><b>${
+            esc(num(r.minutes))} ${esc(tr("sch.min"))}</b></td></tr>`).join("")}
+        </tbody></table>`;
+      body.dataset.loaded = "1";
+    } catch (e) {
+      body.innerHTML = `<span class="err">${esc(e.message)}</span>`;
+    }
+  });
+}
+
 /* ------------------------------------------------------------------ versions */
 
 function paintVersions(date) {
@@ -537,6 +648,11 @@ function teamColumn(t, stops) {
                 (MODEL.roster || []).some((r) => r.name === n && r.emaar) ? " ⭐" : ""}
             </span>`).join("")}
         </div>
+        ${/* Where this team is actually going. Derived from the stops on the column rather than
+            stored, so it follows a card being dragged between teams - and a team split across both
+            emirates says so in red, because that is a 90-minute drive somebody should see before
+            the van leaves rather than at 11am. */ ""}
+        <div class="schcity">${cityLabel(stops)}</div>
         <div class="schcolmeta muted sm">
           ${stops.length} · ${mins(t.busy_min)} + ${mins(t.travel_min)} · ${num(t.travel_km)} km
           ${t.max_rail_cm ? ` · ${esc(tr("sch.maxRail"))} ${num(t.max_rail_cm)}` : ""}
@@ -544,6 +660,18 @@ function teamColumn(t, stops) {
       </div>
       <div class="schstops" data-drop="${t.team_no}">${cards.join("")}</div>
     </div>`;
+}
+
+/* The city (or cities) a team's day is in. Empty when it has no stops yet - a column with nothing on
+ * it is not "in Dubai", it is unused, and labelling it would be a guess. */
+function cityLabel(stops) {
+  const seen = [];
+  stops.forEach((s) => { if (s.city && !seen.includes(s.city)) seen.push(s.city); });
+  if (!seen.length) return `<span class="muted sm">${esc(tr("sch.cityNone"))}</span>`;
+  const split = seen.length > 1;
+  return `<span class="schcitytag ${split ? "split" : ""}"
+    title="${esc(split ? tr("sch.citySplitWhy") : "")}">📍 ${esc(seen.join(" + "))}${
+    split ? " ⚠" : ""}</span>`;
 }
 
 function travelRow(s) {
@@ -630,6 +758,7 @@ async function refresh() {
   try {
     MODEL = await rpc("fn_sched_board", { p_run_id: MODEL.run.id });
     paintFloating();
+    paintSummary();          // moving a stop can change a team's city and every total on it
     paintBoard();
     const st = $("#schactions .tline", MOUNT);
     if (st) st.outerHTML = statsStrip(MODEL.run);
