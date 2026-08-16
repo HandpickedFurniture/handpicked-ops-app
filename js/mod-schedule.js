@@ -599,7 +599,26 @@ function paintBoard() {
     byTeam.get(s.team_no).push(s);
   });
 
-  box.innerHTML = (MODEL.teams || []).map((t) => teamColumn(t, byTeam.get(t.team_no) || [])).join("");
+  /* Columns run BY CITY, not by team number.
+   *
+   * Team 2 in Dubai next to team 3 in Abu Dhabi next to team 4 in Dubai is a board you have to read
+   * twice to answer "who is in Abu Dhabi tomorrow" - and that is the question somebody asks while
+   * loading vans. Team number is only an identifier; the city is the thing the day is organised
+   * around, so it orders the board and the number just breaks ties within a city.
+   *
+   * Empty teams sink to the end: a column with no stops has no city, and guessing one would put it
+   * under a heading it does not belong to. A team split across both emirates sorts under the first
+   * city it is working, and says so in red - see cityLabel(). */
+  const ordered = (MODEL.teams || []).map((t) => {
+    const stops = byTeam.get(t.team_no) || [];
+    return { t, stops, city: citiesOf(stops)[0] || "" };
+  }).sort((a, b) => {
+    if (!a.city !== !b.city) return a.city ? -1 : 1;      // teams with no work last
+    if (a.city !== b.city) return a.city.localeCompare(b.city);
+    return (a.t.team_no || 0) - (b.t.team_no || 0);
+  });
+
+  box.innerHTML = ordered.map((x) => teamColumn(x.t, x.stops)).join("");
 
   box.querySelectorAll("[data-stop]").forEach((c) => {
     c.querySelector("[data-menu]").addEventListener("click", (e) => {
@@ -662,11 +681,20 @@ function teamColumn(t, stops) {
     </div>`;
 }
 
-/* The city (or cities) a team's day is in. Empty when it has no stops yet - a column with nothing on
- * it is not "in Dubai", it is unused, and labelling it would be a guess. */
-function cityLabel(stops) {
+/* The city (or cities) a team's day is in, in the order it meets them. Empty when it has no stops -
+ * a column with nothing on it is not "in Dubai", it is unused, and labelling it would be a guess.
+ *
+ * ONE definition, used by both the label and the column order in paintBoard(). Two of these would
+ * eventually disagree, and a board sorted under a heading that contradicts the tag beneath it is
+ * worse than one that was never sorted. */
+function citiesOf(stops) {
   const seen = [];
-  stops.forEach((s) => { if (s.city && !seen.includes(s.city)) seen.push(s.city); });
+  (stops || []).forEach((s) => { if (s.city && !seen.includes(s.city)) seen.push(s.city); });
+  return seen;
+}
+
+function cityLabel(stops) {
+  const seen = citiesOf(stops);
   if (!seen.length) return `<span class="muted sm">${esc(tr("sch.cityNone"))}</span>`;
   const split = seen.length > 1;
   return `<span class="schcitytag ${split ? "split" : ""}"
