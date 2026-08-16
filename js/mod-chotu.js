@@ -19,16 +19,16 @@
  * declines. That is the whole design: speech is fast and unreliable, so speed is where the voice
  * goes and reliability is where the button goes.
  *
- * The speaker's NAME is asked before the first capture and rides on every write, because "who told
- * us this" is the first question anybody asks about a record that turns out to be wrong.
+ * WHO SAID IT comes from the signed-in account, like every other write in this app. Chotu used to ask
+ * for a name and keep it in localStorage, which was a question with a better answer already on file -
+ * and a free-text one at that, so the same person could be "Kausar", "kausar" and "Kausar M" on
+ * three different records. One account per person is the rule here; the account IS the name.
  */
 import { submit, currentActor, queueDepth, isSignedIn, isViewer, getSession } from "./api.js";
-import { SB_URL, SB_KEY, STORAGE_PREFIX } from "./config.js";
+import { SB_URL, SB_KEY } from "./config.js";
 import { tr, getLang, SPEECH_LOCALE } from "./i18n.js";
 import { $, esc, el, chip, num, toast } from "./ui.js";
 import { attachMic, speechAvailable } from "./voice.js";
-
-const SPEAKER_KEY = STORAGE_PREFIX + "chotu_speaker";
 
 /* Conversation state. Module-level so switching tabs and coming back keeps the thread - a coordinator
  * who glanced at the roster mid-sentence should not have to start again. */
@@ -36,8 +36,10 @@ let HISTORY = [];
 let ORDER = null;        // the order currently in scope, if one has been named
 let PROPOSAL = null;     // the last capture awaiting a human decision
 
-const speaker = () => localStorage.getItem(SPEAKER_KEY) || "";
-const setSpeaker = (v) => localStorage.setItem(SPEAKER_KEY, v);
+/* Who is talking: the signed-in account, never a typed name. The short form is for the screen and
+ * for the model; the full one is what gets written, so a Chotu record is attributable exactly the
+ * way a typed one is. */
+const speaker = () => (currentActor() || "").split("@")[0];
 
 /* ------------------------------------------------------------------ speech out
  * The Web Speech synthesis API: on-device, free, no key, and it already has Hindi and Bengali voices
@@ -165,15 +167,13 @@ export async function render(mount, state) {
     if (e.key === "Enter") { e.preventDefault(); send(); }
   });
 
-  $("#chotuwho", mount).addEventListener("click", () => nameSheet(mount));
 }
 
 function paintWho(mount) {
   const box = $("#chotuwho", mount);
   if (!box) return;
-  box.innerHTML = speaker()
-    ? `<button class="btn ghost sm">👤 ${esc(speaker())}</button>`
-    : `<button class="btn sm">👤 ${esc(tr("chotu.whoAreYou"))}</button>`;
+  // not a control: there is nothing to choose, and offering a choice invites somebody to get it wrong
+  box.innerHTML = `<span class="chip mute" title="${esc(tr("chotu.recordedAs"))}">👤 ${esc(speaker())}</span>`;
 }
 
 function paintOrder(mount) {
@@ -295,9 +295,9 @@ function paintProposal(mount, res) {
       break;
     default: break;
   }
-  add(tr("chotu.speaker"), speaker() || tr("chotu.whoAreYou"));
+  add(tr("chotu.speaker"), speaker());
 
-  const blocked = need.length > 0 || !speaker() || isViewer();
+  const blocked = need.length > 0 || isViewer();
 
   const box = el(`
     <div class="card chotucard ${blocked ? "blocked" : ""}">
@@ -310,8 +310,6 @@ function paintProposal(mount, res) {
       </table>
       ${need.length ? `<div class="banner warn" style="margin-top:10px">${
         esc(tr("chotu.missing", { what: need.join(", ") }))}</div>` : ""}
-      ${!speaker() ? `<div class="banner warn" style="margin-top:10px">${
-        esc(tr("chotu.nameFirst"))}</div>` : ""}
       ${isViewer() ? `<div class="banner warn" style="margin-top:10px">${
         esc(tr("role.readOnly"))}</div>` : ""}
       <div class="row" style="justify-content:flex-end;margin-top:12px">
@@ -346,9 +344,6 @@ function paintProposal(mount, res) {
         toast(e.message, "bad");
       }
     });
-  } else if (!speaker()) {
-    // the one blocker the person can clear from here
-    box.querySelector(".banner").addEventListener("click", () => nameSheet(mount));
   }
 
   card.appendChild(box);
@@ -360,9 +355,11 @@ function paintProposal(mount, res) {
  * person in the same way a typed one is. */
 async function commit(res) {
   const f = res.fields || {};
-  const who = speaker();
-  const actor = who ? `${who} (${currentActor() || "app"})` : currentActor();
-  const note = tr("chotu.viaChotu", { who: who || "—" });
+  /* Exactly the actor every other screen writes - no decoration. A Chotu row and a typed row are
+   * attributable the same way, so "who recorded this" never depends on which door it came through.
+   * The note is what marks it as spoken rather than typed. */
+  const actor = currentActor();
+  const note = tr("chotu.viaChotu", { who: speaker() || "—" });
 
   switch (res.intent) {
     case "fabric_received":
@@ -435,41 +432,4 @@ async function commit(res) {
     default:
       throw new Error(tr("chotu.unsure"));
   }
-}
-
-/* ------------------------------------------------------------------ who is speaking
- * Asked before the first capture, not after. A record whose author is "the tablet in the workshop"
- * answers none of the questions anybody asks about it later. */
-function nameSheet(mount) {
-  const wrap = el(`
-    <div class="modal">
-      <div class="sheet">
-        <h3>${esc(tr("chotu.whoAreYou"))}</h3>
-        <p class="muted" style="margin:4px 0 12px">${esc(tr("chotu.whyName"))}</p>
-        <input type="text" name="cname" value="${esc(speaker())}" autofocus
-               placeholder="${esc(tr("chotu.yourName"))}">
-        <div class="row" style="justify-content:flex-end;margin-top:14px">
-          <button class="btn ghost" data-no>${esc(tr("act.cancel"))}</button>
-          <button class="btn primary" data-yes>${esc(tr("act.save"))}</button>
-        </div>
-      </div>
-    </div>`);
-  document.body.appendChild(wrap);
-  const close = () => wrap.remove();
-  wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
-  wrap.querySelector("[data-no]").onclick = close;
-  const save = () => {
-    const v = wrap.querySelector('[name="cname"]').value.trim();
-    if (!v) return;
-    setSpeaker(v);
-    close();
-    paintWho(mount);
-    if (PROPOSAL) paintProposal(mount, PROPOSAL);   // unblocks the commit button
-    say(tr("chotu.hello", { who: v }));
-  };
-  wrap.querySelector("[data-yes]").onclick = save;
-  wrap.querySelector('[name="cname"]').addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { e.preventDefault(); save(); }
-  });
-  wrap.querySelector('[name="cname"]').focus();
 }

@@ -44,6 +44,12 @@ header select option{color:var(--txt);}
 .qbadge{background:var(--accent);color:#fff;border-radius:999px;padding:3px 9px;font-size:12px;
   font-weight:700;}
 .qbadge.fail{background:var(--danger);}
+/* the failed badge is a button - it opens the tray of writes that never landed */
+button.qbadge{border:0;font-family:inherit;cursor:pointer;font-weight:700;}
+button.qbadge.fail:hover{filter:brightness(1.15);}
+.failedlist{display:grid;gap:6px;max-height:46vh;overflow-y:auto;}
+.failedlist .tline{align-items:flex-start;}
+.failedlist .err{font-size:12px;overflow-wrap:anywhere;}
 
 nav.tabs{display:flex;gap:2px;background:var(--brand-dark);position:sticky;top:56px;z-index:55;
   overflow-x:auto;}

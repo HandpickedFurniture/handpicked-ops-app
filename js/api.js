@@ -16,10 +16,14 @@ const FAILED_KEY = STORAGE_PREFIX + "queue_failed";
 
 let session = null;
 let refreshing = null;          // single-flight guard, see refresh()
-const listeners = { session: [], queue: [] };
+const listeners = { session: [], queue: [], failed: [] };
 
 export function onSession(fn) { listeners.session.push(fn); }
 export function onQueue(fn) { listeners.queue.push(fn); }
+/* Fires the moment a write is given up on. A parked write is the ONE case where somebody's input is
+ * genuinely gone unless a human does something, so it is announced rather than left in a list
+ * nobody opens. */
+export function onFailed(fn) { listeners.failed.push(fn); }
 const emit = (k, v) => listeners[k].forEach((f) => { try { f(v); } catch (e) { console.error(e); } });
 
 /* ---------------------------------------------------------------- session */
@@ -168,7 +172,12 @@ const VIEWER_ALLOWED =
 export async function api(path, opts = {}, retry = true) {
   const method = (opts.method || "GET").toUpperCase();
   if (method !== "GET" && method !== "HEAD" && isViewer() && !VIEWER_ALLOWED.test(path)) {
-    throw new Error(tr("role.readOnly"));
+    /* `permanent` matters when this comes back to the queue: retrying a refusal forever would block
+     * every write behind it. Marked rather than inferred, because a refusal thrown BEFORE any fetch
+     * looks exactly like a network failure from the outside - neither carries an HTTP status. */
+    const err = new Error(tr("role.readOnly"));
+    err.permanent = true;
+    throw err;
   }
   const token = await freshToken();
   const r = await fetch(SB_URL + path, {
@@ -231,19 +240,50 @@ function readQueue(key) {
 }
 function writeQueue(key, q) {
   try { localStorage.setItem(key, JSON.stringify(q)); } catch (e) {}
-  if (key === QUEUE_KEY) emit("queue", q.length);
+  // both lists drive the header badge, so both have to announce themselves
+  emit("queue", readQueue(QUEUE_KEY).length);
 }
 
 export function queueDepth() { return readQueue(QUEUE_KEY).length; }
 export function failedWrites() { return readQueue(FAILED_KEY); }
 export function clearFailed() { writeQueue(FAILED_KEY, []); }
 
-export async function submit(fn, args) {
-  const item = { id: crypto.randomUUID(), fn, args, ts: Date.now() };
-  const q = readQueue(QUEUE_KEY);
-  q.push(item);
-  writeQueue(QUEUE_KEY, q);
+/* Put every parked write back in the queue and try again. What the failed-writes tray calls. */
+export function retryFailed() {
+  const failed = readQueue(FAILED_KEY);
+  if (failed.length) {
+    writeQueue(QUEUE_KEY,
+      readQueue(QUEUE_KEY).concat(failed.map((f) => ({ ...f, tries: 0, error: undefined }))));
+    writeQueue(FAILED_KEY, []);
+  }
   return flush();
+}
+
+/* Queue a write and WAIT for it to actually go, reporting what happened to THIS item.
+ *
+ * It used to `return flush()`, and flush() returned undefined the moment another flush was already
+ * running. So `await submit(...)` resolved immediately, and the caller - every caller - then read
+ * queueDepth() to decide what to say. Two consequences, both of which people were seeing:
+ *
+ *   * the toast said "Saved - will sync when back online" WHILE ONLINE, because the item genuinely
+ *     was still sitting in the queue at the instant it looked;
+ *   * the caller's reload() re-read the server before the write landed, so the row came back with
+ *     its old value and the tick appeared to bounce off.
+ *
+ * Nothing was usually lost - the queue drained a moment later - but it looked exactly like lost
+ * input, and the faster somebody ticked down a list the more often it happened. flush() now hands
+ * back its in-flight promise, so awaiting this genuinely waits, and the answer below is about this
+ * item rather than about a global counter that anything could have moved.
+ */
+export async function submit(fn, args) {
+  const item = { id: crypto.randomUUID(), fn, args, ts: Date.now(), tries: 0 };
+  writeQueue(QUEUE_KEY, readQueue(QUEUE_KEY).concat([item]));
+
+  await flush();
+
+  if (readQueue(QUEUE_KEY).some((x) => x.id === item.id)) return { status: "queued", id: item.id };
+  const bad = readQueue(FAILED_KEY).find((x) => x.id === item.id);
+  return bad ? { status: "failed", id: item.id, error: bad.error } : { status: "sent", id: item.id };
 }
 
 /* Take one item out of the queue as it stands NOW, rather than out of a snapshot.
@@ -261,32 +301,61 @@ function dropQueued(id) {
   return cur;
 }
 
-let flushing = false;
-export async function flush() {
-  if (flushing) return;
-  flushing = true;
-  try {
-    let q = readQueue(QUEUE_KEY);
-    while (q.length) {
-      const item = q[0];
-      try {
-        await rpc(item.fn, item.args);
-      } catch (e) {
-        if (e.message === "NOT_SIGNED_IN") break;          // keep it queued for after sign-in
-        if (e.status && e.status >= 400 && e.status < 500) {
-          // a 4xx will never succeed on retry - park it where a human can see it
-          const failed = readQueue(FAILED_KEY);
-          failed.push({ ...item, error: e.message });
-          writeQueue(FAILED_KEY, failed);
-          q = dropQueued(item.id);
-          continue;
-        }
-        break;                                              // network/5xx - try again later
+/* A server error that keeps happening must not hold the queue hostage. Five attempts across five
+ * flushes is about a hundred seconds of trying; after that the item is parked so everything behind
+ * it can go. A genuinely OFFLINE item is never counted against this - see below. */
+const MAX_TRIES = 5;
+
+function park(item, message) {
+  writeQueue(FAILED_KEY, readQueue(FAILED_KEY).concat([{ ...item, error: message }]));
+  emit("failed", message);
+}
+
+/* ONE flush at a time, and everyone waits on the same one.
+ *
+ * Returning the in-flight promise rather than undefined is what makes `await submit(...)` mean
+ * something. The loop re-reads the queue on every pass, so an item appended by a caller that joined
+ * a run already in progress is still picked up by that run. */
+let flushing = null;
+
+export function flush() {
+  if (flushing) return flushing;
+  flushing = drain().finally(() => { flushing = null; });
+  return flushing;
+}
+
+async function drain() {
+  let q = readQueue(QUEUE_KEY);
+  while (q.length) {
+    const item = q[0];
+    try {
+      await rpc(item.fn, item.args);
+    } catch (e) {
+      if (e.message === "NOT_SIGNED_IN") break;          // keep it queued for after sign-in
+
+      /* Three different failures wear the same coat, so tell them apart explicitly:
+       *   permanent  - refused before it ever left the browser (a read-only account). Never retry.
+       *   4xx        - the server understood and said no. Retrying cannot change that.
+       *   5xx        - the server broke. Worth retrying, but not forever.
+       *   no status  - fetch itself rejected: no signal, a dead lift, a tunnel. Retry indefinitely
+       *                and do NOT count it, because being offline is not the write's fault. */
+      if (e.permanent || (e.status >= 400 && e.status < 500)) {
+        park(item, e.message);
+        q = dropQueued(item.id);
+        continue;
       }
-      // picks up anything queued while that request was in flight, and drains it too
-      q = dropQueued(item.id);
+      if (e.status >= 500) {
+        const tries = (item.tries || 0) + 1;
+        if (tries >= MAX_TRIES) { park(item, e.message); q = dropQueued(item.id); continue; }
+        // persist the count, or every flush would start again from one and this would never park
+        writeQueue(QUEUE_KEY,
+          readQueue(QUEUE_KEY).map((x) => (x.id === item.id ? { ...x, tries } : x)));
+      }
+      break;                                              // offline, or a 5xx worth another go
     }
-  } finally { flushing = false; }
+    // picks up anything queued while that request was in flight, and drains it too
+    q = dropQueued(item.id);
+  }
 }
 
 export function startQueueWatcher() {

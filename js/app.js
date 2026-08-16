@@ -7,9 +7,10 @@ import { BUILD, STORAGE_PREFIX } from "./config.js";
 import {
   loadSession, isSignedIn, signOut, onSession, onQueue, startQueueWatcher, flush,
   queueDepth, failedWrites, currentActor, loadRole, currentRole,
+  onFailed, retryFailed, clearFailed,
 } from "./api.js";
 import { tr, getLang, setLang, LANGS } from "./i18n.js";
-import { $, esc, el, toast } from "./ui.js";
+import { $, esc, el, toast, modal, loading, confirmSheet } from "./ui.js";
 import { renderLogin } from "./auth.js";
 import { readHash, writeHash } from "./filters.js";
 import { logoSvg, installFavicon } from "./brand.js";
@@ -136,13 +137,62 @@ function paintHeader() {
   paintQueue();
 }
 
+/* Both counts, and BOTH at once when both apply.
+ *
+ * This used to show the failed badge only when the queue happened to be empty, which is precisely
+ * backwards: writes pile up behind a stuck one, so the moment there is something to report is the
+ * moment it was hidden. The failed badge is a button now, because a list nobody can open is a list
+ * nobody reads - and a parked write is somebody's input that is gone unless they act. */
 function paintQueue() {
   const slot = $("#qslot");
   if (!slot) return;
   const n = queueDepth();
   const f = failedWrites().length;
-  slot.innerHTML = n ? `<span class="qbadge" title="${esc(tr("t.offline", { n }))}">${n} ⇅</span>`
-    : f ? `<span class="qbadge fail" title="${esc(tr("t.failed", { n: f }))}">${f} !</span>` : "";
+  slot.innerHTML =
+    (n ? `<span class="qbadge" title="${esc(tr("t.offline", { n }))}">${n} ⇅</span>` : "")
+    + (f ? `<button class="qbadge fail" id="qfail" title="${esc(tr("t.failed", { n: f }))}"
+             >${f} !</button>` : "");
+  const fb = $("#qfail");
+  if (fb) fb.addEventListener("click", failedSheet);
+}
+
+/* What could not be saved, and the two things worth doing about it. */
+function failedSheet() {
+  const rows = failedWrites();
+  if (!rows.length) return;
+  const m = modal(`
+    <h3>${esc(tr("q.failedTitle", { n: rows.length }))}</h3>
+    <p class="muted" style="margin:4px 0 12px">${esc(tr("q.failedBody"))}</p>
+    <div class="failedlist">
+      ${rows.map((r) => `
+        <div class="tline">
+          <div><b>${esc(r.fn)}</b>
+            <div class="muted">${esc(new Date(r.ts).toLocaleString())}</div></div>
+          <div class="err">${esc(r.error || "")}</div>
+        </div>`).join("")}
+    </div>
+    <div class="row" style="justify-content:flex-end;margin-top:14px">
+      <button class="btn ghost" data-discard>${esc(tr("q.discard"))}</button>
+      <button class="btn primary" data-retry>${esc(tr("q.retry"))}</button>
+    </div>`);
+
+  m.sheet.querySelector("[data-retry]").addEventListener("click", async () => {
+    m.close();
+    loading(true, tr("q.retrying"));
+    try { await retryFailed(); } finally { loading(false); }
+    const left = failedWrites().length;
+    toast(left ? tr("t.failed", { n: left }) : tr("q.retryOk"), left ? "bad" : "ok");
+    paintQueue();
+    window.dispatchEvent(new CustomEvent("ops:rerender"));
+  });
+
+  // deliberately a confirmation: this is the button that throws somebody's work away
+  m.sheet.querySelector("[data-discard]").addEventListener("click", async () => {
+    if (!await confirmSheet(tr("q.discard"), tr("q.discardConfirm", { n: rows.length }))) return;
+    clearFailed();
+    m.close();
+    paintQueue();
+  });
 }
 
 const TAB_ICON = { home: "🏠", production: "✂️", prep: "🧵", status: "🚚", schedule: "🗓️",
@@ -231,12 +281,18 @@ function boot() {
   document.documentElement.lang = getLang();
   installFavicon();
   if (localStorage.getItem(STORAGE_PREFIX + "big")) document.body.classList.add("big");
+  /* Chotu asked for a typed name for about a day. Nothing reads it now - the signed-in account is
+   * the answer - so clear it rather than leave somebody's name sitting in storage unused. */
+  localStorage.removeItem(STORAGE_PREFIX + "chotu_speaker");
   $("#build").textContent = BUILD;
 
   loadSession();
   paintHeader();
   startQueueWatcher();
   onQueue(paintQueue);
+  /* Say it out loud the moment it happens. The badge alone was too quiet for the one event that
+   * actually loses somebody's work, and it would otherwise be discovered days later, if at all. */
+  onFailed(() => { paintQueue(); toast(tr("q.failedToast"), "bad"); });
   onSession(() => paintHeader());
 
   window.addEventListener("hashchange", route);

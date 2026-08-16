@@ -124,6 +124,44 @@ version** — 45 of 712 orders have been revised, and a revised PO is the one wo
 
 **9. Chotu** (`#/chotu`) — see below.
 
+## The offline write queue
+
+Every write goes through `submit()` in `js/api.js` into a localStorage queue, because installers are
+in vans and lifts. It is safe to replay: each RPC is set-state rather than incremental, and
+`fn_ops_apply_prep` derives a deterministic `client_op_id` per unit so a replayed bulk apply collides
+row-for-row and does nothing.
+
+**`await submit(...)` genuinely waits.** It used to `return flush()`, and `flush()` returned
+`undefined` the moment another flush was already running — so with two writes in quick succession the
+second resolved instantly, before its request had gone. Every caller then read `queueDepth()` to
+decide what to say, which produced two visible symptoms while perfectly online:
+
+- the toast said **"Saved – will sync when back online"**, because the item really was still queued
+  at the instant it looked; and
+- the caller's `reload()` re-read the server before the write landed, so the row came back with its
+  old value and **the tick appeared to bounce off**.
+
+Nothing was usually lost — the queue drained a second later — but it looked exactly like lost input,
+and the faster somebody ticked down a list the more often it happened. `flush()` now returns its
+in-flight promise, so everyone waits on the same run; the loop re-reads the queue each pass, so an
+item appended by a caller that joined a run in progress is still picked up by it.
+
+**Failures are told apart, not lumped together.** They look identical from outside — a refusal thrown
+before the request leaves the browser carries no HTTP status, and neither does a dead lift:
+
+| Failure | Behaviour |
+|---|---|
+| `permanent` (a read-only account, marked at the throw site) | parked immediately — retrying cannot help |
+| 4xx | parked — the server understood and said no |
+| 5xx | retried, then parked after `MAX_TRIES`, so a broken write cannot hold the queue hostage |
+| no status (fetch itself rejected — no signal) | retried indefinitely, **not** counted; being offline is not the write's fault |
+
+**A parked write is the one case where somebody's input is genuinely gone unless a human acts**, so
+it announces itself: a toast when it happens, and a red badge in the header that is a *button*,
+opening a tray listing what failed and why, with **Try again** and **Discard**. Previously these
+were dropped into localStorage behind a tooltip nobody opens — and the badge was only drawn when the
+queue happened to be empty, which is backwards, since writes pile up behind a stuck one.
+
 ## Roles
 
 | Role | Writes | Sees |
