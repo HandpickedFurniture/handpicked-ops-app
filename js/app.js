@@ -7,7 +7,7 @@ import { BUILD, STORAGE_PREFIX } from "./config.js";
 import {
   loadSession, isSignedIn, signOut, onSession, onQueue, startQueueWatcher, flush,
   queueDepth, failedWrites, currentActor, loadRole, currentRole,
-  onFailed, retryFailed, clearFailed,
+  onFailed, retryFailed, clearFailed, pendingWrites,
 } from "./api.js";
 import { tr, getLang, setLang, LANGS } from "./i18n.js";
 import { $, esc, el, toast, modal, loading, confirmSheet } from "./ui.js";
@@ -143,52 +143,74 @@ function paintHeader() {
  * backwards: writes pile up behind a stuck one, so the moment there is something to report is the
  * moment it was hidden. The failed badge is a button now, because a list nobody can open is a list
  * nobody reads - and a parked write is somebody's input that is gone unless they act. */
+/* BOTH counts, and both are buttons.
+ *
+ * The failed badge used to be drawn only when the queue happened to be empty, which is backwards -
+ * writes pile up behind a stuck one, so the moment there is something to report is the moment it was
+ * hidden. And the waiting badge was a number you could only watch: somebody standing there with 18
+ * queued had no way to say "go on then", which is precisely when they conclude it is broken. */
 function paintQueue() {
   const slot = $("#qslot");
   if (!slot) return;
   const n = queueDepth();
   const f = failedWrites().length;
   slot.innerHTML =
-    (n ? `<span class="qbadge" title="${esc(tr("t.offline", { n }))}">${n} ⇅</span>` : "")
+    (n ? `<button class="qbadge" id="qwait" title="${esc(tr("t.offline", { n }))}">${n} ⇅</button>` : "")
     + (f ? `<button class="qbadge fail" id="qfail" title="${esc(tr("t.failed", { n: f }))}"
              >${f} !</button>` : "");
+  const wb = $("#qwait");
+  if (wb) wb.addEventListener("click", queueSheet);
   const fb = $("#qfail");
-  if (fb) fb.addEventListener("click", failedSheet);
+  if (fb) fb.addEventListener("click", queueSheet);
 }
 
-/* What could not be saved, and the two things worth doing about it. */
-function failedSheet() {
-  const rows = failedWrites();
-  if (!rows.length) return;
+/* Everything that has not landed, and the three things worth doing about it. */
+function queueSheet() {
+  const waiting = pendingWrites();
+  const failed = failedWrites();
+  if (!waiting.length && !failed.length) return;
+
+  const list = (rows, withError) => rows.map((r) => `
+    <div class="tline">
+      <div><b>${esc(r.fn)}</b>
+        <div class="muted">${esc(new Date(r.ts).toLocaleString())}</div></div>
+      ${withError ? `<div class="err">${esc(r.error || "")}</div>` : ""}
+    </div>`).join("");
+
   const m = modal(`
-    <h3>${esc(tr("q.failedTitle", { n: rows.length }))}</h3>
-    <p class="muted" style="margin:4px 0 12px">${esc(tr("q.failedBody"))}</p>
-    <div class="failedlist">
-      ${rows.map((r) => `
-        <div class="tline">
-          <div><b>${esc(r.fn)}</b>
-            <div class="muted">${esc(new Date(r.ts).toLocaleString())}</div></div>
-          <div class="err">${esc(r.error || "")}</div>
-        </div>`).join("")}
-    </div>
-    <div class="row" style="justify-content:flex-end;margin-top:14px">
-      <button class="btn ghost" data-discard>${esc(tr("q.discard"))}</button>
-      <button class="btn primary" data-retry>${esc(tr("q.retry"))}</button>
+    <h3>${esc(tr("q.title"))}</h3>
+    ${waiting.length ? `
+      <p class="muted" style="margin:4px 0 8px">${esc(tr("q.waitingBody", { n: waiting.length }))}</p>
+      <div class="failedlist">${list(waiting, false)}</div>` : ""}
+    ${failed.length ? `
+      <p class="muted" style="margin:14px 0 8px"><b>${esc(tr("q.failedTitle", { n: failed.length }))}</b><br>
+        ${esc(tr("q.failedBody"))}</p>
+      <div class="failedlist">${list(failed, true)}</div>` : ""}
+    <div class="row" style="justify-content:flex-end;margin-top:14px;flex-wrap:wrap">
+      ${failed.length ? `<button class="btn ghost" data-discard>${esc(tr("q.discard"))}</button>` : ""}
+      <button class="btn primary" data-sync>${esc(tr("q.syncNow"))}</button>
     </div>`);
 
-  m.sheet.querySelector("[data-retry]").addEventListener("click", async () => {
+  /* One button for both lists: parked writes are put back in the queue and the whole thing is
+   * drained. There is no useful distinction between "send these" and "send those" to somebody who
+   * just wants their work saved. */
+  m.sheet.querySelector("[data-sync]").addEventListener("click", async () => {
     m.close();
     loading(true, tr("q.retrying"));
     try { await retryFailed(); } finally { loading(false); }
-    const left = failedWrites().length;
-    toast(left ? tr("t.failed", { n: left }) : tr("q.retryOk"), left ? "bad" : "ok");
+    const left = queueDepth();
+    const bad = failedWrites().length;
+    toast(bad ? tr("t.failed", { n: bad })
+        : left ? tr("t.offline", { n: left })
+        : tr("q.retryOk"), bad ? "bad" : left ? "" : "ok");
     paintQueue();
     window.dispatchEvent(new CustomEvent("ops:rerender"));
   });
 
   // deliberately a confirmation: this is the button that throws somebody's work away
-  m.sheet.querySelector("[data-discard]").addEventListener("click", async () => {
-    if (!await confirmSheet(tr("q.discard"), tr("q.discardConfirm", { n: rows.length }))) return;
+  const db = m.sheet.querySelector("[data-discard]");
+  if (db) db.addEventListener("click", async () => {
+    if (!await confirmSheet(tr("q.discard"), tr("q.discardConfirm", { n: failed.length }))) return;
     clearFailed();
     m.close();
     paintQueue();

@@ -245,6 +245,8 @@ function writeQueue(key, q) {
 }
 
 export function queueDepth() { return readQueue(QUEUE_KEY).length; }
+/* What is still waiting, so the queue tray can show WHAT is stuck rather than only how many. */
+export function pendingWrites() { return readQueue(QUEUE_KEY); }
 export function failedWrites() { return readQueue(FAILED_KEY); }
 export function clearFailed() { writeQueue(FAILED_KEY, []); }
 
@@ -324,10 +326,17 @@ export function flush() {
   return flushing;
 }
 
+/* Walks the queue by INDEX, not by always retrying the head.
+ *
+ * The head-of-line problem is the one that strands people: eighteen good writes sitting behind one
+ * the server keeps rejecting, none of them going anywhere. A write that fails for a reason SPECIFIC
+ * to it now steps aside and lets everything behind it through. Only a genuine network failure stops
+ * the run, and it should - if there is no signal, the next seventeen will not go either. */
 async function drain() {
   let q = readQueue(QUEUE_KEY);
-  while (q.length) {
-    const item = q[0];
+  let i = 0;
+  while (i < q.length) {
+    const item = q[i];
     try {
       await rpc(item.fn, item.args);
     } catch (e) {
@@ -341,7 +350,7 @@ async function drain() {
        *                and do NOT count it, because being offline is not the write's fault. */
       if (e.permanent || (e.status >= 400 && e.status < 500)) {
         park(item, e.message);
-        q = dropQueued(item.id);
+        q = dropQueued(item.id);   // the next item slides into this index
         continue;
       }
       if (e.status >= 500) {
@@ -350,16 +359,38 @@ async function drain() {
         // persist the count, or every flush would start again from one and this would never park
         writeQueue(QUEUE_KEY,
           readQueue(QUEUE_KEY).map((x) => (x.id === item.id ? { ...x, tries } : x)));
+        q = readQueue(QUEUE_KEY);
+        i++;                       // leave it queued, but do not let it hold up the rest
+        continue;
       }
-      break;                                              // offline, or a 5xx worth another go
+      break;                       // no status: no signal. Nothing else will go either.
     }
     // picks up anything queued while that request was in flight, and drains it too
     q = dropQueued(item.id);
   }
 }
 
+/* Try often while something is waiting, rarely when there is nothing to do.
+ *
+ * It used to be a flat 20-second interval, so a phone that came out of a lift with six ticks queued
+ * sat for up to another twenty seconds before anything moved - and that wait is exactly when
+ * somebody is standing there watching the number and concluding it is broken. Five seconds while the
+ * queue has anything in it, thirty when it is empty, plus every event that means "the network might
+ * be back": coming online, returning to the tab, refocusing the window, and page restore from the
+ * back/forward cache, which fires no other event on iOS. */
+const POLL_BUSY = 5000;
+const POLL_IDLE = 30000;
+
 export function startQueueWatcher() {
-  window.addEventListener("online", flush);
+  const now = () => { flush(); };
+  window.addEventListener("online", now);
+  window.addEventListener("focus", now);
+  window.addEventListener("pageshow", now);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) flush(); });
-  setInterval(flush, 20000);
+
+  const tick = async () => {
+    try { await flush(); } catch (e) { /* the next tick tries again */ }
+    setTimeout(tick, queueDepth() ? POLL_BUSY : POLL_IDLE);
+  };
+  setTimeout(tick, POLL_BUSY);
 }

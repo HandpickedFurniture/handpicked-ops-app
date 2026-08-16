@@ -156,11 +156,20 @@ before the request leaves the browser carries no HTTP status, and neither does a
 | 5xx | retried, then parked after `MAX_TRIES`, so a broken write cannot hold the queue hostage |
 | no status (fetch itself rejected — no signal) | retried indefinitely, **not** counted; being offline is not the write's fault |
 
-**A parked write is the one case where somebody's input is genuinely gone unless a human acts**, so
-it announces itself: a toast when it happens, and a red badge in the header that is a *button*,
-opening a tray listing what failed and why, with **Try again** and **Discard**. Previously these
-were dropped into localStorage behind a tooltip nobody opens — and the badge was only drawn when the
-queue happened to be empty, which is backwards, since writes pile up behind a stuck one.
+**One bad write no longer strands the rest.** `drain()` walks the queue by index; a write that fails
+for a reason specific to it steps aside and lets everything behind it through. Only a genuine network
+failure stops the run, and it should — with no signal the next seventeen will not go either. This is
+the head-of-line problem, and it is what leaves somebody staring at "18 waiting to sync" that never
+moves.
+
+**Retry cadence follows the queue:** 5s while anything is waiting, 30s when idle, plus a flush on
+`online`, `focus`, `pageshow` and `visibilitychange`. A flat 20s meant a phone coming out of a lift
+sat for up to another twenty seconds — which is exactly the moment somebody decides it is broken.
+
+**Both badges are buttons.** Tapping either opens one tray: what is still waiting, what failed and
+why, a **Sync now** that drains both, and **Discard** for the parked ones. A number you can only
+watch is what makes people re-enter work they have already done. A parked write also fires a toast
+the moment it happens, since that is the one case where input is genuinely gone unless a human acts.
 
 ## Roles
 
