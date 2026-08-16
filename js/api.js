@@ -169,6 +169,20 @@ async function freshToken() {
 const VIEWER_ALLOWED =
   /\/rpc\/(fn_order_drawer|fn_ops_rate_for|fn_ops_log_photo_access|fn_chotu_context|fn_sched_board|fn_sched_run_for|fn_sched_next_working_day|fn_sched_suggest_teams|fn_sched_eta_explain)$/;
 
+/* NOTHING may hang forever.
+ *
+ * fetch() has no default timeout, and a request that hangs neither resolves nor rejects - a captive
+ * portal, a lift, a proxy that accepts the connection and then says nothing. That is not a slow
+ * write, it is a FROZEN one, and it takes the whole queue with it: drain() waits on it, so the
+ * in-flight flush promise never settles, so every later flush - including the Sync now button -
+ * waits on that same dead promise and does nothing at all, forever. Tapping Sync repeatedly is the
+ * symptom.
+ *
+ * An abort surfaces with no HTTP status, which the queue already reads as "no signal, try later" -
+ * exactly right. Every write here is set-state and replay-safe, so giving up early costs nothing;
+ * hanging costs everything. */
+const REQUEST_TIMEOUT_MS = 20000;
+
 export async function api(path, opts = {}, retry = true) {
   const method = (opts.method || "GET").toUpperCase();
   if (method !== "GET" && method !== "HEAD" && isViewer() && !VIEWER_ALLOWED.test(path)) {
@@ -180,20 +194,35 @@ export async function api(path, opts = {}, retry = true) {
     throw err;
   }
   const token = await freshToken();
-  const r = await fetch(SB_URL + path, {
-    /* PostgREST sends NO Cache-Control and no ETag, which leaves a GET open to the browser's
-     * heuristic caching. That is how a stock level updated on a phone can still read the old number
-     * on a laptop that had the page open earlier: the laptop never asked. A data API must never be
-     * heuristically cacheable, so say so explicitly rather than hoping. */
-    cache: "no-store",
-    ...opts,
-    headers: {
-      apikey: SB_KEY,
-      Authorization: "Bearer " + token,   // the USER's token, never SB_KEY - see file header
-      "Content-Type": "application/json",
-      ...(opts.headers || {}),
-    },
-  });
+
+  // AbortController rather than AbortSignal.timeout(): the workshop has iPhones older than Safari 16
+  const ctl = new AbortController();
+  const bell = setTimeout(() => ctl.abort(), REQUEST_TIMEOUT_MS);
+  let r;
+  try {
+    r = await fetch(SB_URL + path, {
+      /* PostgREST sends NO Cache-Control and no ETag, which leaves a GET open to the browser's
+       * heuristic caching. That is how a stock level updated on a phone can still read the old number
+       * on a laptop that had the page open earlier: the laptop never asked. A data API must never be
+       * heuristically cacheable, so say so explicitly rather than hoping. */
+      cache: "no-store",
+      signal: ctl.signal,
+      ...opts,
+      headers: {
+        apikey: SB_KEY,
+        Authorization: "Bearer " + token,   // the USER's token, never SB_KEY - see file header
+        "Content-Type": "application/json",
+        ...(opts.headers || {}),
+      },
+    });
+  } catch (e) {
+    // say which it was, because "timed out" and "no signal" send somebody to different places
+    const err = new Error(e && e.name === "AbortError" ? tr("t.timedOut") : tr("t.noNetwork"));
+    err.offline = true;                 // no HTTP status: the queue retries these forever
+    throw err;
+  } finally {
+    clearTimeout(bell);
+  }
 
   if (r.status === 401 && retry) {
     try { await refresh(); } catch (e) { throw new Error("NOT_SIGNED_IN"); }
@@ -363,7 +392,12 @@ async function drain() {
         i++;                       // leave it queued, but do not let it hold up the rest
         continue;
       }
-      break;                       // no status: no signal. Nothing else will go either.
+      /* No status: no signal, or the request timed out. Nothing else will go either, so stop -
+       * but RECORD WHY on the item first. A queue that says "18 waiting" and cannot say what it is
+       * waiting on is a queue nobody can diagnose, including from a screenshot. */
+      writeQueue(QUEUE_KEY, readQueue(QUEUE_KEY)
+        .map((x) => (x.id === item.id ? { ...x, lastError: e.message, lastTry: Date.now() } : x)));
+      break;
     }
     // picks up anything queued while that request was in flight, and drains it too
     q = dropQueued(item.id);

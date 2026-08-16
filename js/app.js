@@ -10,7 +10,7 @@ import {
   onFailed, retryFailed, clearFailed, pendingWrites,
 } from "./api.js";
 import { tr, getLang, setLang, LANGS } from "./i18n.js";
-import { $, esc, el, toast, modal, loading, confirmSheet } from "./ui.js";
+import { $, esc, el, toast, modal, loading, confirmSheet, copyText } from "./ui.js";
 import { renderLogin } from "./auth.js";
 import { readHash, writeHash } from "./filters.js";
 import { logoSvg, installFavicon } from "./brand.js";
@@ -137,12 +137,6 @@ function paintHeader() {
   paintQueue();
 }
 
-/* Both counts, and BOTH at once when both apply.
- *
- * This used to show the failed badge only when the queue happened to be empty, which is precisely
- * backwards: writes pile up behind a stuck one, so the moment there is something to report is the
- * moment it was hidden. The failed badge is a button now, because a list nobody can open is a list
- * nobody reads - and a parked write is somebody's input that is gone unless they act. */
 /* BOTH counts, and both are buttons.
  *
  * The failed badge used to be drawn only when the queue happened to be empty, which is backwards -
@@ -170,26 +164,39 @@ function queueSheet() {
   const failed = failedWrites();
   if (!waiting.length && !failed.length) return;
 
-  const list = (rows, withError) => rows.map((r) => `
+  const list = (rows) => rows.map((r) => `
     <div class="tline">
       <div><b>${esc(r.fn)}</b>
         <div class="muted">${esc(new Date(r.ts).toLocaleString())}</div></div>
-      ${withError ? `<div class="err">${esc(r.error || "")}</div>` : ""}
+      <div class="err">${esc(r.error || r.lastError || "")}</div>
     </div>`).join("");
+
+  /* Everything needed to work out why, in one paste. Asking somebody to read an error aloud off a
+   * phone gets you half of it; this gets you all of it. No order data, just what went wrong. */
+  const details = () => JSON.stringify({
+    build: BUILD, online: navigator.onLine, at: new Date().toISOString(),
+    waiting: waiting.map((r) => ({ fn: r.fn, ts: r.ts, tries: r.tries || 0, lastError: r.lastError })),
+    failed: failed.map((r) => ({ fn: r.fn, ts: r.ts, error: r.error })),
+  }, null, 1);
 
   const m = modal(`
     <h3>${esc(tr("q.title"))}</h3>
     ${waiting.length ? `
       <p class="muted" style="margin:4px 0 8px">${esc(tr("q.waitingBody", { n: waiting.length }))}</p>
-      <div class="failedlist">${list(waiting, false)}</div>` : ""}
+      <div class="failedlist">${list(waiting)}</div>` : ""}
     ${failed.length ? `
       <p class="muted" style="margin:14px 0 8px"><b>${esc(tr("q.failedTitle", { n: failed.length }))}</b><br>
         ${esc(tr("q.failedBody"))}</p>
-      <div class="failedlist">${list(failed, true)}</div>` : ""}
+      <div class="failedlist">${list(failed)}</div>` : ""}
     <div class="row" style="justify-content:flex-end;margin-top:14px;flex-wrap:wrap">
+      <button class="btn ghost" data-copy>${esc(tr("q.copyDetails"))}</button>
       ${failed.length ? `<button class="btn ghost" data-discard>${esc(tr("q.discard"))}</button>` : ""}
       <button class="btn primary" data-sync>${esc(tr("q.syncNow"))}</button>
     </div>`);
+
+  m.sheet.querySelector("[data-copy]").addEventListener("click", async () => {
+    toast(await copyText(details()) ? tr("q.copied") : details().slice(0, 200), "ok");
+  });
 
   /* One button for both lists: parked writes are put back in the queue and the whole thing is
    * drained. There is no useful distinction between "send these" and "send those" to somebody who
