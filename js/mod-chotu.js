@@ -41,6 +41,25 @@ let PROPOSAL = null;     // the last capture awaiting a human decision
  * way a typed one is. */
 const speaker = () => (currentActor() || "").split("@")[0];
 
+/* Find the order number in what was said, before anything else happens.
+ *
+ * Every order id in this business is exactly five digits - all 712 of them, 42256 to 71161 - which
+ * makes them findable in a sentence without asking the model. That matters because THE FACTS ARE
+ * FETCHED BEFORE THE MODEL RUNS: miss the number on the first pass and Chotu is reasoning about an
+ * order it was never shown, and correctly says it cannot find it.
+ *
+ * It used to rely on the model echoing the number back so the browser could ask again. That works
+ * when the number is typed and is a coin toss when it is spoken, because "70 770", "70,770" and
+ * "7 0 7 7 0" all come out of the transcriber and none of them is a five-digit token.
+ *
+ * The raw text is searched FIRST. Only if that finds nothing are digit runs joined, because joining
+ * too eagerly turns "2 fabrics for 70770" into one six-digit run and loses the order entirely. */
+function orderIn(text) {
+  const exactly5 = (t) => (String(t).match(/\d{5,}/g) || []).find((n) => n.length === 5) || null;
+  const raw = String(text || "");
+  return exactly5(raw) || exactly5(raw.replace(/(\d)[\s,.–-]+(?=\d)/g, "$1"));
+}
+
 /* ------------------------------------------------------------------ speech out
  * The Web Speech synthesis API: on-device, free, no key, and it already has Hindi and Bengali voices
  * on the phones this runs on. Best-effort by design - if a device has no voice for the language it
@@ -195,6 +214,11 @@ async function turn(mount, text) {
   HISTORY.push({ who: "me", text });
   paintLog(mount);
 
+  /* Put the order in scope BEFORE the facts are fetched, so the very first call is grounded. */
+  const spoken = orderIn(text);
+  const guessed = spoken && spoken !== ORDER;
+  if (guessed) { ORDER = spoken; paintOrder(mount); }
+
   const stateLbl = $("#chotustate", mount);
   if (stateLbl) stateLbl.textContent = tr("chotu.thinking");
 
@@ -214,6 +238,7 @@ async function turn(mount, text) {
       paintOrder(mount);
       res = await ask(text);
     }
+
   } catch (e) {
     HISTORY.push({ who: "it", text: e.message });
     paintLog(mount);
@@ -222,7 +247,17 @@ async function turn(mount, text) {
   }
   if (stateLbl) stateLbl.textContent = tr("chotu.tapToTalk");
 
-  if (res.order_id && res.order_id !== ORDER) { ORDER = String(res.order_id); paintOrder(mount); }
+  /* Adopt the order only once the FACTS confirm it is a real one.
+   *
+   * Not every five-digit number in a sentence is an order - "we used 12345 meters" is a quantity -
+   * and a bogus number left in the chip would silently become the subject of the next sentence.
+   * facts.order comes back null for an id the roster does not have, which is the test. */
+  if (res.facts && res.facts.order) {
+    if (res.order_id && res.order_id !== ORDER) { ORDER = String(res.order_id); paintOrder(mount); }
+  } else if (guessed) {
+    ORDER = null;
+    paintOrder(mount);
+  }
 
   /* No key, or the model is down. The facts came back regardless, so say something true and short
    * rather than pretending nothing happened - and the typed path and the modules still work. */

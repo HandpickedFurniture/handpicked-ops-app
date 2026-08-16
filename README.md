@@ -228,6 +228,24 @@ Verified against the live database: asking *"what fabrics are still pending for 
 the three real codes and meterages; saying *"fabric zz9999-plural-z-alpha arrived"* is refused, names
 the three real options, and leaves Commit disabled.
 
+**The order number is found in the browser, before the facts are fetched.** Every order id is exactly
+five digits (all 712 of them, 42256–71161), so `orderIn()` in `js/mod-chotu.js` pulls it straight out
+of the sentence. This is load-bearing rather than an optimisation: the facts are fetched *before* the
+model runs, so an order that is not identified on the first pass is one the model was never shown —
+and it then correctly reports that it cannot find it. Chotu used to depend on the model echoing the
+number back so the browser could ask a second time, which works when the number is typed and is a
+coin toss when it is spoken, because `70 770`, `70,770` and `7 0 7 7 0` all come out of the
+transcriber and none of them is a five-digit token.
+
+A number is only *adopted* once the facts confirm it is a real order — `facts.order` comes back null
+otherwise — so "we used 12345 meters" does not leave a bogus order in scope for the next sentence.
+
+The `due` list in `fn_chotu_context` is ordered by **urgency**, not by date: today, tomorrow, the day
+after, then overdue most-recent-first. It was `order by installation_date limit 60`, which sounds
+right and is exactly wrong — there are 390 overdue orders, so all 60 slots filled with the oldest of
+them (late June) and nothing due this week ever appeared. That is how a live order due in two days
+came back as "I have no details".
+
 Adding an intent means adding it to `INTENTS`, to the `validate()` switch, and to `commit()` in
 `js/mod-chotu.js`. If it does not map to an RPC that already exists, it is the wrong shape.
 
