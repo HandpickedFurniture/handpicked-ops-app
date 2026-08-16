@@ -534,6 +534,7 @@ function bulkBar(rows, selected, listEl) {
     <div class="selbar" hidden>
       <b class="selcount"></b>
       <button class="btn sm primary" data-act="stitch">${esc(tr("bulk.stitch"))}</button>
+      <button class="btn sm" data-act="tstate">${esc(tr("bulk.tailorState"))}</button>
       <button class="btn sm" data-act="prep">${esc(tr("bulk.prep"))}</button>
       <button class="btn sm" data-act="csv">${esc(tr("bulk.export"))}</button>
       <button class="btn ghost sm" data-act="none">${esc(tr("bulk.clear"))}</button>
@@ -580,6 +581,8 @@ function bulkBar(rows, selected, listEl) {
   });
 
   root.querySelector('[data-act="stitch"]').addEventListener("click", () => stitchModal(selected, clear));
+  root.querySelector('[data-act="tstate"]').addEventListener("click",
+    () => tailorStateModal(rows, selected, clear));
   root.querySelector('[data-act="prep"]').addEventListener("click", () => prepModal(selected, clear));
 
   return { root, update };
@@ -636,6 +639,87 @@ async function runBulk(ids, argsFor, fn) {
   } finally { loading(false); }
   toast(queueDepth() ? tr("t.queued") : tr("bulk.done", { n: ids.length }), "ok");
   window.dispatchEvent(new CustomEvent("ops:rerender"));
+}
+
+/* Move the tailors an order is ALREADY with to a new state, without naming one.
+ *
+ * "Send this to Farooq" and "everything that went out has come back" are different jobs, and the
+ * second is the common one at the end of a day. Making it ask WHICH tailor is worse than pointless:
+ * an order can be split between two of them, so the honest answer is "all of the ones it is with",
+ * and picking one by hand per order is how the other half gets forgotten.
+ *
+ * An order that has never been sent anywhere has no tailor to move, so it is counted out loud rather
+ * than silently skipped - "12 selected, 3 have not been sent" is the sentence somebody needs.
+ */
+function tailorStateModal(rows, selected, clear) {
+  const ids = Array.from(selected);
+  const byId = new Map(rows.map((r) => [r.order_id, r]));
+
+  // one entry per (order, tailor) pair the selection is actually with
+  const targets = [];
+  ids.forEach((id) => {
+    const d = byId.get(id) && byId.get(id).dispatch;
+    (Array.isArray(d) ? d : []).forEach((x) => {
+      if (x && x.contractor) {
+        targets.push({ id, contractor: x.contractor, other: x.other_name || null });
+      }
+    });
+  });
+  const withNone = ids.filter((id) => !targets.some((t) => t.id === id)).length;
+
+  if (!targets.length) { toast(tr("bulk.tailorNone"), "bad"); return; }
+
+  const m = modal(`
+    <h3>${esc(tr("bulk.tailorState"))}</h3>
+    <p class="muted" style="margin:4px 0 14px">${esc(tr("bulk.tailorStateBody",
+      { n: ids.length - withNone, m: targets.length }))}${
+      withNone ? " · " + esc(tr("bulk.tailorSkip", { n: withNone })) : ""}</p>
+    <div style="margin-bottom:10px"><label class="f">${esc(tr("bulk.newState"))}</label>
+      ${selectHtml("substate",
+          DISPATCH_SUBSTATES.map((s) => ({ value: s.value, label: tr(s.key) })), "received_back")}</div>
+    <div style="margin-bottom:10px" data-notewrap hidden>
+      <label class="f">${esc(tr("disp.qcFailWhat"))}</label><input type="text" name="qcnote"></div>
+    <div class="row" style="justify-content:flex-end">
+      <button class="btn ghost" data-no>${esc(tr("act.cancel"))}</button>
+      <button class="btn primary" data-yes>${esc(tr("act.save"))}</button>
+    </div>`);
+
+  const q = (s) => m.sheet.querySelector(s);
+  const substate = q('[name="substate"]');
+  const needsNote = () => substate.value === "qc_failed" || substate.value === "issue";
+  const sync = () => { q("[data-notewrap]").hidden = !needsNote(); };
+  substate.addEventListener("change", sync);
+  sync();
+
+  q("[data-no]").onclick = m.close;
+  q("[data-yes]").onclick = async () => {
+    const note = q('[name="qcnote"]').value.trim();
+    if (needsNote() && !note) {
+      toast(tr(substate.value === "issue" ? "disp.issueRequired" : "disp.qcFailRequired"), "bad");
+      return;
+    }
+    m.close();
+    clear();
+
+    /* Keyed by the PAIR, not the order: an order with two tailors needs two calls, and runBulk's
+     * one-call-per-id shape cannot express that. Same queue, same idempotent RPC. */
+    if (targets.length > BULK_CONFIRM_OVER
+        && !await confirmSheet(tr("bulk.confirmMany", { n: targets.length }),
+                               tr("bulk.confirmManyBody"))) return;
+    loading(true, tr("bulk.working", { n: targets.length }));
+    try {
+      for (const t of targets) {
+        await submit("fn_ops_set_dispatch", {
+          p_order_id: t.id, p_contractor: t.contractor, p_substate: substate.value,
+          p_other_name: t.other, p_actor: currentActor(),
+          p_note: null, p_items: null, p_qc_note: note || null,
+        });
+        invalidate(t.id);
+      }
+    } finally { loading(false); }
+    toast(queueDepth() ? tr("t.queued") : tr("bulk.done", { n: targets.length }), "ok");
+    window.dispatchEvent(new CustomEvent("ops:rerender"));
+  };
 }
 
 function stitchModal(selected, clear) {

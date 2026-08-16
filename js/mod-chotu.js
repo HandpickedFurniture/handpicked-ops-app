@@ -24,11 +24,15 @@
  * and a free-text one at that, so the same person could be "Kausar", "kausar" and "Kausar M" on
  * three different records. One account per person is the rule here; the account IS the name.
  */
-import { submit, currentActor, queueDepth, isSignedIn, isViewer, getSession } from "./api.js";
-import { SB_URL, SB_KEY } from "./config.js";
+import { api, submit, currentActor, queueDepth, isSignedIn, isViewer, getSession } from "./api.js";
+import {
+  SB_URL, SB_KEY, ORDER_STATUSES, DISPATCH_SUBSTATES, DISPATCH_CONTRACTORS, PREP_STAGES,
+  STACK_FLOORS, STACK_RACKS, STACK_SHELVES, STACK_ZONES,
+} from "./config.js";
 import { tr, getLang, SPEECH_LOCALE } from "./i18n.js";
 import { $, esc, el, chip, num, toast } from "./ui.js";
 import { attachMic, speechAvailable } from "./voice.js";
+import { photoStrip } from "./photos.js";
 
 /* Conversation state. Module-level so switching tabs and coming back keeps the thread - a coordinator
  * who glanced at the roster mid-sentence should not have to start again. */
@@ -276,61 +280,119 @@ async function turn(mount, text) {
  * The gap between "Chotu heard something" and "the database changed". Everything the model proposed
  * is shown in plain words - not ids - so it can be checked by somebody who has never seen this
  * screen before, and nothing happens until they tap Commit. */
+/* Every action Chotu can propose, as a dropdown. The model's guess is the SELECTED one, not the
+ * only one - it gets the intent wrong sometimes, and when it does the fix should be one tap rather
+ * than saying the whole sentence again in different words. */
+const INTENT_OPTIONS = [
+  { value: "order_status",      key: "chotu.iStatus" },
+  { value: "fabric_received",   key: "chotu.iFabric" },
+  { value: "material_received", key: "chotu.iMaterial" },
+  { value: "stack_location",    key: "chotu.iLocation" },
+  { value: "prep_stage",        key: "chotu.iStage" },
+  { value: "tailor_state",      key: "chotu.iTailor" },
+  { value: "rail_done",         key: "chotu.iRail" },
+  { value: "order_issue",       key: "chotu.iIssue" },
+  { value: "inventory_move",    key: "chotu.iInventory" },
+  { value: "low_stock",         key: "chotu.iLowStock" },
+  { value: "handover",          key: "chotu.iHandover" },
+];
+
 function paintProposal(mount, res) {
   const card = $("#chotucard", mount);
+  card.innerHTML = "";                 // redrawn in place when the action dropdown changes
   const facts = res.facts || {};
   const f = res.fields || {};
   const need = res.need || [];
+  const labelOf = (v) => {
+    const o = INTENT_OPTIONS.find((x) => x.value === v);
+    return o ? tr(o.key) : v;
+  };
 
-  const label = {
-    fabric_received: tr("chotu.iFabric"), material_received: tr("chotu.iMaterial"),
-    stack_location: tr("chotu.iLocation"), prep_stage: tr("chotu.iStage"),
-    rail_done: tr("chotu.iRail"), order_issue: tr("chotu.iIssue"),
-    inventory_move: tr("chotu.iInventory"), handover: tr("chotu.iHandover"),
-    low_stock: tr("chotu.iLowStock"),
-  }[res.intent] || res.intent;
+  /* Every field is EDITABLE, and every one that has a vocabulary is a dropdown rather than a box.
+   * Chotu is a fast way to fill this form, not an authority over it: it mishears, and the fix has
+   * to be visible and one tap away or people stop trusting the whole thing. The options come from
+   * the same closed lists the database checks, so correcting by hand cannot invent a value either. */
+  const opts = (list, sel) => list.map((o) =>
+    `<option value="${esc(o.value)}"${String(o.value) === String(sel) ? " selected" : ""}>${
+      esc(o.label)}</option>`).join("");
+  const pick = (list, ids, key, idField = "id") => (facts[list] || []).map((r) => `
+    <label class="cbrow"><input type="checkbox" data-pick value="${esc(r[idField])}"${
+      (ids || []).map(Number).includes(Number(r[idField])) ? " checked" : ""}> ${
+      esc(r[key] || r.description || r.name || r[idField])}</label>`).join("");
 
-  const rows = [];
-  const add = (k, v) => { if (v !== null && v !== undefined && v !== "") rows.push([k, v]); };
-  const named = (list, ids, key, idField = "id") =>
-    (facts[list] || []).filter((r) => (ids || []).includes(Number(r[idField])))
-      .map((r) => r[key] || r.description || r.name).join(", ");
-
-  add(tr("chotu.action"), label);
-  if (res.order_id) add(tr("col.order"), res.order_id);
-
+  let fields = "";
   switch (res.intent) {
+    case "order_status":
+      fields = `
+        <label class="f">${esc(tr("col.status"))}</label>
+        <select name="status">${opts(ORDER_STATUSES.map((s) => ({ value: s, label: s })), f.status)}</select>
+        <label class="f" style="margin-top:8px">${esc(tr("act.comment"))}</label>
+        <textarea name="note" rows="2">${esc(f.note || "")}</textarea>`;
+      break;
+    case "tailor_state":
+      fields = `
+        <label class="f">${esc(tr("bulk.newState"))}</label>
+        <select name="state">${opts(
+          DISPATCH_SUBSTATES.map((s) => ({ value: s.value, label: tr(s.key) })), f.state)}</select>
+        <label class="f" style="margin-top:8px">${esc(tr("bulk.tailor"))}</label>
+        <select name="contractor"><option value="">${esc(tr("chotu.allTailors"))}</option>${opts(
+          DISPATCH_CONTRACTORS.map((c) => ({ value: c.value, label: tr(c.key) })), f.contractor)}</select>`;
+      break;
     case "fabric_received":
-      add(tr("col.fabrics"), named("fabrics", f.ids, "fabric_code")); break;
+      fields = `<label class="f">${esc(tr("col.fabrics"))}</label>
+        <div class="memgrid">${pick("fabrics", f.ids, "fabric_code")}</div>`;
+      break;
     case "material_received":
-      add(tr("col.special"), named("materials", f.ids, "description")); break;
-    case "stack_location":
-      add(tr("stack.title"), [f.floor, f.rack, f.shelf, f.zone].filter(Boolean).join("-"));
-      add(tr("col.windows"), f.all_units ? tr("chotu.allWindows")
-        : (f.units || []).map((u) => `${u.w} L${u.l}`).join(", "));
+      fields = `<label class="f">${esc(tr("col.special"))}</label>
+        <div class="memgrid">${pick("materials", f.ids, "description")}</div>`;
+      break;
+    case "rail_done":
+      fields = `<label class="f">${esc(tr("rep.railing"))}</label>
+        <div class="memgrid">${pick("rails", f.line_ids, "window_ref", "line_id")}</div>`;
       break;
     case "prep_stage":
-      add(tr("col.prep"), f.stage === "cutting" ? tr("prep.started") : tr("prep.packed")); break;
-    case "rail_done":
-      add(tr("rep.railing"), named("rails", f.line_ids, "window_ref", "line_id")); break;
-    case "order_issue":
-      add(tr("act.comment"), f.note); break;
-    case "inventory_move":
-      add(tr("inv.title"), named("inventory", [f.item_id], "name"));
-      add(tr("inv.qty"), f.qty_delta);
+      fields = `<label class="f">${esc(tr("col.prep"))}</label>
+        <select name="stage">${opts(PREP_STAGES.filter((s) => s.value !== "stacking")
+          .map((s) => ({ value: s.value, label: tr(s.key) })), f.stage)}</select>`;
       break;
+    case "stack_location":
+      fields = `<label class="f">${esc(tr("stack.title"))}</label>
+        <div class="grid2">
+          <select name="floor">${opts(STACK_FLOORS.map((x) => ({ value: x.value, label: tr(x.key) })), f.floor)}</select>
+          <select name="rack">${opts(STACK_RACKS.map((x) => ({ value: x, label: x })), f.rack)}</select>
+          <select name="shelf">${opts(STACK_SHELVES.map((x) => ({ value: x, label: x })), f.shelf)}</select>
+          <select name="zone">${opts(STACK_ZONES.map((x) => ({ value: x, label: x })), f.zone)}</select>
+        </div>
+        <div class="muted" style="margin-top:6px">${esc(f.all_units ? tr("chotu.allWindows")
+          : (f.units || []).map((u) => `${u.w} L${u.l}`).join(", "))}</div>`;
+      break;
+    case "order_issue":
+      fields = `<label class="f">${esc(tr("act.comment"))}</label>
+        <textarea name="note" rows="3">${esc(f.note || "")}</textarea>`;
+      break;
+    case "inventory_move":
     case "low_stock":
-      add(tr("inv.title"), named("inventory", [f.item_id], "name")); break;
+      fields = `<label class="f">${esc(tr("inv.title"))}</label>
+        <select name="item_id">${opts((facts.inventory || [])
+          .map((i) => ({ value: i.id, label: `${i.code} — ${i.name}` })), f.item_id)}</select>
+        ${res.intent === "inventory_move" ? `<label class="f" style="margin-top:8px">${
+          esc(tr("inv.qty"))}</label>
+          <input type="number" name="qty_delta" step="0.01" value="${esc(f.qty_delta ?? "")}">` : ""}`;
+      break;
     case "handover":
-      add(tr("hnd.kind"), f.kind === "order" ? tr("hnd.kindOrder") : tr("hnd.kindInventory"));
-      add(tr("hnd.from"), f.from);
-      add(tr("hnd.to"), f.to);
-      add(tr("hnd.what"), (f.lines || [])
-        .map((l) => `${named("inventory", [l.item_id], "name")} ×${num(l.qty)}`).join(", "));
+      fields = `<div class="grid2">
+          <div><label class="f">${esc(tr("hnd.from"))}</label>
+            <select name="from">${opts((facts.people || []).map((p) => ({ value: p, label: p })), f.from)}</select></div>
+          <div><label class="f">${esc(tr("hnd.to"))}</label>
+            <select name="to">${opts((facts.people || []).map((p) => ({ value: p, label: p })), f.to)}</select></div>
+        </div>
+        <div class="muted" style="margin-top:6px">${esc((f.lines || []).map((l) => {
+          const it = (facts.inventory || []).find((i) => Number(i.id) === Number(l.item_id));
+          return `${it ? it.name : l.item_id} ×${num(l.qty)}`;
+        }).join(", "))}</div>`;
       break;
     default: break;
   }
-  add(tr("chotu.speaker"), speaker());
 
   const blocked = need.length > 0 || isViewer();
 
@@ -338,11 +400,23 @@ function paintProposal(mount, res) {
     <div class="card chotucard ${blocked ? "blocked" : ""}">
       <div class="spread" style="margin-bottom:9px">
         <h4>${esc(tr("chotu.check"))}</h4>
-        ${chip(label, blocked ? "warn" : "ok", blocked ? "?" : "✓")}
+        <span class="muted">${esc(tr("chotu.speaker"))}: ${esc(speaker())}</span>
       </div>
-      <table class="chotufields">
-        ${rows.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(String(v))}</td></tr>`).join("")}
-      </table>
+
+      <label class="f">${esc(tr("chotu.action"))}</label>
+      <select name="intent">${opts(
+        INTENT_OPTIONS.map((o) => ({ value: o.value, label: tr(o.key) })), res.intent)}</select>
+
+      <label class="f" style="margin-top:8px">${esc(tr("col.order"))}</label>
+      <input type="text" name="order_id" inputmode="numeric" value="${esc(res.order_id || "")}">
+
+      <div data-fields style="margin-top:8px">${fields}</div>
+
+      <div class="dsec" style="margin:12px 0 0">
+        <label class="f">${esc(tr("photo.title"))}</label>
+        <div data-photos></div>
+      </div>
+
       ${need.length ? `<div class="banner warn" style="margin-top:10px">${
         esc(tr("chotu.missing", { what: need.join(", ") }))}</div>` : ""}
       ${isViewer() ? `<div class="banner warn" style="margin-top:10px">${
@@ -353,6 +427,20 @@ function paintProposal(mount, res) {
           esc(tr("chotu.commit"))}</button>
       </div>
     </div>`);
+
+  /* Photos attach to the ORDER, so they survive whatever this capture turns out to be - a damaged
+   * roll photographed on arrival is evidence whether the write lands as a receipt or as an issue. */
+  box.querySelector("[data-photos]").appendChild(photoStrip({
+    context: "other", order_id: res.order_id || null, context_label: labelOf(res.intent),
+  }));
+
+  // changing the action redraws the fields under it, keeping whatever still applies
+  box.querySelector('[name="intent"]').addEventListener("change", (e) => {
+    readCard(box, res);
+    res.intent = e.target.value;
+    res.need = [];                       // a hand-picked action is not the model's guess any more
+    paintProposal(mount, res);
+  });
 
   box.querySelector("[data-drop]").addEventListener("click", () => {
     PROPOSAL = null;
@@ -366,6 +454,7 @@ function paintProposal(mount, res) {
     go.addEventListener("click", async () => {
       go.disabled = true;
       try {
+        readCard(box, res);              // whatever they corrected is what gets written
         await commit(res);
         PROPOSAL = null;
         card.innerHTML = "";
@@ -382,6 +471,44 @@ function paintProposal(mount, res) {
   }
 
   card.appendChild(box);
+}
+
+/* Which tailors this order is actually with, read at commit time rather than carried in the facts.
+ * One small request, and it cannot be stale the way a snapshot taken before the conversation can. */
+async function currentTailors(orderId) {
+  if (!orderId) return [];
+  try {
+    const rows = await api(
+      `/rest/v1/order_dispatch?select=contractor&order_id=eq.${encodeURIComponent(orderId)}`);
+    return Array.from(new Set((rows || []).map((r) => r.contractor).filter(Boolean)));
+  } catch (e) { return []; }
+}
+
+/* Read the card back into the proposal, so a correction is what commits rather than the model's
+ * original guess. Only fields the current action actually draws are read; the rest are left alone. */
+function readCard(box, res) {
+  const v = (n) => { const e = box.querySelector(`[name="${n}"]`); return e ? e.value : undefined; };
+  const picked = () => Array.from(box.querySelectorAll("[data-pick]:checked")).map((c) => Number(c.value));
+  const f = res.fields || (res.fields = {});
+  const oid = v("order_id");
+  if (oid !== undefined) res.order_id = oid.trim() || null;
+
+  switch (res.intent) {
+    case "order_status": f.status = v("status"); f.note = v("note"); break;
+    case "tailor_state": f.state = v("state"); f.contractor = v("contractor") || null; break;
+    case "fabric_received":
+    case "material_received": f.ids = picked(); break;
+    case "rail_done": f.line_ids = picked(); break;
+    case "prep_stage": f.stage = v("stage"); break;
+    case "stack_location":
+      f.floor = v("floor"); f.rack = v("rack"); f.shelf = v("shelf"); f.zone = v("zone"); break;
+    case "order_issue": f.note = v("note"); break;
+    case "inventory_move":
+      f.item_id = Number(v("item_id")); f.qty_delta = Number(v("qty_delta")); break;
+    case "low_stock": f.item_id = Number(v("item_id")); break;
+    case "handover": f.from = v("from"); f.to = v("to"); break;
+    default: break;
+  }
 }
 
 /* ------------------------------------------------------------------ commit
@@ -426,6 +553,35 @@ async function commit(res) {
         });
       }
       return null;
+
+    case "order_status":
+      /* The same write the Installation module makes: order status lives on the visit payload, and
+       * skip_visit_charge stops recording an outcome from inventing a chargeable revisit. */
+      return submit("fn_ops_save_visit", {
+        p_order_id: res.order_id, p_visit_no: 1,
+        p_payload: {
+          status: f.status,
+          comment: [f.note, note].filter(Boolean).join(" — "),
+          input_method: "chotu", lang: getLang(), skip_visit_charge: true,
+        },
+        p_actor: actor,
+      });
+
+    case "tailor_state": {
+      /* No tailor named means every tailor this order is already with - the same rule as the
+       * Production module's bulk action, because "it came back" is about the work, not the person.
+       * With none on record there is nothing to move, so say so rather than inventing one. */
+      const list = f.contractor ? [f.contractor] : await currentTailors(res.order_id);
+      if (!list.length) throw new Error(tr("bulk.tailorNone"));
+      for (const c of list) {
+        await submit("fn_ops_set_dispatch", {
+          p_order_id: res.order_id, p_contractor: c, p_substate: f.state,
+          p_other_name: null, p_actor: actor, p_note: note, p_items: null,
+          p_qc_note: (f.state === "qc_failed" || f.state === "issue") ? (f.note || note) : null,
+        });
+      }
+      return null;
+    }
 
     case "order_issue":
       /* order_comments through fn_ops_save_visit, never order_lines_final: fn_rebuild_order

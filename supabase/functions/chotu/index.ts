@@ -58,7 +58,9 @@ const INTENTS = [
   "stack_location",     // fn_ops_apply_prep     - stacking + floor/rack/shelf/zone
   "prep_stage",         // fn_ops_apply_prep     - started / packed
   "rail_done",          // fn_ops_set_rail_mark
-  "order_issue",        // fn_ops_save_visit (+ a line mark)
+  "order_status",       // fn_ops_save_visit     - the ten ORDER_STATUSES outcomes
+  "tailor_state",       // fn_ops_set_dispatch   - outwork stitching
+  "order_issue",        // fn_ops_save_visit     - a NOTE about a problem, not an outcome
   "inventory_move",     // fn_ops_inventory_move
   "handover",           // fn_ops_save_handover
   "low_stock",          // fn_ops_set_reorder_flag
@@ -109,14 +111,32 @@ The intents and the fields each one takes:
   stack_location    - {order_id, units:[{w:window,l:layer} from facts.units], floor, rack, shelf, zone}
   prep_stage        - {order_id, stage: cutting|folding_packing}
   rail_done         - {order_id, line_ids:[line_id from facts.rails]}
+  order_status      - {order_id, status: EXACTLY one of facts.vocab.order_status, note}
+  tailor_state      - {order_id, state: one of facts.vocab.dispatch_state, contractor, note}
   order_issue       - {order_id, note, mark: one of facts.vocab.line_mark}
   inventory_move    - {item_id from facts.inventory, qty_delta (negative to send out), reason}
   handover          - {kind: order|inventory, from, to (both from facts.people), order_id,
                        lines:[{item_id, qty}]}
   low_stock         - {item_id from facts.inventory}
 
-"stage" is spoken as "started" (cutting) or "packed" (folding_packing). Stacking is not a stage here -
-if they are telling you WHERE something is, that is stack_location.
+HOW THE BUSINESS TALKS, so you pick the right one:
+
+* An OUTCOME of a visit is order_status, never order_issue. "Successfully completed", "done",
+  "finished", "installed it all", "ho gaya", "sob hoye gechhe" -> order_status with status
+  "Successfully completed". Likewise "partially completed", "customer changed their mind",
+  "rescheduled", "out for installation". Copy the status string from facts.vocab.order_status
+  character for character - it is checked by the database and near-misses are rejected.
+* order_issue is for a PROBLEM somebody wants recorded as a note - a wrong measurement, a fabric
+  short, a rail that does not fit. If what they said names one of the ten statuses, it is
+  order_status even when that status is itself a problem ("Production issue", "Installation issue").
+* tailor_state is outwork stitching: sent to Farooq/Jamal/Shahzad, came back, passed the check,
+  paid. "Received back", "wapas aa gaya", "QC pass". Not the same as the order being completed.
+* prep_stage is the workshop: "started" (cutting) or "packed" (folding_packing). Stacking is NOT a
+  stage here - if they are telling you WHERE something is, that is stack_location.
+* Fabrics arrive against an order (fabric_received); motors, remotes, blinds, tracks and cassettes
+  are materials (material_received). Loose stock with no order is inventory_move.
+
+Order numbers are always five digits. Fabric codes look like fd523b-31 or st66682b-9.
 
 Reply as JSON only:
 {"say": "...", "intent": "...", "order_id": "..." | null, "fields": {...}, "need": ["..."]}`;
@@ -293,6 +313,30 @@ function validate(p: Record<string, unknown>, facts: Record<string, unknown>) {
       const ids = keepIds(f.line_ids, "rails", "line_id");
       if (!ids.length) need.add("rails");
       out.line_ids = ids;
+      break;
+    }
+    case "order_status": {
+      /* The status is CHECK-constrained and case-sensitive, so it is matched against the list the
+       * model was given rather than trusted. A near miss - "Completed", "successfully completed" -
+       * becomes a missing field and the browser asks, instead of a write the database will reject
+       * an hour later out of the offline queue. */
+      const exact = inVocab("order_status", f.status);
+      const loose = !exact && typeof f.status === "string"
+        ? (vocab.order_status ?? []).find(
+            (s) => s.toLowerCase() === String(f.status).trim().toLowerCase())
+        : null;
+      if (exact || loose) out.status = exact || loose; else need.add("status");
+      const n1 = String(f.note ?? "").trim();
+      if (n1) out.note = n1;
+      break;
+    }
+    case "tailor_state": {
+      const st = inVocab("dispatch_state", f.state);
+      if (st) out.state = st; else need.add("state");
+      // absent means "whichever tailors this order is already with" - the app resolves that
+      if (typeof f.contractor === "string" && f.contractor.trim()) out.contractor = f.contractor.trim();
+      const n2 = String(f.note ?? "").trim();
+      if (n2) out.note = n2;
       break;
     }
     case "order_issue": {
