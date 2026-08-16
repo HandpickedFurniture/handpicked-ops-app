@@ -18,7 +18,7 @@ import {
   $, esc, el, num, aed, fmtDate, today, loading, chip, downloadCsv,
 } from "./ui.js";
 import { toQuery } from "./filters.js";
-import * as comments from "./mod-comments.js";
+import { syncBar } from "./sync.js";
 
 /* Each page: the view it reads, and the columns to show. `fmt` renders a cell; `total` marks a
  * column that gets summed into the totals row. */
@@ -149,10 +149,11 @@ export const REPORT_PAGES = [
       { k: "items_count", key: "disp.items", n: 1, total: 1 },
     ],
   },
-  /* Comments is not a table like the eight above it - it is the per-line review screen, with its
-   * own marking, its own filters and its own paging. It keeps its place in this list so it still
-   * appears as a tab in the same row; `module` is what tells render() to hand off. */
-  { id: "comments", key: "rep.comments", module: comments },
+  /* Comments used to be a ninth entry here, handed off to mod-comments.js. It was never a table like
+   * the eight above it - it is the per-line review screen, with its own marking, its own filter bar
+   * and its own paging - and it is the screen coordinators work THROUGH rather than glance at.
+   * Burying it as a report inside a section inside a tab put it three clicks from the ribbon. It is
+   * the PO tab now. Old ?rep=comments links redirect there; see app.js. */
 ];
 
 function bar(done, total) {
@@ -172,32 +173,33 @@ function stageCell(r) {
     + `<div class="muted" style="font-size:11px">${r.prep_done}/${r.prep_total}</div>`;
 }
 
-export async function render(mount, state, setFilters) {
+export async function render(mount, state) {
   if (!isSignedIn()) return;
 
-  // Comments is the default report, matching Insights' own default section - see mod-insights.js
-  const pageId = state.params.get("rep") || "comments";
+  // Order details is the default now that Comments has left for the PO tab
+  const pageId = state.params.get("rep") || "orders";
   const page = REPORT_PAGES.find((p) => p.id === pageId) || REPORT_PAGES[0];
 
   mount.innerHTML = `
-    <div class="subtabs" id="reptabs"></div>
+    <div class="sectionbar">
+      <div class="subtabs" id="reptabs"></div>
+      <span id="repsync"></span>
+    </div>
     <div id="repbody"></div>`;
+  $("#repsync", mount).appendChild(syncBar());
 
   $("#reptabs", mount).innerHTML = REPORT_PAGES.map((p) =>
     `<button data-rep="${p.id}" class="${p.id === page.id ? "on" : ""}">${esc(tr(p.key))}</button>`).join("");
   $("#reptabs", mount).querySelectorAll("[data-rep]").forEach((b) => {
     b.addEventListener("click", () => {
+      // keep whatever filters are in the hash; only the report changes
       const q = new URLSearchParams(location.hash.split("?")[1] || "");
-      q.set("sec", "reports");
       q.set("rep", b.dataset.rep);
-      location.hash = "/insights?" + q.toString();
+      location.hash = "/reports?" + q.toString();
     });
   });
 
   const box = $("#repbody", mount);
-
-  // Comments brings its own filter bar, marking and paging - hand the whole panel over to it
-  if (page.module) return page.module.render(box, state, setFilters);
 
   loading(true, tr("t.loading"));
   let rows = [];

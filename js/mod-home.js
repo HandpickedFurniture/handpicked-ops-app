@@ -4,7 +4,7 @@
  * at rather than just clicking through), then every internal link the team used to keep on the
  * Google Sites page, grouped by task instead of dumped in one flat list.
  */
-import { api, isSignedIn, currentActor } from "./api.js";
+import { api, isSignedIn, currentActor, isViewer } from "./api.js";
 import { tr } from "./i18n.js";
 import { DATE_BUCKETS, bucketOf } from "./config.js";
 import { $, esc, el, num, loading, chip } from "./ui.js";
@@ -72,7 +72,7 @@ export async function render(mount, state) {
     <div class="card">
       <h4 style="margin-bottom:10px">${esc(tr("home.modules"))}</h4>
       <div class="tilegrid">
-        ${APP_TILES.map((t) => `
+        ${APP_TILES.filter((t) => !t.ops || !isViewer()).map((t) => `
           <a class="ltile" href="${t.hash}">
             <span class="lico">${t.icon}</span>
             <span class="ltxt"><b>${esc(tr(t.key))}</b>

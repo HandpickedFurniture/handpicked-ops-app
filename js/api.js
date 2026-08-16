@@ -143,8 +143,11 @@ async function freshToken() {
 /* The fn_sched_* entries below are reads that PostgREST only exposes as POST /rpc. Without them a
  * viewer could not open the Schedule board at all. Each is `stable` and writes nothing; the mutating
  * schedule functions (build, move, finalize, ...) are deliberately absent and stay refused. */
+/* fn_chotu_context is the same case: a `stable` read that PostgREST only exposes as POST /rpc, and
+ * asking Chotu questions is precisely what a viewer should be able to do. Every RPC Chotu COMMITS
+ * with is deliberately absent, so a viewer's Commit button is refused here and again by RLS. */
 const VIEWER_ALLOWED =
-  /\/rpc\/(fn_ops_rate_for|fn_ops_log_photo_access|fn_sched_board|fn_sched_run_for|fn_sched_next_working_day|fn_sched_suggest_teams|fn_sched_eta_explain)$/;
+  /\/rpc\/(fn_ops_rate_for|fn_ops_log_photo_access|fn_chotu_context|fn_sched_board|fn_sched_run_for|fn_sched_next_working_day|fn_sched_suggest_teams|fn_sched_eta_explain)$/;
 
 export async function api(path, opts = {}, retry = true) {
   const method = (opts.method || "GET").toUpperCase();

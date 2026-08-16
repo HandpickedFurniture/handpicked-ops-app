@@ -19,9 +19,8 @@ import {
   $, esc, el, chip, num, fmtDate, daysSince, toast, loading, progressBar, modal, selectHtml,
   downloadCsv, today, confirmSheet,
 } from "./ui.js";
-import { renderFilterBar, toQuery, deriveOptions, activeCount, writeHash } from "./filters.js";
+import { renderFilterBar, toQuery, deriveOptions, activeCount } from "./filters.js";
 import { renderDrawer, invalidate } from "./drawer.js";
-import * as prep from "./mod-prep.js";
 
 /* Which of the opt-in filters v_ops_order_roster can actually answer - see OPTIONAL in filters.js.
  * The roster is the only view carrying fabric_recv_state and dispatch_state. */
@@ -55,44 +54,15 @@ let SORT = { col: "installation_date", dir: "asc" };
 let DOCS = {};           // order_id -> { has_pdf, doc_count } for the PDF column
 let REVIEW = {};         // order_id -> line-review roll-up, for the unread / follow-up chips
 
-/* Production holds two screens, on sub-tabs rather than two top-level tabs.
+/* One screen, no sub-tabs.
  *
- * Preparation started life as its own entry in the top nav, which took it to eight - enough that a
- * phone scrolls the tab strip sideways and the last two go unseen. It belongs here anyway: both
- * screens are the same orders at different points of the same job, and both read the same roster. */
-const SECTIONS = [
-  { id: "orders", key: "nav.prodList", icon: "📋", render: (m, s, f) => renderList(m, s, f) },
-  { id: "prep",   key: "nav.prep",     icon: "🧵", render: (m, s, f) => prep.render(m, s, f) },
-];
-
+ * Preparation used to sit here on a second sub-tab, because eight top-level tabs made a phone scroll
+ * the strip sideways. It is a tab of its own again now that the ribbon is back to seven - and it
+ * needed to be: the workshop opens Preparation dozens of times a day and should not have to land on
+ * the order roster first. Old #/production?sec=prep links redirect (see app.js). */
 export async function render(mount, state, setFilters) {
   if (!isSignedIn()) return;
-
-  const secId = state.params.get("sec") || "orders";
-  const sec = SECTIONS.find((s) => s.id === secId) || SECTIONS[0];
-
-  mount.innerHTML = `
-    <div class="sectionbar"><div class="subtabs" id="prodTabs"></div></div>
-    <div id="prodBody"></div>`;
-
-  $("#prodTabs", mount).innerHTML = SECTIONS.map((s) =>
-    `<button data-sec="${s.id}" class="${s.id === sec.id ? "on" : ""}">${s.icon} ${esc(tr(s.key))}</button>`
-  ).join("");
-
-  $("#prodTabs", mount).querySelectorAll("[data-sec]").forEach((b) => {
-    b.addEventListener("click", () => {
-      // the shared filters follow you between the two screens; only the sub-tab changes
-      const q = new URLSearchParams(location.hash.split("?")[1] || "");
-      q.set("sec", b.dataset.sec);
-      location.hash = "/production?" + q.toString();
-    });
-  });
-
-  /* The filter bar's own setFilters writes the hash from the filters alone, which would drop ?sec=
-   * and bounce you back to Orders the moment you applied a filter on Preparation. Carry it. */
-  const keepSec = (f) => writeHash("production", f, { sec: sec.id === "orders" ? "" : sec.id });
-
-  await sec.render($("#prodBody", mount), state, keepSec);
+  await renderList(mount, state, setFilters);
 }
 
 async function renderList(mount, state, setFilters) {

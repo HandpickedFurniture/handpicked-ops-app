@@ -1,7 +1,7 @@
 # Handpicked Operations Management
 
-Mobile + desktop web app for production coordinators, installation coordinators and management.
-Three modules over the `handpicked-curtains` Supabase project (`jrevqijbzzwdcwxcnwfa`).
+Mobile + desktop web app for production coordinators, installation coordinators, the workshop floor
+and management, over the `handpicked-curtains` Supabase project (`jrevqijbzzwdcwxcnwfa`).
 
 | | |
 |---|---|
@@ -46,6 +46,24 @@ update.
 
 ---
 
+## The ribbon, and everything off it
+
+Seven tabs, in the order the day runs: **Home · Production · Preparation · Installation · Inventory ·
+PO · Chotu**. More than seven and a phone scrolls the strip sideways, which is how the last tabs stop
+being used at all.
+
+Everything else is a real route reached from **Home**, which is the full index: Schedule, Transfers,
+Dashboard, Reports, End of day, Photo audit and Roles. The old `Insights` container is gone — it
+bundled five unrelated read-only screens behind one tab and buried the line-by-line PO review, the
+one screen coordinators work *through*, three clicks deep. That review is the **PO** tab now.
+
+Old links still work. `#/insights…` and `#/production?sec=prep` redirect to wherever their screen
+moved to, carrying their filters (see `redirectFor` in `js/app.js`), because those links are sitting
+in people's WhatsApp.
+
+Signing in lands on a **launcher** (`#/menu`) — eight big targets, once per sign-in only. A reload or
+a shared link goes straight to the screen it names.
+
 ## Modules
 
 **1. Production tracking** (`#/production`) — one row per order with installation date, city, PO
@@ -62,11 +80,20 @@ their own outcome and team, internal + Slack comments, and chargeable extras.
 **3. Management dashboard** (`#/dashboard`, `#/eod`) — date-bucket tiles, every order-status field as
 a filter, billing totals, and an end-of-day report at team **and** overall level.
 
-**4. Transfer of materials** (`#/transfer`) — the order manager marks each order **in progress /
-ready / returned / partially returned / cancelled / issue**, with a location code and photos.
-Optional item lines record what went out and what came back; posting them writes to the inventory
-ledger and **derives** the status from what actually returned. Distinct from the dispatch stages in
-production tracking: those are outwork stitching, this is materials going to site.
+**4. Transfer of materials** (`#/transfer`) — two sub-tabs.
+
+*Transfers* — the order manager marks each order **in progress / ready / returned / partially
+returned / cancelled / issue**, with a location code and photos. Optional item lines record what went
+out and what came back; posting them writes to the inventory ledger and **derives** the status from
+what actually returned. Distinct from the dispatch stages in production tracking: those are outwork
+stitching, this is materials going to site.
+
+*Handovers* — who physically gave what to whom (`handover` / `handover_line`), of a whole **order**
+or of loose **inventory** with no order at all. That second case is why it is a sibling table rather
+than a column: `material_transfers.order_id` is `NOT NULL`, and an invented order id is how a ledger
+starts lying. **Acknowledging is the load-bearing step** — for an inventory handover it is what posts
+the lines through `fn_ops_inventory_move`, because "I put it in the van" and "I have it" are
+different claims and stock should follow the second one.
 
 **5. Inventory** (`#/inventory`) — items, stock on hand, movements, reorder alerts, location codes
 and photos. Stock is the **sum of the movement ledger**, never a stored number, so no figure can
@@ -76,9 +103,67 @@ drift out of step with its own history.
 to, date range, uploader and location. Shows the checksum, which store holds the bytes, and the view
 count. Removed photos are still listed with who removed them and why.
 
+**7. Preparation** (`#/prep`) — the workshop's screen. Three panels per order and nothing else:
+
+- **Stacking location** — floor / rack / shelf / zone, written per **window × layer** through
+  `fn_ops_apply_prep`. Tick some windows, save a place, tick the rest, save another: that is how one
+  order legitimately sits in two racks. Read back through `v_ops_prep_locations`, which takes the
+  latest stacking event per unit so re-stacking reports where it is *now*.
+- **Special requirements** — the order's non-fabric `receiving_expectations` (motors, remotes, roller
+  blinds, cassettes, pull-cord tracks), ticked as they arrive. The **same** `fn_ops_set_receiving`
+  the order drawer's Materials tab calls, so the two screens can never disagree.
+- **Railing** — the cut list, ticked line by line into `rail_prep_mark` via `fn_ops_set_rail_mark`.
+  Keyed on the **PO line**, not the window: one window routinely carries a rail line plus a tie-back
+  line plus a "check special requirements" line (3,730 rows over 2,255 window pairs), and keying on
+  the window would let one tick claim three different things.
+
+**8. PO review** (`#/po`) — every PO line, with the 21 order-form columns coordinators read from, each
+markable and each logged with who marked it. Filterable by marks, procurement requirement and **PO
+version** — 45 of 712 orders have been revised, and a revised PO is the one worth re-reading, so
+*Revised* is a filter value of its own beside the version numbers.
+
+**9. Chotu** (`#/chotu`) — see below.
+
+## Chotu, and why you can trust what it records
+
+One big circle. Tap it, say what happened in English, Hindi or Bengali, and either get an answer read
+back or get a filled-in form to check. It exists because the people who know things first — the
+tailor who just unwrapped a roll, the driver who just took two motors — are the people least able to
+stop and type.
+
+Speech in reuses `js/voice.js` unchanged (on-device Web Speech API on Android and desktop Chrome,
+record-then-`transcribe` on iPhone, feature-detected). Speech out is `window.speechSynthesis` — no
+key, and it already has Hindi and Bengali voices on these phones. **Answers are always on screen as
+well as spoken**; a workshop is loud and a spoken-only answer is no answer.
+
+**The model never writes anything.** Three guards, in order:
+
+1. **Grounded.** `fn_chotu_context` runs first, *as the caller*, and returns the real candidate rows —
+   this order's fabrics with their receiving ids, its panels, its rails, the stock list, the crew.
+   The model picks from those; it has no database access of its own.
+2. **Closed.** `intent` must be one of ten or the reply is downgraded to a plain answer. Every id in
+   `fields` is checked against the facts and **removed** if it is not there, in
+   `supabase/functions/chotu/index.ts`.
+3. **Confirmed.** What arrives in the browser is a *proposal*, drawn as a form. The **Commit button**
+   is what calls the RPC — the same `submit()` and the same replay-safe functions every other screen
+   uses. Anything the model could not fill comes back in `need[]` and blocks the button.
+
+So the worst a misheard sentence can do is put a wrong-looking card on screen, which somebody
+declines. Speech is fast and unreliable, so the voice carries the speed and the button carries the
+reliability. The **speaker's name** is asked before the first capture and rides on every write, since
+"who told us this" is the first question anybody asks about a record that turns out to be wrong.
+
+Verified against the live database: asking *"what fabrics are still pending for order 67813"* returns
+the three real codes and meterages; saying *"fabric zz9999-plural-z-alpha arrived"* is refused, names
+the three real options, and leaves Commit disabled.
+
+Adding an intent means adding it to `INTENTS`, to the `validate()` switch, and to `commit()` in
+`js/mod-chotu.js`. If it does not map to an RPC that already exists, it is the wrong shape.
+
 ### The shared filter bar
 
-Production, Order status, Transfers and the dashboard all mount the same bar (`js/filters.js`).
+Production, Preparation, Installation, Transfers, the PO review and the dashboard all mount the same
+bar (`js/filters.js`).
 Every value filter is a **list of checkboxes**, so it takes any number of values at once: "Dubai and
 Abu Dhabi", "today and tomorrow", "sent and received back". Values within a field are OR-ed and the
 fields are AND-ed. Scalar columns become PostgREST `in.(…)`, array columns become `ov.{…}` (overlap,
@@ -88,6 +173,14 @@ ie "holds any of these"), and ticking *Unknown city* alongside a real one become
 Long lists get their own search box and draw at most 150 rows at a time: window ref has ~2,500
 distinct values and fabric 1 has ~455. Whatever is already ticked is always drawn, however far the
 search has narrowed past it.
+
+**The open panel is `position: fixed`, deliberately.** `.filterbar` carries `overflow: hidden` (it is
+what rounds the orange strip's corners), and an absolutely-positioned panel inside it was **clipped
+by the card** — the fields drawn last, Marks and Procurement requirement, open lowest and were cut
+off entirely. No amount of height fixed that, because the clip was upstream of the height. Out of
+flow, no ancestor can clip it; `place()` in `js/filters.js` writes both offsets against the viewport,
+clamps them to the screen, and flips the panel above the button when the list would not fit below.
+The cost is that a fixed panel does not follow the page, so any scroll closes it.
 
 Multi-values ride in the hash as a **repeated key** (`?city=Dubai&city=Sharjah`) rather than a joined
 string — three option values contain a comma, and `URLSearchParams` gets the escaping right where a

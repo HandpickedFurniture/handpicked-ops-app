@@ -30,7 +30,7 @@ export const TEXT_FIELDS = ["order", "from", "to", "customer", "q"];
 /* Everything picked from a list - any number of values each. */
 export const MULTI_FIELDS = [
   "bucket", "sheet", "city", "stitch", "commercial", "wref", "fab1", "fab2",
-  "alt", "fabstatus", "tailor", "prodstate", "procurement", "review",
+  "alt", "fabstatus", "tailor", "prodstate", "procurement", "review", "poversion",
 ];
 export const FIELDS = [...TEXT_FIELDS, ...MULTI_FIELDS];
 
@@ -39,8 +39,8 @@ export const FIELDS = [...TEXT_FIELDS, ...MULTI_FIELDS];
  * the view has never heard of.
  *
  * fabstatus and tailor are roster-only; prodstate is on the roster AND the status board;
- * procurement and review exist only on v_ops_line_review, which the Comments page reads. */
-const OPTIONAL = ["fabstatus", "tailor", "prodstate", "procurement", "review"];
+ * procurement, review and poversion exist only on v_ops_line_review, which the Comments page reads. */
+const OPTIONAL = ["fabstatus", "tailor", "prodstate", "procurement", "review", "poversion"];
 
 /* The selected values of one multi-field, always as a list.
  *
@@ -117,6 +117,29 @@ export function toQuery(f, caps) {
     q.push(overlaps("procurement_req", m("procurement")));
   }
 
+  /* PO version. 45 of 712 orders have been revised at least once, and a revised PO is the one a
+   * coordinator most needs to re-read - so "Revised" is offered as a value of its own alongside the
+   * numbers, rather than making them work out which numbers mean revised.
+   *
+   * It rides in the same field as the version numbers, so picking it WITH v2 needs an or=() for the
+   * same reason the city filter does: two predicates would be AND-ed and v2-or-revised would come
+   * back as v2-and-revised. Revised is version_no > 1 rather than a count over po_lines_raw: three
+   * orders hold only their v2 rows, and those are revised POs whatever the raw table kept. */
+  if (m("poversion").length && caps && caps.poversion) {
+    const pv = m("poversion");
+    const nums = pv.filter((v) => v !== "__revised__");
+    const revised = pv.includes("__revised__");
+    // integers, so they go in unquoted - inList's quoting is for the values that contain commas
+    const ints = nums.map((v) => String(Number(v) || 0)).join(",");
+    if (revised && nums.length) {
+      q.push(`or=${encodeURIComponent(`(version_no.gt.1,version_no.in.(${ints}))`)}`);
+    } else if (revised) {
+      q.push("version_no=gt.1");
+    } else if (nums.length) {
+      q.push(`version_no=in.${encodeURIComponent("(" + ints + ")")}`);
+    }
+  }
+
   /* Line review marks. "Unread" is the ABSENCE of a mark rather than a value in the array, so
    * picking it alongside real marks needs one or= for the same reason the city filter does. */
   if (caps && caps.review) {
@@ -173,6 +196,8 @@ export function deriveOptions(rows) {
     wref: uniq((r) => r.window_refs),
     fab1: uniq((r) => r.fabric_1_codes),
     fab2: uniq((r) => r.fabric_2_codes),
+    // numeric, so sort numerically - the shared uniq() compares as strings, which would put 10 before 2
+    versions: uniq((r) => r.version_no).sort((a, b) => Number(a) - Number(b)),
   };
 }
 
@@ -190,6 +215,18 @@ const fromCfg = (s) => ({ value: s.value, label: tr(s.key) });
  * holding a detached bar alive. Each render just hands over its own closer. */
 let closeOpenPopovers = () => {};
 document.addEventListener("click", () => closeOpenPopovers());
+/* An open panel is position:fixed (see .cbpop), so it is placed against the viewport and does not
+ * travel with the page - scroll far enough and it would sit over unrelated rows. Closing it is the
+ * honest answer; re-placing it on every scroll frame is not worth the jank.
+ *
+ * Capture, because a scroll event does not bubble: the page, the dense tables and the review pane
+ * each scroll their own box and none of them would reach a bubbling listener here. The list inside
+ * the panel scrolls too, and that one must NOT close it. */
+window.addEventListener("scroll", (e) => {
+  if (e.target instanceof Element && e.target.closest(".cbpop")) return;
+  closeOpenPopovers();
+}, true);
+window.addEventListener("resize", () => closeOpenPopovers());
 
 export function renderFilterBar(mount, state, opts, onChange, caps) {
   const f = state.filters;
@@ -214,6 +251,9 @@ export function renderFilterBar(mount, state, opts, onChange, caps) {
     procurement: PROCUREMENT_REQS.map(fromCfg),
     // unread leads, because it is the state every line starts in and the one being worked down
     review: [{ value: "unread", label: tr("rev.unread") }, ...LINE_REVIEW_STATUSES.map(fromCfg)],
+    // "Revised" leads for the same reason: it is the question being asked, the numbers are the detail
+    poversion: [{ value: "__revised__", label: tr("f.poRevised") },
+                ...(opts.versions || []).map((v) => ({ value: String(v), label: `v${v}` }))],
   };
 
   /* Staged selections. The bar has always committed on Apply rather than on every keystroke, and
@@ -284,6 +324,7 @@ export function renderFilterBar(mount, state, opts, onChange, caps) {
           ${caps && caps.prodstate ? cbField("prodstate", tr("f.prodStatus")) : ""}
           ${caps && caps.procurement ? cbField("procurement", tr("proc.title")) : ""}
           ${caps && caps.review ? cbField("review", tr("rev.marks")) : ""}
+          ${caps && caps.poversion ? cbField("poversion", tr("col.version")) : ""}
         </div>
         <div class="row" style="justify-content:flex-end">
           <button class="btn ghost" data-clear>${esc(tr("f.clear"))}</button>
@@ -350,23 +391,42 @@ export function renderFilterBar(mount, state, opts, onChange, caps) {
   };
   /* Put the panel where it actually fits.
    *
-   * A fixed drop-down height is the wrong tool: every one of these hung 36-213px below the bottom of
-   * the window, so the last options were unreachable however tall the list was - and making it
-   * taller pushed it further off screen. The list is now sized to the room genuinely available, and
-   * flips above the button when there is more space up there. A seven-option list stops scrolling
-   * at all, which is what "some options are not visible" actually was. */
+   * Two separate things were cutting these lists off. The first was height: a fixed drop-down height
+   * left every one of them hanging below the bottom of the window, and making it taller only pushed
+   * it further off screen - so the list is sized to the room genuinely available and flips above the
+   * button when there is more space up there.
+   *
+   * The second was the .filterbar's own overflow:hidden, which CLIPPED the panel at the edge of the
+   * card no matter how the height was computed. Marks and Procurement requirement are drawn last, so
+   * they open lowest and were cut off completely. The panel is now position:fixed, which takes it out
+   * of every ancestor's clip - and means BOTH offsets have to be written here, against the viewport,
+   * rather than inherited from the button's box. */
   const GAP = 12;      // breathing room against the window edge
-  const MIN_LIST = 96; // below this a list is useless; flip or scroll the page instead
+  const NUDGE = 4;     // between the button and its panel
+  /* Below this a list is useless - flip or let the page scroll instead. Generous on purpose: Marks
+   * has seven options and Procurement three, and neither should ever scroll. */
+  const MIN_LIST = 180;
   const place = (btn, pop) => {
     const opts = pop.querySelector(".cbopts");
     opts.style.maxHeight = "";                       // measure the natural height first
     const chrome = pop.offsetHeight - opts.offsetHeight;   // search box + borders
     const r = btn.getBoundingClientRect();
-    const below = window.innerHeight - r.bottom - GAP - chrome;
-    const above = r.top - GAP - chrome;
-    const up = below < Math.min(opts.scrollHeight, MIN_LIST) && above > below;
-    pop.classList.toggle("up", up);
+    const below = window.innerHeight - r.bottom - NUDGE - GAP - chrome;
+    const above = r.top - NUDGE - GAP - chrome;
+    /* Flip up when the list does not FIT below and there is genuinely more room above.
+     *
+     * The old test only flipped once the space below fell under the minimum, which is why Marks -
+     * seven options, about 245px - sat scrolling inside 200px with 440px of empty screen above it.
+     * "Some options are not visible" was partly this. */
+    const up = opts.scrollHeight > below && above > below;
     opts.style.maxHeight = Math.max(MIN_LIST, Math.floor(up ? above : below)) + "px";
+
+    // clamped horizontally: the last chips in the row sit close to the right edge
+    const w = pop.offsetWidth;
+    pop.style.left = Math.round(Math.min(Math.max(GAP, r.left),
+                                         Math.max(GAP, window.innerWidth - w - GAP))) + "px";
+    pop.style.top = Math.round(up ? Math.max(GAP, r.top - NUDGE - pop.offsetHeight)
+                                  : r.bottom + NUDGE) + "px";
   };
 
   bar.querySelectorAll("[data-open]").forEach((btn) => {

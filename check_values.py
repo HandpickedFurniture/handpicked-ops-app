@@ -48,6 +48,10 @@ EXPECTED = {
                         "qc_passed", "paid", "qc_failed", "issue"},
     "TRANSFER_STATUSES": {"in_progress", "ready", "returned", "partially_returned",
                           "extra_materials", "cancelled", "issue"},
+    # handover.kind and handover.status, both CHECK-constrained. 'acknowledged' is the one that
+    # matters: fn_ops_ack_handover posts the inventory ledger on exactly that string.
+    "HANDOVER_KINDS": {"order", "inventory"},
+    "HANDOVER_STATUSES": {"handed_over", "acknowledged", "disputed"},
     "MOVE_REASONS": {"purchase", "consumption", "adjustment", "return",
                      "transfer_out", "transfer_in"},
     "LOCATION_KINDS": {"warehouse", "rack", "shelf", "van", "site", "contractor", "office", "other"},

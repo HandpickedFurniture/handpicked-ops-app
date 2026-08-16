@@ -143,14 +143,18 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--brand);outline-o
 /* the count is what tells you a folded-away filter is doing something */
 .cbn:not(:empty){background:var(--brand);color:#fff;border-radius:999px;padding:1px 7px;
   font-size:11px;font-weight:700;}
-.cbpop{position:absolute;top:calc(100% + 4px);left:0;z-index:40;min-width:240px;max-width:320px;
+/* FIXED, not absolute, and deliberately so.
+   .filterbar carries overflow:hidden (it is what rounds the orange strip's corners). An absolutely
+   positioned panel inside it is a descendant of that box, so the bar CLIPPED it - and the two fields
+   drawn last, Marks and Procurement requirement, open lowest and lost the most: their lists were cut
+   off entirely. Sizing the list against the window, which place() already did, could never help,
+   because the clip is upstream of the height. Out of flow entirely, no ancestor can clip it.
+   The cost is that a fixed panel does not follow the page, so filters.js closes any open one on
+   scroll. Every offset is written by place(); there is nothing to set here. */
+.cbpop{position:fixed;z-index:140;min-width:240px;max-width:320px;
   border:1.5px solid var(--brand);border-radius:10px;background:var(--card);overflow:hidden;
   box-shadow:0 8px 24px rgba(10,30,40,.18);}
 .cbpop[hidden]{display:none;}
-/* flipped above the button when there is more room up there - see place() in filters.js */
-.cbpop.up{top:auto;bottom:calc(100% + 4px);}
-/* a popover near the right edge would otherwise run off screen */
-.fchips .cbf:nth-child(n+4) .cbpop{left:auto;right:0;}
 .cbpop .cbsearch{width:100%;border:0;border-bottom:1px solid var(--line);border-radius:0;
   min-height:38px;padding:7px 10px;font-size:13px;}
 /* The cap here is only a starting point - place() in filters.js overrides it per open with the room
@@ -301,6 +305,66 @@ table.dense tr.selected td{background:var(--info-bg);}
 .unit .uname{font-weight:700;font-size:13px;flex:1;min-width:110px;}
 .unit .usub{font-size:12px;color:var(--muted);}
 
+/* ---------------------------------------------------------------- preparation (mod-prep.js)
+   Rows you TICK rather than rows you read, so the whole row is the target - a workshop tap lands
+   somewhere near the label, not on a 17px box. */
+.unitpick{display:grid;gap:5px;margin-bottom:11px;}
+.unitrow{display:flex;gap:9px;align-items:center;padding:9px 10px;border:1px solid var(--line);
+  border-radius:10px;background:var(--card);cursor:pointer;min-height:46px;}
+.unitrow:hover{border-color:var(--brand);}
+.unitrow input{width:20px;height:20px;flex:none;accent-color:var(--brand);cursor:pointer;}
+.unitrow .uname{font-weight:700;font-size:13px;flex:1;min-width:110px;
+  display:flex;flex-direction:column;gap:1px;}
+.unitrow .usub{font-size:12px;color:var(--muted);font-weight:500;}
+/* already placed, or already received - faded back so what is LEFT is what stands out */
+.unitrow.placed{background:var(--ok-bg);border-color:var(--ok);}
+.unitrow.on{border-color:var(--brand);background:var(--info-bg);box-shadow:inset 3px 0 0 var(--brand);}
+.stackform{border:1px dashed var(--brand);border-radius:11px;padding:11px;background:var(--card);}
+
+/* ---------------------------------------------------------------- Chotu (mod-chotu.js)
+   One big target in the middle, because the whole point is that it is usable by somebody holding a
+   folded curtain in the other hand. Answers appear on screen as well as being spoken - a workshop is
+   loud, and a spoken-only answer is no answer at all. */
+.visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0 0 0 0);white-space:nowrap;border:0;}
+
+.chotu{display:flex;flex-direction:column;gap:12px;}
+.chotuhead{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;
+  flex-wrap:wrap;}
+.chotuhead b{font-size:17px;}
+.chotulog{display:grid;gap:7px;max-height:34vh;overflow-y:auto;padding:2px;}
+.chotulog:empty{display:none;}
+.chotumsg{border-radius:13px;padding:9px 12px;font-size:14px;line-height:1.45;max-width:88%;}
+.chotumsg.me{background:var(--brand);color:#fff;justify-self:end;font-weight:600;}
+.chotumsg.it{background:var(--card);border:1px solid var(--line);justify-self:start;}
+
+.chotumid{display:flex;justify-content:center;padding:6px 0 2px;}
+.chotucircle{width:172px;height:172px;border-radius:50%;border:3px solid var(--brand);
+  background:var(--card);color:var(--brand);cursor:pointer;font-family:inherit;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;
+  box-shadow:0 3px 16px rgba(15,76,92,.16);transition:transform .12s ease,background .12s ease;}
+.chotucircle:hover{transform:scale(1.02);}
+.chotucircle:disabled{opacity:.5;cursor:not-allowed;}
+.chotuicon{font-size:47px;line-height:1;}
+.chotustate{font-size:13px;font-weight:700;padding:0 12px;text-align:center;}
+/* listening: the ring pulses, so it is obvious across a workshop that the mic is live */
+.chotucircle.on{background:var(--accent);border-color:var(--accent);color:#fff;
+  animation:chotupulse 1.3s ease-in-out infinite;}
+.chotucircle.busy{background:var(--info-bg);}
+@keyframes chotupulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(227,100,20,.45);}
+  50%    {box-shadow:0 0 0 17px rgba(227,100,20,0);}
+}
+@media(prefers-reduced-motion:reduce){.chotucircle.on{animation:none;}}
+
+.chotutype{display:flex;gap:8px;}
+.chotutype input{flex:1;}
+.card.chotucard.blocked{border-color:var(--accent);}
+table.chotufields{width:100%;border-collapse:collapse;font-size:14px;}
+table.chotufields th{text-align:left;vertical-align:top;color:var(--muted);font-weight:600;
+  padding:5px 10px 5px 0;white-space:nowrap;width:1%;}
+table.chotufields td{padding:5px 0;font-weight:700;overflow-wrap:anywhere;}
+
 /* ---------------------------------------------------------------- voice */
 .mic{border:1.5px solid var(--line);background:var(--card);border-radius:10px;width:44px;
   height:44px;font-size:18px;cursor:pointer;flex:none;color:var(--brand);}
@@ -434,6 +498,23 @@ tr.qcfail:hover td{background:#fbdfdb;}
 .lico{font-size:19px;flex:none;width:24px;text-align:center;}
 .ltxt{display:flex;flex-direction:column;gap:1px;min-width:0;font-size:14px;}
 .ltxt .muted{font-size:12px;}
+/* ---------------------------------------------------------------- launcher (mod-menu.js)
+   The first screen after signing in, and the only one deliberately built for a glance and a thumb:
+   two columns at most, so a target is never smaller than a workshop glove, and numbered so the
+   docked keyboard on the workshop tablet can pick one without aiming. */
+.menugrid{display:grid;grid-template-columns:1fr;gap:10px;}
+@media(min-width:700px){.menugrid{grid-template-columns:1fr 1fr;}}
+.mtile{display:flex;gap:13px;align-items:center;padding:17px 16px;border:1.5px solid var(--line);
+  border-radius:14px;background:var(--card);text-decoration:none;color:var(--txt);min-height:74px;
+  box-shadow:0 1px 3px rgba(10,30,40,.07);}
+.mtile:hover,.mtile:focus-visible{border-color:var(--brand);background:var(--info-bg);}
+.mnum{flex:none;width:26px;height:26px;border-radius:999px;background:var(--mute-bg);
+  color:var(--muted);font-size:12px;font-weight:800;display:flex;align-items:center;
+  justify-content:center;}
+.mico{font-size:27px;flex:none;width:34px;text-align:center;}
+.mtxt{display:flex;flex-direction:column;gap:2px;min-width:0;font-size:17px;font-weight:700;}
+.mtxt .muted{font-size:12.5px;font-weight:500;line-height:1.35;}
+
 .attn{display:inline-flex;gap:6px;align-items:baseline;padding:7px 12px;border-radius:999px;
   text-decoration:none;font-size:13px;font-weight:700;border:1px solid transparent;}
 .attn b{font-size:16px;}

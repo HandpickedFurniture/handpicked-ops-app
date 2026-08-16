@@ -23,9 +23,10 @@ import {
   selectHtml, confirmSheet,
 } from "./ui.js";
 import { renderFilterBar, toQuery, deriveOptions, activeCount } from "./filters.js";
+import { syncBar } from "./sync.js";
 
-/* v_ops_line_review is the only view carrying these three. */
-const CAPS = { prodstate: true, procurement: true, review: true };
+/* v_ops_line_review is the only view carrying these four. */
+const CAPS = { prodstate: true, procurement: true, review: true, poversion: true };
 
 /* The 21 columns the coordinators asked for, in the order they read them - which is the order of
  * the order form itself, not of the database. `wide` marks the free-text ones that need room. */
@@ -55,7 +56,7 @@ const COLS = [
 ];
 
 const SELECT = ["line_id", "order_id", "line_no", "marks", "marks_actioned", "is_read",
-  "open_follow_ups", "procurement_req", "customer_name", "installation_date",
+  "open_follow_ups", "procurement_req", "customer_name", "installation_date", "version_no",
   ...COLS.map((c) => c.k)].join(",");
 
 /* Which procurement requirement, if any, a given column is evidence of - so the highlight lands on
@@ -117,11 +118,16 @@ function markSheet(targetRows, after) {
 export async function render(mount, state, setFilters) {
   if (!isSignedIn()) return;
 
-  mount.innerHTML = `<div id="cfbar"></div><div id="cbody"></div>`;
+  /* The queue indicator used to come from the Insights container this screen sat inside. It is its
+   * own tab now, and marking lines is a write like any other - somebody in a lift needs to see that
+   * their ticks are queued rather than lost. */
+  mount.innerHTML = `<div class="sectionbar"><span></span><span id="posync"></span></div>
+                     <div id="cfbar"></div><div id="cbody"></div>`;
+  $("#posync", mount).appendChild(syncBar());
 
   if (!OPTIONS) {
     try {
-      const all = await apiAll("/rest/v1/v_ops_order_roster?select=city,sheet_status,stitching_types,commercial_names,window_refs,fabric_1_codes,fabric_2_codes");
+      const all = await apiAll("/rest/v1/v_ops_order_roster?select=city,sheet_status,stitching_types,commercial_names,window_refs,fabric_1_codes,fabric_2_codes,version_no");
       OPTIONS = deriveOptions(all);
     } catch (e) { OPTIONS = deriveOptions([]); }
   }
@@ -191,7 +197,7 @@ export async function render(mount, state, setFilters) {
 
   head.querySelector("[data-csv]").addEventListener("click", () =>
     downloadCsv(`line_review_${today()}.csv`, rows.map((r) => {
-      const o = { order_id: r.order_id };
+      const o = { order_id: r.order_id, [tr("col.version")]: r.version_no };
       COLS.forEach((c) => { o[tr(c.key)] = r[c.k]; });
       o[tr("rev.marks")] = (r.marks || []).map((s) => tv(LINE_REVIEW_STATUSES, s)).join(" | ");
       o[tr("rev.actioned")] = (r.marks_actioned || []).map((s) => tv(LINE_REVIEW_STATUSES, s)).join(" | ");
@@ -290,7 +296,11 @@ export async function render(mount, state, setFilters) {
         ${isViewer() ? "" : `<td class="selcol"><input type="checkbox" data-sel
               value="${esc(r.line_id)}" aria-label="${esc(r.window_ref || r.line_id)}"></td>`}
         <td>${isFirstOfOrder
-              ? `<b>${esc(r.order_id)}</b><div class="muted">${esc(r.customer_name || "")}</div>`
+              ? `<b>${esc(r.order_id)}</b>${
+                  // a revised PO is the one worth re-reading, so it is called out rather than left
+                  // to the filter; v1 is every other order and would be noise on 4,000 rows
+                  Number(r.version_no) > 1 ? " " + chip("v" + r.version_no, "warn") : ""
+                }<div class="muted">${esc(r.customer_name || "")}</div>`
               : `<span class="muted">${esc(r.order_id)}</span>`}</td>
         ${isViewer() ? "" : `<td><input type="checkbox" data-read${marks.has("read") ? " checked" : ""}
               aria-label="${esc(tr("rev.read"))} ${esc(r.window_ref || r.line_id)}"

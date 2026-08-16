@@ -76,14 +76,28 @@ export const LINK_GROUPS = [
   },
 ];
 
-/* The app's own modules, shown first - this is an operations app, not a bookmark page. */
+/* The app's own modules, shown first - this is an operations app, not a bookmark page.
+ *
+ * EVERY module is here, including the seven in the ribbon. Home is the full index: the ribbon holds
+ * the seven screens used daily, and Schedule, Transfers, Dashboard, Reports, End of day, Photo audit
+ * and Roles - real screens that are opened weekly rather than hourly - are reached from here. A
+ * screen that is off the strip must still be one obvious click away, or it is gone.
+ *
+ * `ops` marks a tile only a full-access account sees; a viewer has nothing to do on Roles. */
 export const APP_TILES = [
+  { hash: "#/chotu",      key: "nav.chotu",      icon: "🗣️", desc: "home.dChotu" },
   { hash: "#/production", key: "nav.production", icon: "✂️",  desc: "home.dProduction" },
+  { hash: "#/prep",       key: "nav.prep",       icon: "🧵",  desc: "home.dPrep" },
   { hash: "#/status",     key: "nav.status",     icon: "🚚",  desc: "home.dInstall" },
   { hash: "#/schedule",   key: "nav.schedule",   icon: "🗓️", desc: "home.dSchedule" },
   { hash: "#/transfer",   key: "nav.transfer",   icon: "📦",  desc: "home.dTransfer" },
   { hash: "#/inventory",  key: "nav.inventory",  icon: "🔩",  desc: "home.dInventory" },
-  { hash: "#/insights",   key: "nav.insights",   icon: "📊",  desc: "home.dInsights" },
+  { hash: "#/po",         key: "nav.po",         icon: "📄",  desc: "home.dPo" },
+  { hash: "#/dashboard",  key: "nav.dashboard",  icon: "📊",  desc: "home.dDashboard" },
+  { hash: "#/reports",    key: "nav.reports",    icon: "📈",  desc: "home.dReports" },
+  { hash: "#/eod",        key: "nav.eod",        icon: "🌙",  desc: "home.dEod" },
+  { hash: "#/audit",      key: "nav.audit",      icon: "📷",  desc: "home.dAudit" },
+  { hash: "#/roles",      key: "nav.roles",      icon: "🔑",  desc: "home.dRoles", ops: true },
 ];
 
 export const SITE_SOURCE = "https://sites.google.com/handpickedfurniture.com/links/home";

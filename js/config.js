@@ -5,7 +5,7 @@
  * TRANSLATED. Reverse that and writes start failing their CHECK.
  */
 
-export const BUILD = "2026-08-14.8";
+export const BUILD = "2026-08-16.2";
 
 /* Supabase project "handpicked-curtains". The publishable key is safe to ship: every table is
  * RLS-locked to the `authenticated` role and `anon` has no policy at all. The bearer token on each
@@ -307,6 +307,25 @@ export const TRANSFER_STATUSES = [
   { value: "extra_materials",    key: "tr.extra",      tone: "warn" },
   { value: "cancelled",          key: "tr.cancelled",  tone: "mute" },
   { value: "issue",              key: "tr.issue",      tone: "bad" },
+];
+
+/* ---------------------------------------------------------------- handover
+ * handover.kind and handover.status. A handover is who physically gave what to whom, which is a
+ * different question from a material transfer's state: a transfer says where the goods are in the
+ * process, a handover says whose hands they are in and whether that person agreed.
+ *
+ * ACKNOWLEDGED IS NOT COSMETIC. For an inventory handover it is the moment fn_ops_ack_handover posts
+ * the lines to the movement ledger - "I put it in the van" and "I have it" are different claims, and
+ * stock should follow the second one. */
+export const HANDOVER_KINDS = [
+  { value: "order",     key: "hnd.kindOrder" },
+  { value: "inventory", key: "hnd.kindInventory" },
+];
+
+export const HANDOVER_STATUSES = [
+  { value: "handed_over",  key: "hnd.handedOver",  tone: "warn" },
+  { value: "acknowledged", key: "hnd.acknowledged", tone: "ok" },
+  { value: "disputed",     key: "hnd.disputed",    tone: "bad" },
 ];
 
 /* inventory_movements.reason */
