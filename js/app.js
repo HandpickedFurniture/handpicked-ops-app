@@ -6,7 +6,7 @@
 import { BUILD, STORAGE_PREFIX } from "./config.js";
 import {
   loadSession, isSignedIn, signOut, onSession, onQueue, startQueueWatcher, flush,
-  queueDepth, failedWrites, currentActor, loadRole,
+  queueDepth, failedWrites, currentActor, loadRole, currentRole,
 } from "./api.js";
 import { tr, getLang, setLang, LANGS } from "./i18n.js";
 import { $, esc, el, toast } from "./ui.js";
@@ -58,6 +58,20 @@ const ROUTES = {
 /* Seven, in the order the day runs. More than this and a phone scrolls the strip sideways, which is
  * how the last two tabs stop being used at all. */
 const RIBBON = ["home", "production", "prep", "status", "inventory", "po", "chotu"];
+
+/* Roles that see less than all of it. A role absent from here gets everything.
+ *
+ * 'prod_viewer' is somebody brought in to watch fabric receiving - one tab, no launcher, no Home.
+ * Showing them the other twelve screens greyed out would be worse than not showing them: it invites
+ * the question "why can't I", every day, from every new person given this access.
+ *
+ * PRESENTATION ONLY. Their writes are refused by RLS on all 42 tables whatever URL they type - see
+ * fn_is_viewer(), which now means "not ops". This list stops them wandering; it does not protect
+ * anything, and must never be the only thing standing between somebody and a write. */
+const ROLE_ROUTES = { prod_viewer: ["production"] };
+
+const allowedRoutes = () => ROLE_ROUTES[currentRole()] || Object.keys(ROUTES);
+const ribbonFor = () => ROLE_ROUTES[currentRole()] || RIBBON;
 
 /* The Insights sub-sections that became routes under the same name. */
 const INSIGHT_SECS = ["dashboard", "eod", "audit", "roles"];
@@ -139,7 +153,7 @@ function paintTabs() {
   const { route: r } = readHash();
   /* A route that is not in the ribbon still highlights nothing rather than mis-highlighting Home,
    * so somebody who arrived on Reports from a link can see that they are off the strip. */
-  $("#tabs").innerHTML = RIBBON.map((k) =>
+  $("#tabs").innerHTML = ribbonFor().map((k) =>
     `<a href="#/${k}" class="${k === r ? "active" : ""}">${TAB_ICON[k] || ""} ${esc(tr(ROUTES[k].key))}</a>`
   ).join("");
 }
@@ -165,20 +179,26 @@ async function route() {
     const moved = redirectFor(name, params);
     if (moved) { location.hash = moved; return; }
 
-    const def = ROUTES[name] || ROUTES.home;
-    paintTabs();
-
     const main = $("#main");
     if (!isSignedIn()) {
+      paintTabs();
       $("#tabs").classList.add("hidden");
       renderLogin(main, afterSignIn);
       return;
     }
     $("#tabs").classList.remove("hidden");
 
-    // resolved once per signed-in session; decides which write controls get drawn, nothing more
+    /* Resolved before anything is drawn, because it decides which TABS exist as well as which write
+     * controls do. Painting the strip first would flash all seven at a restricted account. */
     await loadRole();
 
+    // a restricted role lands on its own screen rather than on an empty one it cannot use
+    const allowed = allowedRoutes();
+    if (!allowed.includes(name)) { location.hash = "#/" + allowed[0]; return; }
+
+    paintTabs();
+
+    const def = ROUTES[name] || ROUTES.home;
     const state = { filters, params, count: null };
     await def.render(main, state, (f) => setFilters(name, f));
   } catch (e) {

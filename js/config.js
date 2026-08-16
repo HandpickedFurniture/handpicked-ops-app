@@ -5,7 +5,7 @@
  * TRANSLATED. Reverse that and writes start failing their CHECK.
  */
 
-export const BUILD = "2026-08-16.2";
+export const BUILD = "2026-08-16.4";
 
 /* Supabase project "handpicked-curtains". The publishable key is safe to ship: every table is
  * RLS-locked to the `authenticated` role and `anon` has no policy at all. The bearer token on each
@@ -221,12 +221,20 @@ export const ITEM_CATEGORIES = [
 
 /* ---------------------------------------------------------------- roles
  * app_roles.role. 'ops' is the access everyone had before roles existed; 'viewer' reads everything
- * and writes nothing. The UI hides write controls for a viewer, but that is courtesy only - the
- * real boundary is RLS, because the app ships its publishable key and a viewer holds a genuine
- * bearer token they could point at PostgREST directly. */
+ * and writes nothing; 'prod_viewer' is a viewer pointed at Production alone - people who need to
+ * watch fabric receiving without being able to touch it.
+ *
+ * ONLY 'ops' CAN WRITE. fn_is_viewer() in the database tests `role <> 'ops'`, so a role added here
+ * arrives read-only and has to be let in deliberately, rather than arriving with full access across
+ * 42 tables until somebody remembers to go and stop it.
+ *
+ * Which TABS a role sees is presentation and lives in app.js; what it may WRITE is RLS and lives in
+ * the database. The app ships its publishable key, so a viewer holds a genuine bearer token they
+ * could point at PostgREST directly - hiding a button has never been the boundary. */
 export const APP_ROLES = [
-  { value: "ops",    key: "role.ops" },
-  { value: "viewer", key: "role.viewer" },
+  { value: "ops",         key: "role.ops" },
+  { value: "viewer",      key: "role.viewer" },
+  { value: "prod_viewer", key: "role.prodViewer" },
 ];
 
 /* ---------------------------------------------------------------- adjustments

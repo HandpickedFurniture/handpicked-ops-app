@@ -20,7 +20,7 @@ import {
   SB_URL, SB_KEY, PHOTO_BUCKET, PHOTO_MAX_PX, PHOTO_QUALITY, STORAGE_PREFIX,
   PHOTO_RETRIES, PHOTO_RETRY_MS,
 } from "./config.js";
-import { api, rpc, getSession, currentActor } from "./api.js";
+import { api, rpc, getSession, currentActor, isViewer } from "./api.js";
 import { tr } from "./i18n.js";
 import { esc, el, toast, modal, fmtDateTime, num } from "./ui.js";
 
@@ -390,11 +390,16 @@ export async function createLocation(code, label, kind) {
  */
 export function photoStrip(meta, opts = {}) {
   const id = "ph_" + Math.random().toString(36).slice(2, 9);
-  // readOnly drops the camera button but keeps the thumbnails: a viewer can look, not add
+  /* readOnly drops the camera button but keeps the thumbnails: a viewer can look, not add.
+   *
+   * It DEFAULTS to the role rather than waiting to be passed. Every one of the eight callers would
+   * otherwise have to remember, and the one that forgot would show a read-only account a camera
+   * button that fails at the api.js choke point - refused, but only after they had taken the photo. */
+  const readOnly = opts.readOnly ?? isViewer();
   const box = el(`
     <div class="photostrip" data-strip="${id}">
       <div class="row" style="gap:6px;align-items:center">
-        ${opts.readOnly ? "" : `<label class="btn sm" style="margin:0">
+        ${readOnly ? "" : `<label class="btn sm" style="margin:0">
           📷 ${esc(opts.label || tr("photo.add"))}
           <input type="file" accept="image/*" capture="environment" multiple hidden>
         </label>`}

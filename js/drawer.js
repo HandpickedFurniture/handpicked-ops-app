@@ -7,7 +7,13 @@
  * Sub-tabs: Fabrics (stages 1-4) | Production (stages 5-10) | Dispatch (stages 11-14) |
  *           Alerts | Comments | Emails
  */
-import { rpc, submit, currentActor, queueDepth } from "./api.js";
+/* Read-only accounts get the drawer with its controls REMOVED, not disabled and not left to fail.
+ *
+ * This is the screen a 'prod_viewer' actually lives in - it is where fabric receiving is - so it is
+ * the one place where "can look, cannot touch" has to be true on screen rather than only true in the
+ * database. Leaving the dropdowns in place would have them change a status, get refused at the
+ * api.js choke point, and toast an error: technically safe, and useless to the person using it. */
+import { rpc, submit, currentActor, queueDepth, isViewer } from "./api.js";
 import { tr, tv, getLang } from "./i18n.js";
 import {
   RECV_STATUSES, QC_RESULTS, PREP_STAGES, DISPATCH_CONTRACTORS, DISPATCH_SUBSTATES,
@@ -102,8 +108,8 @@ function receivingTab(d, orderId, refresh, which) {
   box.appendChild(el(`
     <div class="spread" style="margin-bottom:10px">
       <div>${progressBar(done, rows.length)}</div>
-      <button class="btn accent sm" data-all>${esc(
-        which === "order_fabric" ? tr("act.receiveAll") : tr("act.receiveAllMat"))}</button>
+      ${isViewer() ? "" : `<button class="btn accent sm" data-all>${esc(
+        which === "order_fabric" ? tr("act.receiveAll") : tr("act.receiveAllMat"))}</button>`}
     </div>`));
 
   rows.forEach((r) => {
@@ -124,11 +130,11 @@ function receivingTab(d, orderId, refresh, which) {
             · ${esc(num(r.qty_expected))} ${esc(unit)}</div>
         </div>
         <div>${chip(tv(RECV_STATUSES, r.status), st.tone)} ${warn.join(" ")}</div>
-        <div class="cell-actions row">
+        ${isViewer() ? "" : `<div class="cell-actions row">
           ${selectHtml("st_" + r.id, RECV_STATUSES.map((s) => ({ value: s.value, label: tr(s.key) })), r.status)}
           ${selectHtml("qc_" + r.id, QC_RESULTS.map((s) => ({ value: s.value, label: tr(s.key) })),
                        r.qc_result || "", tr("qc.title"))}
-        </div>
+        </div>`}
       </div>`);
 
     // Photo evidence on this expectation. Most valuable on a failed QC - a damaged or wrong fabric
@@ -140,6 +146,7 @@ function receivingTab(d, orderId, refresh, which) {
 
     const stSel = row.querySelector(`[name="st_${r.id}"]`);
     const qcSel = row.querySelector(`[name="qc_${r.id}"]`);
+    if (!stSel || !qcSel) { box.appendChild(row); return; }   // read-only: the controls are not drawn
     const push = async () => {
       row.classList.add("pending");
       await submit("fn_ops_set_receiving", {
@@ -157,7 +164,8 @@ function receivingTab(d, orderId, refresh, which) {
     box.appendChild(row);
   });
 
-  box.querySelector("[data-all]").addEventListener("click", async () => {
+  const allBtn = box.querySelector("[data-all]");
+  if (allBtn) allBtn.addEventListener("click", async () => {
     // only the half currently on screen - "mark all fabrics received" must not also tick off motors
     // that have not arrived
     await submit("fn_ops_receive_all", {
@@ -184,11 +192,11 @@ function prepTab(d, orderId, refresh) {
   const head = el(`
     <div class="spread" style="margin-bottom:10px">
       <div>${progressBar(packed, units.length)}</div>
-      <div class="row">
+      ${isViewer() ? "" : `<div class="row">
         ${selectHtml("bulkstage", PREP_STAGES.map((s) => ({ value: s.value, label: tr(s.key) })), "",
                      tr("act.markStage"))}
         <button class="btn accent sm" data-applyall>${esc(tr("act.applyAll"))}</button>
-      </div>
+      </div>`}
     </div>`);
   box.appendChild(head);
 
@@ -196,7 +204,8 @@ function prepTab(d, orderId, refresh) {
   // and a camera button on all 33 units of a big order would be noise.
   box.appendChild(photoStrip({ context: "prep", order_id: orderId, context_label: "Production" }));
 
-  head.querySelector("[data-applyall]").addEventListener("click", async () => {
+  const applyAll = head.querySelector("[data-applyall]");
+  if (applyAll) applyAll.addEventListener("click", async () => {
     const stage = head.querySelector('[name="bulkstage"]').value;
     if (!stage) { toast(tr("act.markStage"), "bad"); return; }
     await submit("fn_ops_apply_prep", {
@@ -221,14 +230,16 @@ function prepTab(d, orderId, refresh) {
           ? chip(tv(PREP_STAGES, u.stage) || u.stage, idx === PREP_STAGES.length - 1 ? "ok" : "info",
                  idx === PREP_STAGES.length - 1 ? "✓" : "›")
           : chip("—", "mute")}</div>
-        <div class="cell-actions">
+        ${isViewer() ? "" : `<div class="cell-actions">
           ${selectHtml("u_" + u.window_name + "_" + u.layer_no,
                        PREP_STAGES.map((s) => ({ value: s.value, label: tr(s.key) })),
                        u.stage || "", tr("act.markStage"))}
-        </div>
+        </div>`}
       </div>`);
 
-    row.querySelector("select").addEventListener("change", async (e) => {
+    const unitSel = row.querySelector("select");
+    if (!unitSel) { box.appendChild(row); return; }
+    unitSel.addEventListener("change", async (e) => {
       if (!e.target.value) return;
       row.classList.add("pending");
       await submit("fn_ops_apply_prep", {
@@ -258,6 +269,8 @@ function dispatchTab(d, orderId, refresh) {
   rows.filter((r) => r.contractor === "other").forEach((r) => {
     box.appendChild(contractorRow("other", r.other_name, r.other_name, r, orderId, refresh));
   });
+
+  if (isViewer()) return box;
 
   const add = el(`<button class="btn sm" data-addother>+ ${esc(tr("disp.other"))}</button>`);
   add.addEventListener("click", () => {
@@ -309,13 +322,13 @@ function contractorRow(contractor, otherName, label, hit, orderId, refresh) {
           ${hit && hit.items_count ? " · " + esc(hit.items_count) + " " + esc(tr("disp.items")) : ""}</div>
         ${failed && hit.qc_note ? `<div class="err" style="margin-top:4px">${esc(hit.qc_note)}</div>` : ""}
       </div>
-      <div class="cell-actions row">
+      ${isViewer() ? "" : `<div class="cell-actions row">
         ${DISPATCH_SUBSTATES.map((s) => {
           const on = hit && hit.substate === s.value;
           return `<button class="btn sm ${on ? "primary" : ""}" data-sub="${s.value}"${
             on ? ` title="${esc(tr("disp.toggleOff"))}"` : ""}>${esc(tr(s.key))}</button>`;
         }).join("")}
-      </div>
+      </div>`}
     </div>`);
 
   // Photographing what went out to a contractor, and what came back, is what settles a dispute over
@@ -411,6 +424,8 @@ function alertsTab(d) {
 function commentsTab(d, orderId, refresh) {
   const box = el(`<div></div>`);
 
+  if (isViewer()) return commentLists(box, d);
+
   const add = el(`
     <div class="dsec">
       <h4>${esc(tr("act.comment"))}</h4>
@@ -437,7 +452,12 @@ function commentsTab(d, orderId, refresh) {
     refresh();
   });
   box.appendChild(add);
+  return commentLists(box, d);
+}
 
+/* The three read-only comment lists, shared by both paths so a viewer sees exactly what everybody
+ * else does minus the box for typing a new one. */
+function commentLists(box, d) {
   const ops = d.ops_comments || [];
   const s1 = el(`<div class="dsec"><h4>${esc(tr("d.opsComments"))} <span class="chip mute">${ops.length}</span></h4></div>`);
   if (!ops.length) s1.appendChild(el(`<div class="dnone">${esc(tr("d.none"))}</div>`));

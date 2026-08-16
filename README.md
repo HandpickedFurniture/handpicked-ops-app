@@ -124,6 +124,39 @@ version** — 45 of 712 orders have been revised, and a revised PO is the one wo
 
 **9. Chotu** (`#/chotu`) — see below.
 
+## Roles
+
+| Role | Writes | Sees |
+|---|---|---|
+| `ops` | everything | everything |
+| `viewer` | **nothing** | every module |
+| `prod_viewer` | **nothing** | Production only — no Home, no launcher |
+
+**Only `ops` can write, and the database is what enforces it.** `fn_is_viewer()` tests
+`role <> 'ops'`, so all 42 tables' write policies refuse anything else without a single policy
+change — and a fourth role added later arrives read-only rather than arriving with write access
+everywhere until somebody notices. `isViewer()` in `js/api.js` makes the same test, so the screen and
+the database can never disagree about who is read-only. An **unknown** role (lookup failed, or no
+`app_roles` row) resolves to `ops` on both sides; that is the one part that is not default-deny, and
+it is deliberate — a failed request in a lift must not lock a coordinator out of their own job.
+
+Which **tabs** a role sees is presentation (`ROLE_ROUTES` in `js/app.js`) and nothing more. Verified
+by bypassing the app entirely — raw PostgREST calls with a `prod_viewer`'s own bearer token:
+
+| Attempt | Result |
+|---|---|
+| `PATCH app_roles` to promote self to `ops` | `[]` — **zero rows changed** |
+| `PATCH receiving_expectations` to tick a fabric received | `[]` — **zero rows changed** |
+| `POST order_comments` | **403, `42501` row-level security violation** |
+| `GET` the same rows | works — this role is meant to read |
+
+Note the asymmetry: a blocked UPDATE matches zero rows and returns 200/204, while a blocked INSERT
+raises 42501. Both mean nothing was written, but a bare 204 from PostgREST is **not** evidence that
+anything changed — ask for `Prefer: return=representation` before concluding it did.
+
+Adding a person: create the account in the Supabase dashboard (Authentication → Users), then set
+their role on the Roles screen. There is no signup screen by design.
+
 ## Chotu, and why you can trust what it records
 
 One big circle. Tap it, say what happened in English, Hindi or Bengali, and either get an answer read
@@ -249,7 +282,7 @@ photos already in Supabase keep resolving after the switch — no migration, no 
 > error mentioning `photo-signed-url` per device per day**. Photos still upload, to Supabase.
 
 Setup commands for the Google Cloud path are in the header of
-[`supabase/functions/photo-signed-url/index.ts`](../supabase/functions/photo-signed-url/index.ts).
+[`supabase/functions/photo-signed-url/index.ts`](supabase/functions/photo-signed-url/index.ts).
 `gcloud` needs an interactive `gcloud auth login` on your own machine.
 
 ### What makes it auditable
@@ -334,10 +367,22 @@ python check_i18n.py && python check_values.py
 1. **Create the user accounts** in the Supabase dashboard (Authentication → Users) and **disable
    public sign-up** (Authentication → Providers → Email → "Enable sign ups" off). There is no signup
    screen by design.
-2. **For iPhone voice input**, deploy the Edge Function with its own Gemini key — the ingestion
-   agent's key lives in GCP Secret Manager, which Supabase cannot read:
+2. **`GEMINI_API_KEY` is already set** on this project, so iPhone voice input and Chotu both work.
+   If it ever has to be replaced, the ingestion agent's key lives in GCP Secret Manager where
+   Supabase cannot read it, so it needs setting here in its own right:
    ```bash
    supabase secrets set GEMINI_API_KEY=<key>
-   supabase functions deploy transcribe
    ```
-   Android and desktop work without this.
+
+## Edge Functions
+
+The three functions in `supabase/functions/` live in **this** repo because all three exist only to
+serve this app — `js/voice.js` calls `transcribe`, `js/mod-chotu.js` calls `chotu`, `js/photos.js`
+calls `photo-signed-url`. Deploy from the repo root, which is where the `supabase/` directory sits:
+
+```bash
+supabase functions deploy chotu --project-ref jrevqijbzzwdcwxcnwfa
+```
+
+All three run with `verify_jwt = true` and pass the caller's own bearer token through to PostgREST,
+so a function can never become a way around RLS.

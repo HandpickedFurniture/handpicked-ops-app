@@ -1,7 +1,11 @@
 /* Roles - who can do what.
  *
- * Two roles, matching what the business actually needs today: 'ops' is the access everyone had
- * before roles existed, 'viewer' reads every module and writes nothing.
+ * Three: 'ops' is the access everyone had before roles existed; 'viewer' reads every module and
+ * writes nothing; 'prod_viewer' is a viewer shown the Production tab alone, for people brought in to
+ * watch fabric receiving without being able to touch it.
+ *
+ * ONLY 'ops' WRITES. fn_is_viewer() tests `role <> 'ops'`, so a fourth role added later arrives
+ * read-only rather than arriving with write access to 42 tables until somebody notices.
  *
  * THIS SCREEN IS NOT THE ACCESS BOUNDARY. It edits app_roles; the boundary is the RLS policy on
  * every table, which reads that table through fn_is_viewer(). The app ships its publishable key, so
@@ -45,8 +49,7 @@ export async function render(mount, state) {
 
   const card = el(`<div class="card">
     <h3 style="margin:0 0 4px">${esc(tr("role.manage"))}</h3>
-    <div class="muted" style="margin-bottom:12px;font-size:12px">
-      ${esc(tr("role.viewer"))} — ${esc(tr("role.readOnlyBody"))}</div>
+    <div class="muted" style="margin-bottom:12px;font-size:12px">${esc(tr("role.legend"))}</div>
     <div class="rolelist"></div></div>`);
   const list = card.querySelector(".rolelist");
 

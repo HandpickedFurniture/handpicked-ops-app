@@ -253,7 +253,9 @@ export const I18N = {
     "inv.reorderCleared": "{n} item(s) cleared",
     "inv.selectItems": "Select every item in this list",
     "role.title": "Roles", "role.ops": "Full access", "role.viewer": "View only",
+    "role.prodViewer": "View only — Production",
     "role.manage": "Who can do what", "role.saved": "Role updated",
+    "role.legend": "Full access writes. Both View only roles write nothing — the database refuses them, not just the screen. Production limits which tab they see.",
     "role.readOnly": "You have view-only access",
 
     "chotu.sub": "Ask a question, or tell me what happened",
@@ -680,7 +682,9 @@ export const I18N = {
     "inv.reorderCleared": "{n} आइटम से चिह्न हटाया",
     "inv.selectItems": "इस सूची के सभी आइटम चुनें",
     "role.title": "भूमिकाएँ", "role.ops": "पूर्ण पहुँच", "role.viewer": "केवल देखें",
+    "role.prodViewer": "केवल देखें — उत्पादन",
     "role.manage": "कौन क्या कर सकता है", "role.saved": "भूमिका अपडेट हुई",
+    "role.legend": "पूर्ण पहुँच लिख सकती है। दोनों केवल-देखें भूमिकाएँ कुछ नहीं लिख सकतीं — डेटाबेस मना करता है, सिर्फ़ स्क्रीन नहीं। उत्पादन वाली भूमिका को केवल एक टैब दिखता है।",
     "role.readOnly": "आपके पास केवल देखने की पहुँच है",
 
     "chotu.sub": "सवाल पूछें, या बताएं क्या हुआ",
@@ -1107,7 +1111,9 @@ export const I18N = {
     "inv.reorderCleared": "{n}টি আইটেমের চিহ্ন সরানো",
     "inv.selectItems": "এই তালিকার সব আইটেম নির্বাচন করুন",
     "role.title": "ভূমিকা", "role.ops": "পূর্ণ অ্যাক্সেস", "role.viewer": "শুধু দেখা",
+    "role.prodViewer": "শুধু দেখা — উৎপাদন",
     "role.manage": "কে কী করতে পারে", "role.saved": "ভূমিকা আপডেট হয়েছে",
+    "role.legend": "পূর্ণ অ্যাক্সেস লিখতে পারে। দুটি শুধু-দেখা ভূমিকাই কিছু লিখতে পারে না — ডেটাবেস আটকায়, শুধু স্ক্রিন নয়। উৎপাদন ভূমিকা কেবল একটি ট্যাব দেখে।",
     "role.readOnly": "আপনার শুধু দেখার অ্যাক্সেস আছে",
 
     "chotu.sub": "প্রশ্ন করুন, বা কী হয়েছে বলুন",

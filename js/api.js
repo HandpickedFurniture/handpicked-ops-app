@@ -47,7 +47,17 @@ export function currentActor() {
 let role = null;
 
 export function currentRole() { return role || "ops"; }
-export function isViewer() { return role === "viewer"; }
+
+/* "May not write", not "is the viewer role" - the same test fn_is_viewer() makes in the database, so
+ * the two can never disagree about who is read-only. A role added later is read-only by default.
+ *
+ * An UNKNOWN role (null - lookup failed, or no app_roles row) is treated as ops, matching
+ * fn_is_viewer()'s own default. Reversing that would lock a coordinator out of their own job because
+ * one request failed on a lift's worth of signal. */
+export function isViewer() { return role !== null && role !== "ops"; }
+
+/* Read-only AND pointed at Production alone - see ROLE_ROUTES in app.js. */
+export function isProdViewer() { return role === "prod_viewer"; }
 
 export async function loadRole() {
   role = null;
@@ -145,9 +155,15 @@ async function freshToken() {
  * schedule functions (build, move, finalize, ...) are deliberately absent and stay refused. */
 /* fn_chotu_context is the same case: a `stable` read that PostgREST only exposes as POST /rpc, and
  * asking Chotu questions is precisely what a viewer should be able to do. Every RPC Chotu COMMITS
- * with is deliberately absent, so a viewer's Commit button is refused here and again by RLS. */
+ * with is deliberately absent, so a viewer's Commit button is refused here and again by RLS.
+ *
+ * fn_order_drawer belongs here for a blunter reason: without it a read-only account cannot open a
+ * single order. It assembles the whole drawer - receiving, production units, dispatch, alerts,
+ * comments, emails - in one `stable` call with no DML in it, and it is reached by POST purely
+ * because that is the only verb PostgREST gives an RPC. Leaving it out made "view only" mean "view
+ * the list and nothing in it", which is not a role anybody wanted. */
 const VIEWER_ALLOWED =
-  /\/rpc\/(fn_ops_rate_for|fn_ops_log_photo_access|fn_chotu_context|fn_sched_board|fn_sched_run_for|fn_sched_next_working_day|fn_sched_suggest_teams|fn_sched_eta_explain)$/;
+  /\/rpc\/(fn_order_drawer|fn_ops_rate_for|fn_ops_log_photo_access|fn_chotu_context|fn_sched_board|fn_sched_run_for|fn_sched_next_working_day|fn_sched_suggest_teams|fn_sched_eta_explain)$/;
 
 export async function api(path, opts = {}, retry = true) {
   const method = (opts.method || "GET").toUpperCase();
