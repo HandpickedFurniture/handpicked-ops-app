@@ -93,6 +93,7 @@ export const APP_TILES = [
   { hash: "#/transfer",   key: "nav.transfer",   icon: "📦",  desc: "home.dTransfer" },
   { hash: "#/inventory",  key: "nav.inventory",  icon: "🔩",  desc: "home.dInventory" },
   { hash: "#/po",         key: "nav.po",         icon: "📄",  desc: "home.dPo" },
+  { hash: "#/finance",    key: "nav.finance",    icon: "🧾",  desc: "home.dFinance" },
   { hash: "#/dashboard",  key: "nav.dashboard",  icon: "📊",  desc: "home.dDashboard" },
   { hash: "#/reports",    key: "nav.reports",    icon: "📈",  desc: "home.dReports" },
   { hash: "#/eod",        key: "nav.eod",        icon: "🌙",  desc: "home.dEod" },

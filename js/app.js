@@ -28,6 +28,7 @@ import * as dashboard from "./mod-dashboard.js";
 import * as reports from "./mod-reports.js";
 import * as audit from "./mod-audit.js";
 import * as roles from "./mod-roles.js";
+import * as finance from "./mod-finance.js";
 
 /* Every screen is a top-level route. Only seven of them are in the ribbon.
  *
@@ -54,6 +55,8 @@ const ROUTES = {
   eod:        { key: "nav.eod",        render: (m, s) => dashboard.renderEod(m, s) },
   audit:      { key: "nav.audit",      render: (m, s) => audit.render(m, s) },
   roles:      { key: "nav.roles",      render: (m, s) => roles.render(m, s) },
+  // the accounts team's screen: PO lines and adjustments, checked and marked as billed
+  finance:    { key: "nav.finance",    render: (m, s) => finance.render(m, s) },
 };
 
 /* Seven, in the order the day runs. More than this and a phone scrolls the strip sideways, which is

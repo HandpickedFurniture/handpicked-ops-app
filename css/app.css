@@ -703,3 +703,53 @@ table.dense tfoot th{position:sticky;bottom:0;background:var(--info-bg);border-t
   .schfloat .schcard{flex:0 0 74vw;}
   .schdatebig{font-size:20px;}
 }
+
+/* ---------------------------------------------------------------- finance (mod-finance.js)
+   A wide grid on a desktop, which is where the accounts team actually sit - so this is the one
+   screen in the app that scrolls sideways rather than reflowing to a phone. The alternative was
+   hiding columns, and a finance grid that hides a column is a finance grid nobody trusts. */
+.finfilters .fgrid{display:grid;gap:9px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));}
+.finactions{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
+.fintotals{display:flex;gap:6px;flex-wrap:wrap;}
+
+.fintablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:11px;background:var(--card);}
+.fintable{border-collapse:collapse;width:100%;font-size:12.5px;white-space:nowrap;}
+.fintable th,.fintable td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;
+  vertical-align:middle;}
+.fintable thead th{position:sticky;top:0;z-index:2;background:var(--card);font-size:11px;
+  text-transform:uppercase;letter-spacing:.03em;color:var(--muted);border-bottom:2px solid var(--line);}
+.fintable th.sortable{cursor:pointer;user-select:none;}
+.fintable th.sortable:hover{color:var(--brand);}
+.fintable td.tick,.fintable th.tick{width:28px;}
+.fintable td.oid{font-weight:700;font-variant-numeric:tabular-nums;}
+.fintable td.ro{font-variant-numeric:tabular-nums;color:var(--muted);}
+.fintable td.wide{white-space:normal;max-width:300px;min-width:180px;}
+.fintable td.rv{white-space:normal;max-width:260px;}
+
+/* Never-credit lines are faded rather than hidden: the accountant still has to see that the tie-back
+   is on the order, they just must never bill for it. */
+.finrow.nocredit{opacity:.55;background:var(--line);}
+.finrow.nocredit td.oid{opacity:.8;}
+
+/* Bright, deliberately. A review flag that blends in is a review flag nobody actions - and every
+   one of these is a line where the money is probably wrong. */
+.finrow.review{background:#fff4d6;box-shadow:inset 4px 0 0 var(--danger);}
+.finrow.review.nocredit{background:#f2ece0;}
+
+.fincell{width:100%;min-width:74px;padding:3px 5px;font-size:12.5px;border:1px solid transparent;
+  border-radius:5px;background:transparent;color:inherit;font-family:inherit;}
+.fincell:hover:not(:disabled){border-color:var(--line);}
+.fincell:focus{border-color:var(--brand);background:var(--card);outline:none;}
+.fincell:disabled{color:var(--muted);}
+.fincell.saved{border-color:var(--ok);}
+.fincell.bad{border-color:var(--danger);}
+
+.linkish{border:none;background:none;color:var(--brand);cursor:pointer;font-size:13px;padding:0 2px;}
+
+/* The full 93-column PO row, only for the line somebody opened. */
+.finpo > td{background:var(--info-bg);white-space:normal;}
+.pogrid{display:grid;gap:4px 14px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
+  padding:4px 2px;}
+.pokv{display:flex;gap:6px;font-size:12px;}
+.pokv b{color:var(--muted);font-weight:600;flex:none;}
+.pokv span{word-break:break-word;}
