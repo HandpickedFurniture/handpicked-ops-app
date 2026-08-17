@@ -15,7 +15,7 @@ import {
   ORDER_STATUSES, STATUS_TONE, CHARGE_TYPES, ADJ_STATUSES, TRANSFER_STATUSES, SPECIAL_COLS,
 } from "./config.js";
 import {
-  $, esc, el, chip, aed, num, fmtDate, toast, loading, modal, selectHtml, confirmSheet, orderLabel,
+  $, esc, el, chip, aed, num, fmtDate, toast, loading, modal, selectHtml, orderLabel,
 } from "./ui.js";
 import { renderFilterBar, toQuery, deriveOptions, activeCount } from "./filters.js";
 import { micField, wireMics } from "./voice.js";
@@ -44,7 +44,6 @@ const BOARD_COLS = [
 ].join(",");
 
 let OPTIONS = null;
-let TEAMS = null;
 let MEMBERS = null;   // the installer name list behind the six per-visit dropdowns
 
 async function loadMembers(force) {
@@ -65,10 +64,6 @@ export async function render(mount, state, setFilters) {
                      <div id="fbar"></div><div id="board"></div>`;
   $("#stsync", mount).appendChild(syncBar());
 
-  if (!TEAMS) {
-    try { TEAMS = await api("/rest/v1/teams?select=team_no,team_name&order=team_no"); }
-    catch (e) { TEAMS = []; }
-  }
   await loadMembers();
   if (!OPTIONS) {
     try {
@@ -116,6 +111,48 @@ function specialChips(r) {
   const on = SPECIAL_COLS.filter((s) => Number(r[s.col]) > 0);
   if (!on.length) return "";
   return on.map((s) => chip(`${tr(s.key)} ${num(r[s.col])}`, "info")).join(" ");
+}
+
+/* ---------------------------------------------------------------- readiness
+ * The questions asked before a van leaves, answered in one strip at the top of the panel: has the
+ * fabric landed, have the materials landed, is it stacked, are the rails done, and what special work
+ * does this order carry.
+ *
+ * Every line is done-of-total rather than a tick. "3 of 5" and "none of 5" are different
+ * conversations and a single tick collapses them into the same non-answer; a total of zero is a
+ * third thing again - nothing to do - and reads as a dash rather than a red nought.
+ */
+function readyChip(done, total) {
+  const d = Number(done || 0), t = Number(total || 0);
+  if (!t) return chip("—", "mute");
+  return chip(`${num(d)}/${num(t)}`, d >= t ? "ok" : (d ? "warn" : "bad"), d >= t ? "✓" : "");
+}
+
+function readinessSection(r, roster, rails, units, stacked) {
+  // a prep unit is window x layer, and a location row is one of those units having been put down
+  const unitKey = (x) => `${x.window_name}|${x.layer_no}`;
+  const stackedCount = new Set((stacked || []).map(unitKey)).size;
+  const unitCount = new Set((units || []).map(unitKey)).size;
+  const rows = rails || [];
+  const special = specialChips(r);
+
+  const line = (label, content) =>
+    `<div class="unit"><div class="uname">${esc(label)}</div><div>${content}</div></div>`;
+
+  return el(`
+    <div class="dsec">
+      <h4>${esc(tr("st.summary"))}</h4>
+      ${line(tr("col.fabrics"),
+             readyChip(roster && roster.recv_fab_done, roster && roster.recv_fab_total))}
+      ${line(tr("st.materialsRecv"),
+             readyChip(roster && roster.recv_mat_done, roster && roster.recv_mat_total))}
+      ${line(tr("prep.stacking"), readyChip(stackedCount, unitCount))}
+      ${line(tr("rep.railing"), readyChip(rows.filter((x) => x.rail_done).length, rows.length))}
+      <div class="unit">
+        <div class="uname">${esc(tr("col.special"))}</div>
+        <div class="ochips" style="margin-top:0">${special || chip("—", "mute")}</div>
+      </div>
+    </div>`);
 }
 
 function orderCard(r, reload) {
@@ -175,18 +212,32 @@ function orderCard(r, reload) {
 
 async function renderStatusPanel(host, r, reload) {
   host.innerHTML = `<div class="drawer"><span class="muted">${esc(tr("t.loading"))}</span></div>`;
-  let visits = [], adjustments = [];
+  const q = encodeURIComponent(r.order_id);
+  let visits = [], adjustments = [], roster = null, rails = [], units = [], stacked = [];
   try {
-    [visits, adjustments] = await Promise.all([
-      api(`/rest/v1/order_visits?select=*&order_id=eq.${encodeURIComponent(r.order_id)}&order=visit_no`),
-      api(`/rest/v1/v_ops_adjustments?select=*&order_id=eq.${encodeURIComponent(r.order_id)}&order=id`),
+    /* The readiness counts are NOT on v_ops_status_board - that view carries production_state and
+     * the special-requirement columns but none of the receiving or prep tallies - so they are read
+     * here, on expand, from the views that do have them. Five requests in one Promise.all is one
+     * round trip, and only for the order somebody actually opened. */
+    let rosterRows;
+    [visits, adjustments, rosterRows, rails, units, stacked] = await Promise.all([
+      api(`/rest/v1/order_visits?select=*&order_id=eq.${q}&order=visit_no`),
+      api(`/rest/v1/v_ops_adjustments?select=*&order_id=eq.${q}&order=id`),
+      api(`/rest/v1/v_ops_order_roster?select=recv_fab_done,recv_fab_total,recv_mat_done,recv_mat_total,prep_done,prep_total&order_id=eq.${q}`),
+      api(`/rest/v1/v_ops_report_railing?select=line_id,rail_done&order_id=eq.${q}`),
+      api(`/rest/v1/v_ops_prep_units?select=window_name,layer_no&order_id=eq.${q}`),
+      api(`/rest/v1/v_ops_prep_locations?select=window_name,layer_no&order_id=eq.${q}`),
     ]);
+    roster = (rosterRows || [])[0] || null;
   } catch (e) {
     host.innerHTML = `<div class="drawer"><span class="err">${esc(e.message)}</span></div>`;
     return;
   }
 
   const wrap = el(`<div class="drawer"></div>`);
+
+  /* ---- what is and is not ready, before anything else in the panel */
+  wrap.appendChild(readinessSection(r, roster, rails, units, stacked));
 
   /* ---- order level */
   const orderBox = el(`
@@ -195,28 +246,21 @@ async function renderStatusPanel(host, r, reload) {
       <div class="grid3">
         <div><label class="f">${esc(tr("col.status"))}</label>
           ${selectHtml("ostatus", ORDER_STATUSES, r.status || "", tr("f.any"))}</div>
-        <div><label class="f">${esc(tr("st.assignTeam"))}</label>
-          ${selectHtml("oteam", (TEAMS || []).map((t) => ({
-              value: t.team_no, label: t.team_name || tr("dash.team", { n: t.team_no }) })),
-              r.team_no || "", tr("dash.unassigned"))}</div>
-        <div><label class="f">${esc(tr("st.ready"))}</label>
-          <select name="oready">
-            <option value="false"${!r.ready ? " selected" : ""}>—</option>
-            <option value="true"${r.ready ? " selected" : ""}>${esc(tr("st.ready"))}</option>
-          </select></div>
-      </div>
-      <div class="grid3" style="margin-top:10px">
+        <!-- Yes/No rather than "—"/"Alteration": the old pair read as "unset" vs "set", so a
+             deliberate No looked identical to never having been asked. -->
         <div><label class="f">${esc(tr("st.alteration"))}</label>
           <select name="oalteration">
-            <option value="false"${!r.alteration ? " selected" : ""}>—</option>
-            <option value="true"${r.alteration ? " selected" : ""}>${esc(tr("st.alteration"))}</option>
+            <option value="false"${!r.alteration ? " selected" : ""}>${esc(tr("t.no"))}</option>
+            <option value="true"${r.alteration ? " selected" : ""}>${esc(tr("t.yes"))}</option>
           </select></div>
         <div><label class="f">${esc(tr("st.removalCount"))}</label>
           <input type="number" name="oremoval" min="0" step="1"
                  value="${esc(r.removal_curtain_count ?? "")}"></div>
-        <div><label class="f">${esc(tr("st.alterationNote"))}</label>
-          <input type="text" name="oaltnote"
-                 value="${esc(r.alteration_special_requirement || "")}"></div>
+      </div>
+      <div style="margin-top:10px">
+        <label class="f">${esc(tr("st.alterationNote"))}</label>
+        <input type="text" name="oaltnote"
+               value="${esc(r.alteration_special_requirement || "")}">
       </div>
       <div style="margin-top:10px">
         <label class="f">${esc(tr("st.internal"))}</label>
@@ -243,10 +287,12 @@ async function renderStatusPanel(host, r, reload) {
     await submit("fn_ops_save_visit", {
       p_order_id: r.order_id,
       p_visit_no: Math.max(1, r.last_visit_no || 1),
+      /* team_no and ready are deliberately ABSENT rather than null: fn_ops_save_visit coalesces
+       * every field against what is already stored, so omitting a key leaves it alone. Sending
+       * null would be the same thing here, but sending `false` for ready - which is what a
+       * removed dropdown would have read as - would silently un-ready every order saved. */
       p_payload: {
         status: orderBox.querySelector('[name="ostatus"]').value || null,
-        team_no: orderBox.querySelector('[name="oteam"]').value || null,
-        ready: orderBox.querySelector('[name="oready"]').value === "true",
         alteration: orderBox.querySelector('[name="oalteration"]').value === "true",
         alteration_special_requirement: orderBox.querySelector('[name="oaltnote"]').value || null,
         removal_curtain_count: orderBox.querySelector('[name="oremoval"]').value || null,
@@ -357,17 +403,14 @@ function wireMemberSelects(root) {
 function openVisitSheet(r, v, reload) {
   const m = modal(`
     <h3>${esc(tr("st.visit", { n: v.visit_no }))} — ${esc(orderLabel(r))}</h3>
+    <!-- Time and team are gone from here: the Schedule board owns both, and a second place to set
+         them was a second answer to the same question. Neither key is sent, so what Schedule wrote
+         survives - fn_ops_save_visit coalesces an absent key against the stored value. -->
     <div class="grid2" style="margin-top:12px">
       <div><label class="f">${esc(tr("st.visitDate"))}</label>
         <input type="date" name="vdate" value="${esc(v.visit_date || "")}"></div>
-      <div><label class="f">${esc(tr("st.visitTime"))}</label>
-        <input type="text" name="vtime" value="${esc(v.visit_time || "")}" placeholder="10:00"></div>
       <div><label class="f">${esc(tr("st.visitStatus"))}</label>
         ${selectHtml("vstatus", ORDER_STATUSES, v.status || "", tr("f.any"))}</div>
-      <div><label class="f">${esc(tr("col.team"))}</label>
-        ${selectHtml("vteam", (TEAMS || []).map((t) => ({
-            value: t.team_no, label: t.team_name || tr("dash.team", { n: t.team_no }) })),
-            v.team_no || r.team_no || "", tr("dash.unassigned"))}</div>
     </div>
     <div style="margin-top:12px">
       <label class="f">${esc(tr("st.members"))}</label>
@@ -410,8 +453,8 @@ function openVisitSheet(r, v, reload) {
       p_order_id: r.order_id,
       p_visit_no: v.visit_no,
       p_payload: {
-        visit_date: g("vdate"), visit_time: g("vtime"),
-        visit_status: g("vstatus"), team_no: g("vteam"),
+        visit_date: g("vdate"),
+        visit_status: g("vstatus"),
         visit_comment: g("vcomment"), internal_comment: g("vcomment"),
         slack_comment: g("vslack"),
         // de-duplicated and blanks dropped, so six slots can be filled in any order
@@ -482,27 +525,16 @@ function adjustmentsSection(r, rows, reload) {
     box.appendChild(row);
   });
 
-  // Money totals were removed from this module - they belong in the management view. The invoice
-  // action stays, but with its OWN label: it used to share the "Total billable" key with two purely
-  // decorative chips, so nothing on screen hinted that this button writes.
+  // Money totals were removed from this module - they belong in the management view - and so is
+  // Build draft invoice: invoicing is an accounts decision made over a whole order, not something
+  // to trigger from the middle of a coordinator's status panel. fn_ops_build_invoice still exists.
   const actions = el(`
     <div class="row" style="margin-top:8px">
       <button class="btn sm accent" data-add>+ ${esc(tr("adj.add"))}</button>
-      <button class="btn sm" data-invoice>${esc(tr("adj.buildInvoice"))}</button>
     </div>`);
 
   actions.querySelector("[data-add]").addEventListener("click",
     () => openAdjustmentSheet(r, reload));
-
-  actions.querySelector("[data-invoice]").addEventListener("click", async () => {
-    const go = await confirmSheet(tr("adj.buildInvoice"), tr("adj.buildInvoiceHint"));
-    if (!go) return;
-    try {
-      const res = await rpc("fn_ops_build_invoice", { p_order_id: r.order_id });
-      toast(`${tr("t.saved")} — ${res.po_lines}+${res.adjustment_lines}`, "ok");
-      reload();
-    } catch (e) { toast(e.message, "bad"); }
-  });
 
   box.appendChild(actions);
   return box;

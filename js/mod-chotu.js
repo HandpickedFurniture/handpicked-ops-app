@@ -24,13 +24,13 @@
  * and a free-text one at that, so the same person could be "Kausar", "kausar" and "Kausar M" on
  * three different records. One account per person is the rule here; the account IS the name.
  */
-import { api, submit, currentActor, queueDepth, isSignedIn, isViewer, getSession } from "./api.js";
+import { api, rpc, submit, currentActor, queueDepth, isSignedIn, isViewer, getSession } from "./api.js";
 import {
   SB_URL, SB_KEY, ORDER_STATUSES, DISPATCH_SUBSTATES, DISPATCH_CONTRACTORS, PREP_STAGES,
-  STACK_FLOORS, STACK_RACKS, STACK_SHELVES, STACK_ZONES,
+  STACK_FLOORS, STACK_RACKS, STACK_SHELVES, STACK_ZONES, CHARGE_TYPES,
 } from "./config.js";
 import { tr, getLang, SPEECH_LOCALE } from "./i18n.js";
-import { $, esc, el, chip, num, toast } from "./ui.js";
+import { $, esc, el, chip, num, aed, toast } from "./ui.js";
 import { attachMic, speechAvailable } from "./voice.js";
 import { photoStrip } from "./photos.js";
 
@@ -227,6 +227,7 @@ async function turn(mount, text) {
   if (stateLbl) stateLbl.textContent = tr("chotu.thinking");
 
   let res;
+  let adopted = false;      // did we point the facts at a number that has not been confirmed yet
   try {
     res = await ask(text);
     /* The order number was spoken in THIS sentence.
@@ -239,6 +240,7 @@ async function turn(mount, text) {
      * Once only, and only when the first pass genuinely had no order in hand, so it cannot loop. */
     if (res.order_id && res.order_id !== ORDER && !(res.facts && res.facts.order)) {
       ORDER = String(res.order_id);
+      adopted = true;
       paintOrder(mount);
       res = await ask(text);
     }
@@ -255,13 +257,20 @@ async function turn(mount, text) {
    *
    * Not every five-digit number in a sentence is an order - "we used 12345 meters" is a quantity -
    * and a bogus number left in the chip would silently become the subject of the next sentence.
-   * facts.order comes back null for an id the roster does not have, which is the test. */
+   * facts.order comes back null for an id the roster does not have, which is the test.
+   *
+   * `adopted` matters as much as `guessed`: when the MODEL supplied the number rather than
+   * orderIn(), guessed is false, and without this an unrecognised id would stay in the chip and
+   * quietly become the subject of the next sentence. */
   if (res.facts && res.facts.order) {
     if (res.order_id && res.order_id !== ORDER) { ORDER = String(res.order_id); paintOrder(mount); }
-  } else if (guessed) {
+  } else if (guessed || adopted) {
     ORDER = null;
     paintOrder(mount);
   }
+
+  // what was actually said travels with the proposal, because chotu_log records it verbatim
+  res.said = text;
 
   /* No key, or the model is down. The facts came back regardless, so say something true and short
    * rather than pretending nothing happened - and the typed path and the modules still work. */
@@ -285,6 +294,9 @@ async function turn(mount, text) {
  * than saying the whole sentence again in different words. */
 const INTENT_OPTIONS = [
   { value: "order_status",      key: "chotu.iStatus" },
+  { value: "add_visit",         key: "chotu.iVisit" },
+  { value: "adjustment",        key: "chotu.iAdjustment" },
+  { value: "order_edit",        key: "chotu.iOrderEdit" },
   { value: "fabric_received",   key: "chotu.iFabric" },
   { value: "material_received", key: "chotu.iMaterial" },
   { value: "stack_location",    key: "chotu.iLocation" },
@@ -295,6 +307,7 @@ const INTENT_OPTIONS = [
   { value: "inventory_move",    key: "chotu.iInventory" },
   { value: "low_stock",         key: "chotu.iLowStock" },
   { value: "handover",          key: "chotu.iHandover" },
+  { value: "log_note",          key: "chotu.iNote" },
 ];
 
 function paintProposal(mount, res) {
@@ -391,10 +404,97 @@ function paintProposal(mount, res) {
           return `${it ? it.name : l.item_id} ×${num(l.qty)}`;
         }).join(", "))}</div>`;
       break;
+
+    /* A whole new trip to site. The outcome dropdown is the point of this card: fn_chotu_context
+     * works out the visit number, so the only thing a person has to decide is what to mark - and
+     * validate() puts "status" in need[] whenever they did not say, which blocks Commit until they
+     * pick one. Recording visit 2 or later also auto-proposes the additional-visit charge, which is
+     * exactly what should happen and is why skip_visit_charge is NOT set on this path. */
+    case "add_visit":
+      fields = `
+        <div class="grid2">
+          <div><label class="f">${esc(tr("st.visit", { n: "" })).trim()}</label>
+            <input type="number" name="visit_no" min="1" max="10" step="1"
+                   value="${esc(f.visit_no ?? facts.next_visit_no ?? "")}"></div>
+          <div><label class="f">${esc(tr("st.visitDate"))}</label>
+            <input type="date" name="visit_date" value="${esc(f.visit_date || facts.today || "")}"></div>
+        </div>
+        <label class="f" style="margin-top:8px">${esc(tr("st.visitStatus"))}</label>
+        <select name="status">
+          <option value="">${esc(tr("chotu.pickStatus"))}</option>
+          ${opts(ORDER_STATUSES.map((s) => ({ value: s, label: s })), f.status)}</select>
+        <label class="f" style="margin-top:8px">${esc(tr("st.members"))}</label>
+        <div class="memgrid">${[0, 1, 2, 3, 4, 5].map((i) => `
+          <select name="vm${i}"><option value="">${esc(tr("st.memberNone"))}</option>${
+            opts((facts.people || []).map((p) => ({ value: p, label: p })), (f.members || [])[i])
+          }</select>`).join("")}</div>
+        <label class="f" style="margin-top:8px">${esc(tr("act.comment"))}</label>
+        <textarea name="comment" rows="2">${esc(f.comment || "")}</textarea>`;
+      break;
+
+    /* Chargeable work beyond the PO. The amount box starts from whatever the model proposed but is
+     * overwritten by fn_ops_rate_for as soon as the card is on screen - the rate card is the one
+     * place rates live, and a remembered rate is how 100 and 150 end up on the same invoice. */
+    case "adjustment":
+      fields = `
+        <div class="grid2">
+          <div><label class="f">${esc(tr("adj.type"))}</label>
+            <select name="charge_type">${opts(
+              CHARGE_TYPES.map((c) => ({ value: c.value, label: tr(c.key) })), f.charge_type)}</select></div>
+          <div><label class="f">${esc(tr("adj.qty"))}</label>
+            <input type="number" name="qty" min="1" step="1" value="${esc(f.qty ?? 1)}"></div>
+          <div><label class="f">${esc(tr("adj.amount"))}</label>
+            <input type="number" name="amount" step="0.01" inputmode="decimal"
+                   value="${esc(f.amount ?? "")}">
+            <div class="muted" data-rate style="margin-top:4px"></div></div>
+          <div><label class="f">${esc(tr("st.visit", { n: "" })).trim()}</label>
+            <input type="number" name="visit_no" min="1" max="10" step="1"
+                   value="${esc(f.visit_no ?? "")}"></div>
+        </div>
+        <label class="f" style="margin-top:8px">${esc(tr("adj.reason"))}</label>
+        <textarea name="reason" rows="2">${esc(f.reason || "")}</textarea>
+        <div class="muted" style="margin-top:4px">${esc(tr("adj.reasonRequired"))}</div>
+        <label class="f" style="margin-top:8px">${esc(tr("adj.chargeable"))}</label>
+        <select name="chargeable">
+          <option value="true"${f.chargeable === false ? "" : " selected"}>${esc(tr("adj.chargeable"))}</option>
+          <option value="false"${f.chargeable === false ? " selected" : ""}>${esc(tr("adj.dropped"))}</option>
+        </select>`;
+      break;
+
+    case "order_edit":
+      fields = `
+        <div class="grid2">
+          <div><label class="f">${esc(tr("st.alteration"))}</label>
+            <select name="alteration">
+              <option value="">—</option>
+              <option value="false"${f.alteration === false ? " selected" : ""}>${esc(tr("t.no"))}</option>
+              <option value="true"${f.alteration === true ? " selected" : ""}>${esc(tr("t.yes"))}</option>
+            </select></div>
+          <div><label class="f">${esc(tr("st.removalCount"))}</label>
+            <input type="number" name="removal_count" min="0" step="1"
+                   value="${esc(f.removal_count ?? "")}"></div>
+        </div>
+        <label class="f" style="margin-top:8px">${esc(tr("st.alterationNote"))}</label>
+        <input type="text" name="alteration_note" value="${esc(f.alteration_note || "")}">
+        <label class="f" style="margin-top:8px">${esc(tr("act.comment"))}</label>
+        <textarea name="comment" rows="2">${esc(f.comment || "")}</textarea>`;
+      break;
+
+    /* Nothing to change in the order tables - this exists so what somebody said is kept anyway.
+     * It is also where an unmatched order number lands, which is the whole reason it exists. */
+    case "log_note":
+      fields = `<label class="f">${esc(tr("act.comment"))}</label>
+        <textarea name="note" rows="3">${esc(f.note || "")}</textarea>`;
+      break;
+
     default: break;
   }
 
   const blocked = need.length > 0 || isViewer();
+  /* An order number nobody recognises is not a failure to capture - what they said is still kept,
+   * in chotu_log and from there in the Google Doc, so somebody can match it up later. The button
+   * says so plainly rather than promising a save that will not touch the order. */
+  const unmatched = res.order_known === false && !!res.order_id;
 
   const box = el(`
     <div class="card chotucard ${blocked ? "blocked" : ""}">
@@ -402,6 +502,7 @@ function paintProposal(mount, res) {
         <h4>${esc(tr("chotu.check"))}</h4>
         <span class="muted">${esc(tr("chotu.speaker"))}: ${esc(speaker())}</span>
       </div>
+      <div class="muted" style="margin-bottom:9px">${esc(tr("chotu.editHint"))}</div>
 
       <label class="f">${esc(tr("chotu.action"))}</label>
       <select name="intent">${opts(
@@ -417,6 +518,8 @@ function paintProposal(mount, res) {
         <div data-photos></div>
       </div>
 
+      ${unmatched ? `<div class="banner warn" style="margin-top:10px">${
+        esc(tr("chotu.unmatched", { id: res.order_id }))}</div>` : ""}
       ${need.length ? `<div class="banner warn" style="margin-top:10px">${
         esc(tr("chotu.missing", { what: need.join(", ") }))}</div>` : ""}
       ${isViewer() ? `<div class="banner warn" style="margin-top:10px">${
@@ -424,15 +527,21 @@ function paintProposal(mount, res) {
       <div class="row" style="justify-content:flex-end;margin-top:12px">
         <button class="btn ghost" data-drop>${esc(tr("act.cancel"))}</button>
         <button class="btn primary" data-commit${blocked ? " disabled" : ""}>${
-          esc(tr("chotu.commit"))}</button>
+          esc(unmatched ? tr("chotu.saveLogOnly") : tr("chotu.commit"))}</button>
       </div>
     </div>`);
 
-  /* Photos attach to the ORDER, so they survive whatever this capture turns out to be - a damaged
-   * roll photographed on arrival is evidence whether the write lands as a receipt or as an issue. */
+  /* Photos and FILES attach to the ORDER, so they survive whatever this capture turns out to be - a
+   * damaged roll photographed on arrival is evidence whether the write lands as a receipt or as an
+   * issue. files:true adds the ordinary picker beside the camera, because a supplier's PDF or a
+   * photo already in the gallery is not reachable from a capture="environment" button. */
   box.querySelector("[data-photos]").appendChild(photoStrip({
     context: "other", order_id: res.order_id || null, context_label: labelOf(res.intent),
-  }));
+  }, { files: true }));
+
+  /* The rate card decides the money, not the model. Asked as soon as the card is drawn and again
+   * whenever type or quantity changes, so removal of 4 prices at 100 and of 2 at nothing. */
+  if (res.intent === "adjustment") wireRate(box, f);
 
   // changing the action redraws the fields under it, keeping whatever still applies
   box.querySelector('[name="intent"]').addEventListener("change", (e) => {
@@ -507,20 +616,118 @@ function readCard(box, res) {
       f.item_id = Number(v("item_id")); f.qty_delta = Number(v("qty_delta")); break;
     case "low_stock": f.item_id = Number(v("item_id")); break;
     case "handover": f.from = v("from"); f.to = v("to"); break;
+
+    case "add_visit":
+      f.visit_no = Number(v("visit_no")) || null;
+      f.visit_date = v("visit_date") || null;
+      f.status = v("status") || null;
+      f.comment = v("comment") || null;
+      // de-duplicated and blanks dropped, so the six slots can be filled in any order
+      f.members = Array.from(new Set([0, 1, 2, 3, 4, 5]
+        .map((i) => { const e = box.querySelector(`[name="vm${i}"]`); return e ? e.value.trim() : ""; })
+        .filter(Boolean)));
+      break;
+
+    case "adjustment": {
+      f.charge_type = v("charge_type");
+      f.qty = Number(v("qty")) || 1;
+      const amt = v("amount");
+      f.amount = (amt === "" || amt === undefined) ? null : Number(amt);
+      f.reason = (v("reason") || "").trim();
+      f.visit_no = Number(v("visit_no")) || null;
+      f.chargeable = v("chargeable") !== "false";
+      break;
+    }
+
+    case "order_edit": {
+      // "—" means leave it alone, which is a third state and not the same as No
+      const alt = v("alteration");
+      if (alt === "") delete f.alteration; else if (alt !== undefined) f.alteration = alt === "true";
+      const rc = v("removal_count");
+      f.removal_count = (rc === "" || rc === undefined) ? null : Number(rc);
+      f.alteration_note = v("alteration_note") || null;
+      f.comment = v("comment") || null;
+      break;
+    }
+
+    case "log_note": f.note = v("note"); break;
+
     default: break;
   }
 }
 
+/* The banded rate for the chosen charge type and quantity, from adjustment_rate_card via the same
+ * fn_ops_rate_for the Installation module's adjustment sheet calls - so the two screens can never
+ * quote different money for the same work. Typing in the box wins from then on: the card is a
+ * starting point, and a coordinator who has agreed a figure with a client is not to be overruled. */
+async function wireRate(box, f) {
+  const typeSel = box.querySelector('[name="charge_type"]');
+  const qtyIn = box.querySelector('[name="qty"]');
+  const amtIn = box.querySelector('[name="amount"]');
+  const lbl = box.querySelector("[data-rate]");
+  if (!typeSel || !amtIn || !lbl) return;
+
+  let touched = f.amount != null && f.amount !== "";
+  amtIn.addEventListener("input", () => { touched = true; });
+
+  const refresh = async () => {
+    try {
+      const res = await rpc("fn_ops_rate_for", {
+        p_charge_type: typeSel.value, p_qty: Number(qtyIn ? qtyIn.value : 1) || 1,
+      });
+      const row = Array.isArray(res) ? res[0] : res;
+      if (!row) { lbl.textContent = ""; return; }
+      lbl.textContent = `${tr("adj.suggested")}: ${row.label} — ${aed(row.amount_aed)}`;
+      if (!touched) amtIn.value = Number(row.amount_aed).toFixed(2);
+    } catch (e) { lbl.textContent = ""; }
+  };
+  typeSel.addEventListener("change", () => { touched = false; refresh(); });
+  if (qtyIn) qtyIn.addEventListener("change", refresh);
+  refresh();
+}
+
 /* ------------------------------------------------------------------ commit
- * Every branch calls an RPC this app already had, through the same queue as every other screen. The
+ *
+ * TWO WRITES, ALWAYS. The action goes to the RPC that owns it, and the capture itself goes to
+ * chotu_log - what was said, by whom, against which order, and whether the action landed. The log
+ * is written even when the action fails and even when there is no action to run at all, which is
+ * what makes an unrecognised order number recoverable instead of lost: the note survives, somebody
+ * reads it in the Google Doc later, and matches it to the real order.
+ *
+ * Both go through submit(), so both survive a lift.
+ */
+async function commit(res) {
+  const actor = currentActor();
+  let ok = false;
+  try {
+    await commitAction(res, actor);
+    ok = true;
+  } finally {
+    await submit("fn_chotu_log", {
+      p_said: res.said || res.say || "",
+      p_order_id: res.order_id || null,
+      p_order_known: res.order_known !== false,
+      p_say: res.say || null,
+      p_intent: res.intent || null,
+      p_fields: res.fields || {},
+      p_committed: ok,
+      p_actor: actor,
+      p_speaker: speaker(),
+      p_lang: getLang(),
+      // generated once and stored WITH the queued item, so a replay reuses it and cannot double up
+      p_op: crypto.randomUUID(),
+    });
+  }
+}
+
+/* Every branch calls an RPC this app already had, through the same queue as every other screen. The
  * note records that it arrived by voice and who said it, so a row captured here is traceable to a
  * person in the same way a typed one is. */
-async function commit(res) {
+async function commitAction(res, actor) {
   const f = res.fields || {};
-  /* Exactly the actor every other screen writes - no decoration. A Chotu row and a typed row are
-   * attributable the same way, so "who recorded this" never depends on which door it came through.
-   * The note is what marks it as spoken rather than typed. */
-  const actor = currentActor();
+  /* The actor is exactly what every other screen writes - no decoration. A Chotu row and a typed
+   * row are attributable the same way, so "who recorded this" never depends on which door it came
+   * through. The note is what marks it as spoken rather than typed. */
   const note = tr("chotu.viaChotu", { who: speaker() || "—" });
 
   switch (res.intent) {
@@ -619,6 +826,64 @@ async function commit(res) {
         }),
         p_actor: actor, p_op: crypto.randomUUID(),
       });
+
+    /* A whole new trip to site. skip_visit_charge is deliberately NOT set: fn_ops_save_visit
+     * auto-proposes the additional_visit charge on visit 2 and later, and a revisit somebody
+     * bothered to record by voice is exactly the one that should reach the finance team. */
+    case "add_visit":
+      return submit("fn_ops_save_visit", {
+        p_order_id: res.order_id,
+        p_visit_no: Number(f.visit_no) || 1,
+        p_payload: {
+          visit_date: f.visit_date || null,
+          visit_status: f.status || null,
+          visit_comment: f.comment || null,
+          internal_comment: [f.comment, note].filter(Boolean).join(" — "),
+          member_names: f.members || [],
+          input_method: "chotu", lang: getLang(),
+        },
+        p_actor: actor,
+      });
+
+    case "adjustment":
+      return submit("fn_ops_add_adjustment", {
+        p_order_id: res.order_id,
+        p_charge_type: f.charge_type,
+        p_reason: f.reason,
+        p_quantity: Number(f.qty) || 1,
+        p_visit_no: Number(f.visit_no) || null,
+        p_chargeable: f.chargeable !== false,
+        // null lets fn_ops_add_adjustment fall back to the rate card itself
+        p_amount: (f.amount === null || f.amount === undefined || f.amount === "")
+          ? null : Number(f.amount),
+        p_actor: actor,
+        p_window_name: null,
+        p_notes: note,
+        p_status: "new",
+      });
+
+    /* Order-level fields rather than an event. Keys are spread in conditionally because
+     * fn_ops_save_visit coalesces an ABSENT key against the stored value - so leaving one out is
+     * how "do not touch this" is expressed, and sending null would be the same but sending false
+     * would not. */
+    case "order_edit":
+      return submit("fn_ops_save_visit", {
+        p_order_id: res.order_id,
+        p_visit_no: 1,
+        p_payload: {
+          ...(typeof f.alteration === "boolean" ? { alteration: f.alteration } : {}),
+          ...(f.removal_count != null ? { removal_curtain_count: f.removal_count } : {}),
+          ...(f.alteration_note ? { alteration_special_requirement: f.alteration_note } : {}),
+          comment: [f.comment, note].filter(Boolean).join(" — "),
+          input_method: "chotu", lang: getLang(),
+          skip_visit_charge: true,   // editing order-level fields must not invent a visit charge
+        },
+        p_actor: actor,
+      });
+
+    // nothing to change in the order tables; the chotu_log row written by commit() IS the write
+    case "log_note":
+      return null;
 
     default:
       throw new Error(tr("chotu.unsure"));

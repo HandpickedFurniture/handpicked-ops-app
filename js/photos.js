@@ -162,8 +162,13 @@ export async function uploadPhoto(file, meta) {
   // the extension follows what downscale actually produced - it hands back the ORIGINAL when the
   // browser could not decode it (HEIC), and calling that .jpg would mislabel the stored bytes
   const jpeg = blob.type === "image/jpeg";
-  const ext = jpeg ? "jpg" : ((blob.type || "").split("/")[1] || "bin");
   const type = jpeg ? "image/jpeg" : (blob.type || "application/octet-stream");
+  /* For an attached document the MIME subtype is no use as an extension - a .xlsx arrives as
+   * vnd.openxmlformats-officedocument.spreadsheetml.sheet - so the real filename wins when it has
+   * a sane one. Only downscaled camera output is renamed, because only then do the bytes change. */
+  const named = (file.name || "").match(/\.([A-Za-z0-9]{1,8})$/);
+  const ext = jpeg ? "jpg"
+            : (named ? named[1].toLowerCase() : ((blob.type || "").split("/")[1] || "bin"));
   const name = crypto.randomUUID() + "." + ext;
   const path = `${meta.order_id || "general"}/${meta.context}/${year}/${name}`;
 
@@ -396,6 +401,13 @@ export function photoStrip(meta, opts = {}) {
    * otherwise have to remember, and the one that forgot would show a read-only account a camera
    * button that fails at the api.js choke point - refused, but only after they had taken the photo. */
   const readOnly = opts.readOnly ?? isViewer();
+  /* Two buttons, not one, when opts.files is set.
+   *
+   * `capture="environment"` opens the camera and ONLY the camera - on a phone there is no way from
+   * that button to a photo already in the gallery, let alone to a PDF a supplier sent. That is the
+   * right default at a status-change point, where the photo is being taken right now, and the wrong
+   * one everywhere somebody is attaching a document they already have. So the camera keeps its fast
+   * path and a second control opens the ordinary picker beside it. */
   const box = el(`
     <div class="photostrip" data-strip="${id}">
       <div class="row" style="gap:6px;align-items:center">
@@ -403,13 +415,19 @@ export function photoStrip(meta, opts = {}) {
           📷 ${esc(opts.label || tr("photo.add"))}
           <input type="file" accept="image/*" capture="environment" multiple hidden>
         </label>`}
+        ${readOnly || !opts.files ? "" : `<label class="btn sm" style="margin:0">
+          📎 ${esc(tr("photo.attach"))}
+          <input type="file" data-any multiple hidden>
+        </label>`}
         <span class="muted" data-count></span>
         <span class="muted" data-busy></span>
       </div>
       <div class="thumbs"></div>
     </div>`);
 
-  const input = box.querySelector("input[type=file]");   // absent when readOnly
+  // both inputs, when present, run the same upload path - absent entirely when readOnly
+  const inputs = Array.from(box.querySelectorAll("input[type=file]"));
+  const input = inputs[0];
   const thumbs = box.querySelector(".thumbs");
   const countEl = box.querySelector("[data-count]");
   const busyEl = box.querySelector("[data-busy]");
@@ -429,9 +447,9 @@ export function photoStrip(meta, opts = {}) {
     rows.forEach((p) => thumbs.appendChild(thumb(p, urls.get(p.id))));
   }
 
-  if (input) input.addEventListener("change", async () => {
-    const files = Array.from(input.files || []);
-    input.value = "";
+  inputs.forEach((inp) => inp.addEventListener("change", async () => {
+    const files = Array.from(inp.files || []);
+    inp.value = "";
     if (!files.length) return;
     busyEl.textContent = tr("photo.uploading", { n: files.length });
     let ok = 0;
@@ -444,7 +462,7 @@ export function photoStrip(meta, opts = {}) {
     if (ok) toast(tr("photo.saved", { n: ok }), "ok");
     refresh();
     if (opts.onChange) opts.onChange(ok);
-  });
+  }));
 
   refresh();
   box.refresh = refresh;
