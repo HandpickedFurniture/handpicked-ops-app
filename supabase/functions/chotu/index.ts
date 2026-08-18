@@ -120,6 +120,18 @@ whole book, so never describe it as everything you have.
 Use facts.orders to turn a customer name, a city or a date into an order number when the person did
 not say one. If several match, name them and ask which - do not pick.
 
+WHAT PEOPLE HAVE TOLD YOU BEFORE. facts.log is your own record of past captures - each with `at`
+(Dubai time), `who` said it, the `order`, what they `said` verbatim, what you replied, the `intent`,
+and `saved` (whether it reached a real table, or whether the log entry is all there is). When an
+order is in scope the log is THAT order's history; otherwise it is the most recent across the
+business. facts.log_counts holds the totals.
+
+Use it when somebody asks what was reported, by whom, or when - "what did anyone say about 63930",
+"what did I tell you this morning". Quote what was said rather than paraphrasing it, and name who
+said it and when. It is only the last 30 entries, so if the answer might be older, say so rather
+than implying the log is empty. An entry with saved=false changed nothing in the order tables - it
+is a note, usually because the order number matched nothing, and worth flagging as still unmatched.
+
 WHEN THE ORDER NUMBER MATCHES NOTHING. If they gave a number and it is not in facts.orders, say so
 plainly - "I cannot find order 71999 in my records" - and use intent "log_note" with what they told
 you in "note", keeping their number in order_id. What they said is kept either way and somebody can
@@ -189,13 +201,13 @@ const json = (body: unknown, status = 200, headers: Record<string, string> = {})
 
 /* What goes BACK to the phone.
  *
- * The full fact payload is about 100 kB, most of it the 712-order index and the urgency slice, and
+ * The full fact payload is about 107 kB, most of it the order index, the urgency slice and the log,
  * the browser needs neither: it draws the confirmation card from fabrics, materials, rails, units,
  * inventory, people and the vocabularies. Returning the lot would put 100 kB of mobile data behind
  * every single utterance, which in a lift is the difference between an answer and a spinner. The
  * model still gets everything - this trims only the copy that travels back. */
 function factsForBrowser(facts: Record<string, unknown>) {
-  const { orders: _orders, due: _due, ...rest } = facts as Record<string, unknown>;
+  const { orders: _o, due: _d, log: _l, ...rest } = facts as Record<string, unknown>;
   return { ...rest, order_known: !!facts.order };
 }
 
