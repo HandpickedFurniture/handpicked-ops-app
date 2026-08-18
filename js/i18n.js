@@ -122,7 +122,8 @@ export const I18N = {
     "chg.visit": "Additional visit", "chg.alteration": "Curtain alteration",
     "chg.removal": "Remove existing curtains", "chg.pickup": "Pickup and drop-off",
     "chg.dropoff": "Drop-off", "chg.scaffolding": "Scaffolding rental",
-    "chg.tieback": "Tie backs (post installation)", "chg.track": "Extra trunking",
+    "chg.tieback": "Tie backs (post installation)", "chg.track": "Extra track",
+    "chg.wire": "Extra wire (first 3 m free)", "chg.trunking": "Extra trunking (first 3 m free)",
     "chg.moving": "Furniture moving", "chg.other": "Other chargeable work",
 
     "adj.new": "To review", "adj.reviewed": "Agreed", "adj.invoiced": "Invoiced",
@@ -609,7 +610,8 @@ export const I18N = {
     "chg.visit": "अतिरिक्त विज़िट", "chg.alteration": "पर्दा अल्टरेशन",
     "chg.removal": "पुराने पर्दे हटाना", "chg.pickup": "पिकअप और ड्रॉप-ऑफ",
     "chg.dropoff": "ड्रॉप-ऑफ", "chg.scaffolding": "मचान किराया",
-    "chg.tieback": "टाई बैक (इंस्टॉलेशन के बाद)", "chg.track": "अतिरिक्त ट्रंकिंग",
+    "chg.tieback": "टाई बैक (इंस्टॉलेशन के बाद)", "chg.track": "अतिरिक्त ट्रैक",
+    "chg.wire": "अतिरिक्त तार (पहले 3 मीटर फ्री)", "chg.trunking": "अतिरिक्त ट्रंकिंग (पहले 3 मीटर फ्री)",
     "chg.moving": "फर्नीचर हटाना", "chg.other": "अन्य शुल्क योग्य कार्य",
 
     "adj.new": "समीक्षा हेतु", "adj.reviewed": "सहमत", "adj.invoiced": "बिल बना",
@@ -1098,7 +1100,8 @@ export const I18N = {
     "chg.visit": "অতিরিক্ত ভিজিট", "chg.alteration": "পর্দা অল্টারেশন",
     "chg.removal": "পুরনো পর্দা সরানো", "chg.pickup": "পিকআপ ও ড্রপ-অফ",
     "chg.dropoff": "ড্রপ-অফ", "chg.scaffolding": "মাচা ভাড়া",
-    "chg.tieback": "টাই ব্যাক (ইনস্টলেশনের পরে)", "chg.track": "অতিরিক্ত ট্রাঙ্কিং",
+    "chg.tieback": "টাই ব্যাক (ইনস্টলেশনের পরে)", "chg.track": "অতিরিক্ত ট্র্যাক",
+    "chg.wire": "অতিরিক্ত তার (প্রথম 3 মিটার ফ্রি)", "chg.trunking": "অতিরিক্ত ট্রাঙ্কিং (প্রথম 3 মিটার ফ্রি)",
     "chg.moving": "আসবাব সরানো", "chg.other": "অন্য চার্জযোগ্য কাজ",
 
     "adj.new": "পর্যালোচনার জন্য", "adj.reviewed": "সম্মত", "adj.invoiced": "বিল হয়েছে",

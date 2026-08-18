@@ -191,6 +191,10 @@ HOW THE BUSINESS TALKS, so you pick the right one:
   EVERYTHING ELSE IS CHARGED. The client changed their mind, asked for something new after the PO,
   was not there, the site was not ready, the client mishandled the goods, a supplier sent a wrong or
   faulty item, extra trips, scaffolding, work simply outside the ordered scope.
+  A "Consultation issue" IS CHARGED. It reads like the other two problem statuses but it is NOT one
+  of the three exceptions - the client signed the order off that consultation. Do not reason by
+  analogy from "Production issue" and "Installation issue": the exceptions are those two and a
+  missing item, and nothing else.
 
   IN CASE OF DOUBT, ASK. If you cannot tell whether what they described is one of those three, do
   not decide either way: put "cause" in "need" and ask in "say", naming both readings out loud -

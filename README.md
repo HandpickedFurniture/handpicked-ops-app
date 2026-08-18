@@ -52,8 +52,8 @@ Seven tabs, in the order the day runs: **Home · Production · Preparation · In
 PO · Chotu**. More than seven and a phone scrolls the strip sideways, which is how the last tabs stop
 being used at all.
 
-Everything else is a real route reached from **Home**, which is the full index: Schedule, Transfers,
-Dashboard, Reports, End of day, Photo audit and Roles. The old `Insights` container is gone — it
+Everything else is a real route reached from **Home**, which is the full index: Finance, Schedule,
+Transfers, Dashboard, Reports, End of day, Photo audit and Roles. The old `Insights` container is gone — it
 bundled five unrelated read-only screens behind one tab and buried the line-by-line PO review, the
 one screen coordinators work *through*, three clicks deep. That review is the **PO** tab now.
 
@@ -119,10 +119,40 @@ count. Removed photos are still listed with who removed them and why.
 
 **8. PO review** (`#/po`) — every PO line, with the 21 order-form columns coordinators read from, each
 markable and each logged with who marked it. Filterable by marks, procurement requirement and **PO
-version** — 45 of 712 orders have been revised, and a revised PO is the one worth re-reading, so
+version** — a revised PO is the one worth re-reading, so
 *Revised* is a filter value of its own beside the version numbers.
 
 **9. Chotu** (`#/chotu`) — see below.
+
+**10. Finance** (`#/finance`) — where the accounts team takes the figures for an invoice. Two grids
+behind one route. **Orders** is one row per billable PO line: order number, the billing SKU beside
+the PO SKU, description, quantity, adjusted width, price per unit, unit value and Credits, with an
+expand button carrying the whole 93-column PO row. **Adjustments** is the chargeable extras in the
+exact column order they get pasted into a sheet — City, Comment from Installation, Order name,
+Customer name, Amount, Reason — with a Copy for Sheets that writes tab-separated text, because a
+comma-separated paste lands in one column.
+
+Both grids sort on any header, select by row / by order / by everything shown, export CSV, and mark
+in bulk. Never-credit items (remotes, tie-backs, express-install freebies — the list is DATA, in
+`finance_no_credit_item`) are faded and locked at zero rather than hidden: the accountant still has
+to see the tie-back is on the order, they just must never bill it.
+
+**Three columns that look alike and are not.** `price_per_unit` is what the catalog charges for one.
+`unit_value` is what the system computed for the line. `credits_aed` is what will actually be
+invoiced — the finance override if somebody typed one, else unit_value, and always zero for a
+never-credit item. Unit value is read-only for exactly that reason.
+
+Edits never touch `order_lines_final`. `fn_rebuild_order` recomputes that table wholesale on every
+PO revision, so overrides live in `finance_line_edit` keyed by order + **version** + line. Including
+the version is the point: a revised PO is precisely where last week's agreed figure should stop
+applying rather than silently carry over.
+
+Six review rules are computed in `v_ops_finance_lines`, never in the browser, so the chips, the
+filter and the bright highlight cannot drift apart: unpriced lines, uncharged removals, a window
+over 450 cm with no scaffolding, pull cord, a duplicate line that carries money, and a Roman blind
+with no supplier type. The duplicate rule counts only paid lines — matching on window plus product
+alone flagged 416, topped by "Tie Back FOC" nine times on one window, which is correct data and free
+anyway.
 
 ## The offline write queue
 
@@ -221,8 +251,8 @@ well as spoken**; a workshop is loud and a spoken-only answer is no answer.
 1. **Grounded.** `fn_chotu_context` runs first, *as the caller*, and returns the real candidate rows —
    this order's fabrics with their receiving ids, its panels, its rails, the stock list, the crew.
    The model picks from those; it has no database access of its own.
-2. **Closed.** `intent` must be one of ten or the reply is downgraded to a plain answer. Every id in
-   `fields` is checked against the facts and **removed** if it is not there, in
+2. **Closed.** `intent` must be one of **sixteen** or the reply is downgraded to a plain answer.
+   Every id in `fields` is checked against the facts and **removed** if it is not there, in
    `supabase/functions/chotu/index.ts`.
 3. **Confirmed.** What arrives in the browser is a *proposal*, drawn as a form. The **Commit button**
    is what calls the RPC — the same `submit()` and the same replay-safe functions every other screen
@@ -230,15 +260,40 @@ well as spoken**; a workshop is loud and a spoken-only answer is no answer.
 
 So the worst a misheard sentence can do is put a wrong-looking card on screen, which somebody
 declines. Speech is fast and unreliable, so the voice carries the speed and the button carries the
-reliability. The **speaker's name** is asked before the first capture and rides on every write, since
-"who told us this" is the first question anybody asks about a record that turns out to be wrong.
+reliability. **Who said it comes from the signed-in account**, never a typed name — Chotu used to ask
+and keep it in localStorage, which was a question with a better answer already on file, and a
+free-text one at that, so the same person could be "Kausar", "kausar" and "Kausar M" on three
+records.
+
+**Sixteen intents.** Beyond receiving, prep, rails, status, tailors, issues, stock and handovers, it
+can add a whole numbered visit, propose an adjustment against the live rate card, edit order-level
+fields, and write a plain note. Adding a visit **always asks which outcome to mark** — a visit with
+no outcome is a row nobody can act on, and assuming it went well is the one assumption never to
+make. The visit number comes from `fn_chotu_context`, never from the model, because
+`order_visits.visit_no` is capped at ten.
+
+**Charge types are DERIVED from `adjustment_rate_card`, not hardcoded.** They were a literal list of
+ten; when two more were added to the CHECK and the app, Chotu silently could not propose either and
+said only that it needed a charge type. Deriving them means a new charge reaches Chotu the moment it
+has a rate.
+
+**Every capture is written to `chotu_log`**, through the same offline queue, whether or not it also
+reached a real table — and **an order number that matches nothing still lands there**, flagged, with
+Chotu saying so out loud rather than silently attaching the note to a different order. Chotu can
+read that log back: `fn_chotu_context` carries the last 30 entries, this order's history when an
+order is in scope, so "what did anyone say about 63930" works.
+
+**The confirmation card is a form.** Every field is editable and every field with a vocabulary is a
+dropdown drawn from the same closed list the database checks, so a correction cannot invent a value
+either. Photos attach, and so do files — the camera input is `capture="environment"`, which can only
+ever open the camera, so a supplier's PDF or a photo already in the gallery needs the second button.
 
 Verified against the live database: asking *"what fabrics are still pending for order 67813"* returns
 the three real codes and meterages; saying *"fabric zz9999-plural-z-alpha arrived"* is refused, names
 the three real options, and leaves Commit disabled.
 
 **The order number is found in the browser, before the facts are fetched.** Every order id is exactly
-five digits (all 712 of them, 42256–71161), so `orderIn()` in `js/mod-chotu.js` pulls it straight out
+five digits, so `orderIn()` in `js/mod-chotu.js` pulls it straight out
 of the sentence. This is load-bearing rather than an optimisation: the facts are fetched *before* the
 model runs, so an order that is not identified on the first pass is one the model was never shown —
 and it then correctly reports that it cannot find it. Chotu used to depend on the model echoing the
@@ -249,14 +304,22 @@ transcriber and none of them is a five-digit token.
 A number is only *adopted* once the facts confirm it is a real order — `facts.order` comes back null
 otherwise — so "we used 12345 meters" does not leave a bogus order in scope for the next sentence.
 
+Chotu sees **every live order**, not a slice: `facts.orders` is one compact row each (~64 kB for 700+)
+and `facts.counts` holds the real totals, so "how many orders do you know about" answers from a count
+and a customer name resolves to an order number. It used to see only the urgency slice and answered
+"80". The browser's copy of the facts drops `orders`, `due` and `log` — the card is drawn from
+fabrics, materials, rails, units, inventory and people, and the phone should not pay to download the
+rest down mobile data.
+
 The `due` list in `fn_chotu_context` is ordered by **urgency**, not by date: today, tomorrow, the day
 after, then overdue most-recent-first. It was `order by installation_date limit 60`, which sounds
 right and is exactly wrong — there are 390 overdue orders, so all 60 slots filled with the oldest of
 them (late June) and nothing due this week ever appeared. That is how a live order due in two days
 came back as "I have no details".
 
-Adding an intent means adding it to `INTENTS`, to the `validate()` switch, and to `commit()` in
-`js/mod-chotu.js`. If it does not map to an RPC that already exists, it is the wrong shape.
+Adding an intent means adding it to `INTENTS`, to the `validate()` switch, to `INTENT_OPTIONS`, to
+the card and to `commit()` in `js/mod-chotu.js`. If it does not map to an RPC that already exists, it
+is the wrong shape.
 
 ### The shared filter bar
 
@@ -395,16 +458,28 @@ js/mod-dashboard.js     module 3 + end-of-day
 js/mod-transfer.js      module 4 - transfer of materials
 js/mod-inventory.js     module 5 - inventory
 js/mod-audit.js         module 6 - photo audit
+js/mod-comments.js      module 8 - the line-by-line PO review
+js/mod-chotu.js         module 9 - the voice screen
+js/mod-finance.js       module 10 - the two finance grids
+js/mod-schedule.js      the schedule board
 js/app.js               hash router
 check_i18n.py           key parity across the three languages
 check_values.py         every written value still matches its CHECK constraint
+tools/check_columns.py  every column the app SELECTs still exists
 ```
 
-Run both checkers after touching strings or vocabularies:
+Run all three checkers after touching strings, vocabularies, a module or a view:
 
 ```bash
-python check_i18n.py && python check_values.py
+python check_i18n.py && python check_values.py && python tools/check_columns.py
 ```
+
+`check_columns.py` runs automatically on a Stop hook and blocks on failure. It exists because a
+migration dropped two columns from `v_ops_order_roster` and nothing failed until the next morning,
+for the staff, on four screens at once — PostgREST refuses the WHOLE request when one column in the
+select list is missing. It needs no credentials: the select list is resolved before RLS, so an
+unauthenticated request carrying the publishable key gets 400 for a bad column and 200 for a good
+one, which is the same code path the browser takes.
 
 ## Traps worth knowing
 
@@ -426,6 +501,21 @@ python check_i18n.py && python check_values.py
   single-flight promise. Do not remove it.
 - **`order_visits.visit_no` is capped at 10** and `v_order_status_wide` pivots exactly 1..10. The UI
   blocks visit 11 with a message; raising the cap would silently drop visits from that view.
+- **`verify_jwt = true` does NOT reject a request with no Authorization header at all.** It validates
+  the header only when one is present. A caller holding just the publishable key — which ships inside
+  this app and is public — reached `chotu` and got real order data, and reached `sched-ask` and got
+  live Gemini output on our own bill. Both functions now check for a bearer token themselves. **Any
+  new Edge Function must do the same**; the platform will not do it for you.
+- **Use `authedFetch` for anything that does not go through `api()`.** A proactive token refresh is
+  not enough on its own: `freshToken()` renews only when `session.expires_at` says the token is
+  nearly up, and a session restored from an older localStorage shape has no `expires_at`, so that
+  branch never fires. What rescues it is the refresh triggered BY a 401 — which `api()` has always
+  done and which is why every other screen kept working while Chotu answered "unavailable (401)".
+- **A dropped view column takes down four screens at once**, silently, until somebody opens the tab.
+  See `tools/check_columns.py` above, and run it after any migration that touches a view.
+- **Adding a charge type touches five places** — the CHECK on `accounting_alerts` and on
+  `adjustment_rate_card`, a rate-card row, `CHARGE_TYPES` in `js/config.js`, and its `chg.*` labels in
+  all three languages. Chotu's vocabulary is no longer one of them: it derives from the rate card.
 
 ## Setup still required
 
@@ -441,13 +531,23 @@ python check_i18n.py && python check_values.py
 
 ## Edge Functions
 
-The three functions in `supabase/functions/` live in **this** repo because all three exist only to
-serve this app — `js/voice.js` calls `transcribe`, `js/mod-chotu.js` calls `chotu`, `js/photos.js`
-calls `photo-signed-url`. Deploy from the repo root, which is where the `supabase/` directory sits:
+The four functions in `supabase/functions/` live in **this** repo because all four exist only to
+serve this app — `js/voice.js` calls `transcribe`, `js/mod-chotu.js` calls `chotu`,
+`js/mod-schedule.js` calls `sched-ask`, `js/photos.js` calls `photo-signed-url`. Deploy from the repo
+root, which is where the `supabase/` directory sits:
 
 ```bash
 supabase functions deploy chotu --project-ref jrevqijbzzwdcwxcnwfa
 ```
 
-All three run with `verify_jwt = true` and pass the caller's own bearer token through to PostgREST,
-so a function can never become a way around RLS.
+Only `chotu` and `sched-ask` are currently deployed; the other two are 404 on the project.
+
+They pass the caller's own bearer token through to PostgREST, so a function can never become a way
+around RLS — and each one checks for that token itself before doing any work, because `verify_jwt`
+does not (see Traps).
+
+**Keep this directory in step with what is deployed.** `sched-ask` was recovered into the repo on
+18 Aug 2026 having never been in it: it existed only on Supabase, so nobody reading this project
+could see what the Schedule question box did, and a deploy from source would have replaced it with
+nothing. If you edit a function in the dashboard, bring the change back here — the dashboard is a
+deploy target, not where code is written.

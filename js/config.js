@@ -250,6 +250,8 @@ export const CHARGE_TYPES = [
   { value: "scaffolding",      key: "chg.scaffolding" },
   { value: "tieback",          key: "chg.tieback" },
   { value: "extra_track",      key: "chg.track" },
+  { value: "extra_wire",       key: "chg.wire" },
+  { value: "extra_trunking",   key: "chg.trunking" },
   { value: "moving",           key: "chg.moving" },
   { value: "other",            key: "chg.other" },
 ];
