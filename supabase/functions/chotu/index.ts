@@ -234,7 +234,7 @@ Deno.serve(async (req: Request) => {
   const said = String(body.said ?? "").trim();
   if (!said) return json({ error: "Nothing was said" }, 400, headers);
 
-  /* Facts first, AS THE CALLER. verify_jwt has already established there is a valid token; passing
+  /* Facts first, AS THE CALLER. The check above has established there IS a bearer token; passing
    * it through means this reads exactly what that user is allowed to read, so the endpoint cannot
    * become a way around RLS. */
   let facts: Record<string, unknown>;
