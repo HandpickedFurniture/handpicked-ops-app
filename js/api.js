@@ -157,6 +157,30 @@ async function freshToken() {
  */
 export async function accessToken() { return freshToken(); }
 
+/* Fetch an endpoint that api() does not serve - an Edge Function or storage - WITH the same two
+ * protections api() has always had: a proactively refreshed token, and one retry after a forced
+ * refresh if the answer is still 401.
+ *
+ * THE RETRY IS THE PART THAT MATTERS, and adding only the proactive refresh did not fix Chotu.
+ * freshToken() renews just when expires_at says the token is nearly up; a session restored from an
+ * older localStorage shape has no expires_at at all, so that branch never fires and the stored
+ * token is used forever. The gateway rejects it - UNAUTHORIZED_LEGACY_JWT, or plain expiry - and
+ * only a refresh triggered BY the 401 recovers. That is exactly what api() does at its 401 branch,
+ * which is why every other screen kept working while Chotu did not.
+ */
+export async function authedFetch(url, opts = {}, retry = true) {
+  const token = await freshToken();
+  const r = await fetch(url, {
+    ...opts,
+    headers: { apikey: SB_KEY, Authorization: "Bearer " + token, ...(opts.headers || {}) },
+  });
+  if (r.status === 401 && retry) {
+    try { await refresh(); } catch (e) { throw new Error("NOT_SIGNED_IN"); }
+    return authedFetch(url, opts, false);
+  }
+  return r;
+}
+
 /* ---------------------------------------------------------------- fetch */
 /* Two calls a viewer must still be allowed to make: the rate card is a read dressed as an RPC, and
  * photo access logging has to record a viewer opening a photo - that is precisely the person the

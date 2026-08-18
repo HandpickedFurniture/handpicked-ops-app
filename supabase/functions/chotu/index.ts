@@ -212,6 +212,21 @@ Deno.serve(async (req: Request) => {
   };
   try { body = await req.json(); } catch { return json({ error: "Bad JSON" }, 400, headers); }
 
+  /* THE FUNCTION CHECKS ITS OWN CALLER, because verify_jwt does not when the header is ABSENT.
+   *
+   * Proved by curl on 18 Aug 2026: a POST carrying only the publishable key - which ships inside
+   * the app and is therefore public - and NO Authorization header returned 200 and a real answer
+   * about real orders. A malformed or expired token is rejected by the gateway, but no token at
+   * all sails straight through. That is every order in the book, readable by anyone who opens
+   * devtools, so the check cannot live only in the gateway.
+   *
+   * This is a shape check. The gateway still does the cryptography on any token that IS present,
+   * and fn_chotu_context still runs as the caller so RLS decides what they may actually see. */
+  const authz = req.headers.get("Authorization") ?? "";
+  if (!/^bearer\s+\S+/i.test(authz)) {
+    return json({ error: "Not signed in" }, 401, headers);
+  }
+
   if (body.probe) {
     return json({ ok: !!API_KEY, model: MODEL, intents: INTENTS }, 200, headers);
   }
@@ -222,13 +237,12 @@ Deno.serve(async (req: Request) => {
   /* Facts first, AS THE CALLER. verify_jwt has already established there is a valid token; passing
    * it through means this reads exactly what that user is allowed to read, so the endpoint cannot
    * become a way around RLS. */
-  const auth = req.headers.get("Authorization") ?? "";
   let facts: Record<string, unknown>;
   try {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/fn_chotu_context`, {
       method: "POST",
       headers: {
-        Authorization: auth,
+        Authorization: authz,
         apikey: req.headers.get("apikey") ?? "",
         "Content-Type": "application/json",
       },

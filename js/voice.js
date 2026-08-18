@@ -15,7 +15,7 @@
  */
 import { SB_URL, SB_KEY } from "./config.js";
 import { getLang, SPEECH_LOCALE, tr } from "./i18n.js";
-import { accessToken } from "./api.js";
+import { authedFetch } from "./api.js";
 import { toast } from "./ui.js";
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -123,9 +123,6 @@ export function attachMic(btn, target, onResult) {
 }
 
 async function transcribe(blob, lang) {
-  let token;
-  try { token = await accessToken(); }
-  catch (e) { throw new Error(tr("auth.required")); }
 
   const b64 = await new Promise((resolve, reject) => {
     const r = new FileReader();
@@ -134,11 +131,9 @@ async function transcribe(blob, lang) {
     r.readAsDataURL(blob);
   });
 
-  const r = await fetch(SB_URL + "/functions/v1/transcribe", {
+  const r = await authedFetch(SB_URL + "/functions/v1/transcribe", {
     method: "POST",
     headers: {
-      apikey: SB_KEY,
-      Authorization: "Bearer " + token,   // the function runs with verify_jwt = true
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ audio: b64, mime: blob.type, lang }),

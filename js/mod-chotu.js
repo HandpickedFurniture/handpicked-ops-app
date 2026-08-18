@@ -24,7 +24,7 @@
  * and a free-text one at that, so the same person could be "Kausar", "kausar" and "Kausar M" on
  * three different records. One account per person is the rule here; the account IS the name.
  */
-import { api, rpc, submit, currentActor, queueDepth, isSignedIn, isViewer, accessToken } from "./api.js";
+import { api, rpc, submit, currentActor, queueDepth, isSignedIn, isViewer, authedFetch } from "./api.js";
 import {
   SB_URL, SB_KEY, ORDER_STATUSES, DISPATCH_SUBSTATES, DISPATCH_CONTRACTORS, PREP_STAGES,
   STACK_FLOORS, STACK_RACKS, STACK_SHELVES, STACK_ZONES, CHARGE_TYPES,
@@ -85,26 +85,23 @@ function say(text) {
 
 /* ------------------------------------------------------------------ the brain */
 async function ask(said) {
-  /* A refreshed token, not the raw one from page load. This used to read getSession().access_token
-   * directly, so about an hour into a shift the function started refusing it and Chotu answered
-   * "unavailable (401)" while every other screen carried on - because every other screen goes
-   * through api(), which refreshes. NOT_SIGNED_IN is caught and softened here: that string would
-   * otherwise land in the chat bubble AND be read aloud to somebody holding a curtain. */
-  let token;
-  try { token = await accessToken(); }
-  catch (e) { throw new Error(tr("auth.required")); }
-  const r = await fetch(SB_URL + "/functions/v1/chotu", {
-    method: "POST",
-    headers: {
-      apikey: SB_KEY,
-      Authorization: "Bearer " + token,   // verify_jwt = true on the function
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      said, order_id: ORDER, speaker: speaker(), lang: getLang(),
-      history: HISTORY.slice(-6).map((h) => ({ who: h.who, text: h.text })),
-    }),
-  });
+  /* authedFetch refreshes the token up front AND retries once after a forced refresh on a 401.
+   * The retry is the part that matters: a session restored from an older localStorage shape has
+   * no expires_at, so the proactive branch never fires and the stored token is used until the
+   * gateway rejects it. Every other screen recovered from that via api()'s own 401 retry. */
+  let r;
+  try {
+    r = await authedFetch(SB_URL + "/functions/v1/chotu", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        said, order_id: ORDER, speaker: speaker(), lang: getLang(),
+        history: HISTORY.slice(-6).map((h) => ({ who: h.who, text: h.text })),
+      }),
+    });
+  } catch (e) {
+    throw new Error(e.message === "NOT_SIGNED_IN" ? tr("auth.required") : e.message);
+  }
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || `Chotu is unavailable (${r.status})`);
   return j;
