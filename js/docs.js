@@ -12,7 +12,7 @@
  * Buckets are PRIVATE. Every link is a short-lived signed URL, minted on demand.
  */
 import { SB_URL, SB_KEY } from "./config.js";
-import { api, getSession } from "./api.js";
+import { api, accessToken } from "./api.js";
 import { tr } from "./i18n.js";
 import { esc, el, chip, num, fmtDate, toast } from "./ui.js";
 
@@ -36,11 +36,10 @@ export async function listDocs(orderId) {
 }
 
 export async function signedUrl(bucket, path, download) {
-  const s = getSession();
-  if (!s || !s.access_token) throw new Error(tr("auth.required"));
+  const tok = await accessToken();
   const r = await fetch(`${SB_URL}/storage/v1/object/sign/${bucket}/${encodeURI(path)}`, {
     method: "POST",
-    headers: { apikey: SB_KEY, Authorization: "Bearer " + s.access_token,
+    headers: { apikey: SB_KEY, Authorization: "Bearer " + tok,
                "Content-Type": "application/json" },
     body: JSON.stringify({ expiresIn: 600 }),
   });

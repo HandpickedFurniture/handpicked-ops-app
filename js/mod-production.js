@@ -34,7 +34,7 @@ const ROSTER_COLS = [
   "prep_total", "prep_done", "prep_started", "dispatch", "dispatch_all_back",
   "adj_total", "adj_new", "adj_agreed_aed", "production_hold", "cancelled", "hold_reason",
   "team_no", "order_status", "ready", "alteration", "alteration_note",
-  "fabric_meters_total", "meters_sent_total", "production_state",
+  "report_meters", "meters_is_received", "production_state",
   "dispatch_qc_failed", "dispatch_qc_passed", "dispatch_issue",
   "recv_fab_total", "recv_fab_done", "recv_mat_total", "recv_mat_done",
   "prep_max_rank", "owl_curtains", "owl_blinds", "owl_total", "issue_flag",
@@ -131,7 +131,7 @@ async function renderList(mount, state, setFilters) {
       <div class="tot"><b>${esc(num(sum("owl_curtains")))}</b><span>${esc(tr("col.owlCurtains"))}</span></div>
       <div class="tot"><b>${esc(num(sum("owl_blinds")))}</b><span>${esc(tr("col.owlBlinds"))}</span></div>
       <div class="tot"><b>${esc(num(sum("owl_total")))}</b><span>${esc(tr("col.owlTotal"))}</span></div>
-      <div class="tot"><b>${esc(num(sum("meters_sent_total")))}</b><span>${esc(tr("col.metersSent"))}</span></div>
+      <div class="tot"><b>${esc(num(sum("report_meters")))}</b><span>${esc(tr("col.meters"))}</span></div>
       <div class="tot"><b>${esc(num(sum("n_motor")))}</b><span>${esc(tr("sp.motor"))}</span></div>
       <div class="tot"><b>${esc(num(sum("n_roman")))}</b><span>${esc(tr("sp.roman"))}</span></div>
       <div class="tot"><b>${esc(num(sum("n_roller")))}</b><span>${esc(tr("sp.roller"))}</span></div>
@@ -213,7 +213,7 @@ const SORT_KEYS = {
   installation_date: (r) => r.installation_date || "",
   city:              (r) => r.city || "",
   customer_name:     (r) => r.customer_name || "",
-  meters:            (r) => Number(r.meters_sent_total) || 0,
+  meters:            (r) => Number(r.report_meters) || 0,
   // by fabric code, so the orders sharing a roll end up next to each other - which is the reason
   // anyone sorts this column: one cutting session, one fabric
   fabrics:           (r) => (r.fabrics || []).map((x) => x.code).join(" "),
@@ -366,7 +366,7 @@ function cardView(rows) {
             <div class="oname">${esc(r.customer_name || "—")}</div>
             <div class="osub">${esc(r.city || tr("t.cityUnknown"))} · ${esc(fmtDate(r.installation_date))}
               · ${esc(r.window_count)} ${esc(tr("col.windows").toLowerCase())}
-              · ${esc(num(r.meters_sent_total))} m
+              · ${esc(num(r.report_meters))} m
               ${r.sheet_status ? " · " + esc(r.sheet_status) : ""}</div>
             <div class="ochips">${flagChips(r)}</div>
             <div class="ochips">${fabricCell(r)}</div>
@@ -444,14 +444,11 @@ function tableView(rows, selected) {
         <td>${esc(r.city || "—")}${r.city_source === "sheet" ? '<div class="muted">3D</div>' : ""}</td>
         <!-- the alteration flag rides in flagChips here, so it no longer needs a column of its own -->
         <td>${esc(r.customer_name || "—")}<div>${flagChips(r)}</div></td>
-        <!-- Metres SENT leads and the PO's planned figure sits under it. They disagree on 659 of
-             693 orders and sent is the one the floor cuts against, so it is the number in bold. -->
-        <td><b>${esc(num(r.meters_sent_total))}</b>
-            ${Number(r.fabric_meters_total) &&
-              Math.abs(Number(r.meters_sent_total) - Number(r.fabric_meters_total)) > 0.5
-              ? `<div class="muted" title="${esc(tr("t.metersNote"))}">${
-                   esc(tr("col.meters"))} ${esc(num(r.fabric_meters_total))}</div>`
-              : ""}</td>
+        <!-- Metres RECEIVED where receiving has been logged, else the PO figure (user, 15 Aug).
+             The old 'planned' figure under this cell came from fabric_meters, which ignores height
+             and roll width and is 0 for any SKU outside AC/WC - it was ~70% of reality, so it is no
+             longer shown at all rather than shown wrong. -->
+        <td><b>${esc(num(r.report_meters))}</b></td>
         <td>${fabricCell(r)}</td>
         <td>${specialCell(r)}</td>
         <td>
@@ -599,8 +596,8 @@ function csvRow(r) {
     sheet_status: r.sheet_status || "",
     version: r.version_no ?? 1,
     windows: r.window_count,
-    meters_sent: r.meters_sent_total,
-    meters_planned: r.fabric_meters_total,
+    meters: r.report_meters,
+    meters_is_received: r.meters_is_received ? "yes" : "no",
     fabric_status: r.fabric_recv_state || "",
     fabric_received: `${r.recv_fab_done}/${r.recv_fab_total}`,
     materials_received: `${r.recv_mat_done}/${r.recv_mat_total}`,

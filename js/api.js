@@ -146,6 +146,17 @@ async function freshToken() {
   return session.access_token;
 }
 
+/* The access token, refreshed if it is within two minutes of expiring - for the calls that do NOT
+ * go through api(): the three Edge Functions and the storage endpoints, which PostgREST does not
+ * serve and which therefore never saw freshToken().
+ *
+ * Those call sites read getSession().access_token straight off the module, which is the token as it
+ * was when the tab loaded. api() has always refreshed proactively AND retried a 401 once; they did
+ * neither. So about an hour into a shift Chotu began answering "unavailable (401)" while every
+ * other screen carried on working - because every other screen was refreshing and these were not.
+ */
+export async function accessToken() { return freshToken(); }
+
 /* ---------------------------------------------------------------- fetch */
 /* Two calls a viewer must still be allowed to make: the rate card is a read dressed as an RPC, and
  * photo access logging has to record a viewer opening a photo - that is precisely the person the

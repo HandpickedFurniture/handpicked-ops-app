@@ -33,7 +33,7 @@ const CAPS = { fabstatus: true, prodstate: true };
 
 const COLS = [
   "order_id", "customer_name", "city", "installation_date", "date_bucket", "window_count",
-  "meters_sent_total", "fabric_meters_total", "prep_total", "prep_done", "prep_started",
+  "report_meters", "meters_is_received", "prep_total", "prep_done", "prep_started",
   "prep_max_rank", "production_state", "recv_fab_done", "recv_fab_total", "sheet_status",
   "production_hold", "cancelled", "fabric_recv_state",
 ].join(",");
@@ -147,7 +147,7 @@ function orderCard(r, selected, bulk) {
           <div class="oname">${esc(r.customer_name || "—")}</div>
           <div class="osub">${esc(r.city || tr("t.cityUnknown"))} · ${esc(fmtDate(r.installation_date))}
             · ${esc(r.window_count)} ${esc(tr("col.windows").toLowerCase())}
-            · ${esc(num(r.meters_sent_total))} m</div>
+            · ${esc(num(r.report_meters))} m</div>
           <div class="ochips" style="gap:10px">
             <span class="muted">${esc(tr("col.recvFabric"))}</span>
               ${progressBar(r.recv_fab_done, r.recv_fab_total)}

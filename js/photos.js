@@ -20,7 +20,7 @@ import {
   SB_URL, SB_KEY, PHOTO_BUCKET, PHOTO_MAX_PX, PHOTO_QUALITY, STORAGE_PREFIX,
   PHOTO_RETRIES, PHOTO_RETRY_MS,
 } from "./config.js";
-import { api, rpc, getSession, currentActor, isViewer } from "./api.js";
+import { api, rpc, accessToken, currentActor, isViewer } from "./api.js";
 import { tr } from "./i18n.js";
 import { esc, el, toast, modal, fmtDateTime, num } from "./ui.js";
 
@@ -46,12 +46,12 @@ async function backend() {
 
   let chosen = "supabase";
   try {
-    const s = getSession();
+    const tok = await accessToken();
     const r = await fetch(SB_URL + "/functions/v1/photo-signed-url", {
       method: "POST",
       headers: {
         apikey: SB_KEY,
-        Authorization: "Bearer " + (s && s.access_token),
+        Authorization: "Bearer " + tok,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ probe: true }),
@@ -195,12 +195,11 @@ export async function uploadPhoto(file, meta) {
 }
 
 async function putSupabase(path, blob, type) {
-  const s = getSession();
-  if (!s || !s.access_token) throw new Error(tr("auth.required"));
+  const tok = await accessToken();
   const r = await fetch(`${SB_URL}/storage/v1/object/${PHOTO_BUCKET}/${encodeURI(path)}`, {
     method: "POST",
     headers: {
-      apikey: SB_KEY, Authorization: "Bearer " + s.access_token,
+      apikey: SB_KEY, Authorization: "Bearer " + tok,
       "Content-Type": type || "image/jpeg",
     },
     body: blob,
@@ -216,11 +215,11 @@ async function putSupabase(path, blob, type) {
 }
 
 async function putGcs(path, blob, type) {
-  const s = getSession();
+  const tok = await accessToken();
   const ct = type || "image/jpeg";
   const r = await fetch(SB_URL + "/functions/v1/photo-signed-url", {
     method: "POST",
-    headers: { apikey: SB_KEY, Authorization: "Bearer " + s.access_token, "Content-Type": "application/json" },
+    headers: { apikey: SB_KEY, Authorization: "Bearer " + tok, "Content-Type": "application/json" },
     body: JSON.stringify({ action: "upload", path, contentType: ct }),
   });
   const j = await r.json().catch(() => ({}));
@@ -244,23 +243,22 @@ async function putGcs(path, blob, type) {
 export async function viewUrl(photo, purpose) {
   let url;
   if (photo.storage_backend === "gcs") {
-    const s = getSession();
+    const tok = await accessToken();
     const r = await fetch(SB_URL + "/functions/v1/photo-signed-url", {
       method: "POST",
-      headers: { apikey: SB_KEY, Authorization: "Bearer " + s.access_token, "Content-Type": "application/json" },
+      headers: { apikey: SB_KEY, Authorization: "Bearer " + tok, "Content-Type": "application/json" },
       body: JSON.stringify({ action: "view", path: photo.object_path }),
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.url) throw new Error(j.error || "Could not open that photo");
     url = j.url;
   } else {
-    const s = getSession();
-    if (!s || !s.access_token) throw new Error(tr("auth.required"));
+    const tok = await accessToken();
     const r = await fetch(
       `${SB_URL}/storage/v1/object/sign/${photo.bucket}/${encodeURI(photo.object_path)}`,
       {
         method: "POST",
-        headers: { apikey: SB_KEY, Authorization: "Bearer " + s.access_token, "Content-Type": "application/json" },
+        headers: { apikey: SB_KEY, Authorization: "Bearer " + tok, "Content-Type": "application/json" },
         body: JSON.stringify({ expiresIn: 600 }),
       });
     const j = await r.json().catch(() => ({}));
@@ -312,12 +310,11 @@ export async function signedUrlMap(photos) {
 
   for (const [bucket, group] of byBucket) {
     try {
-      const s = getSession();
-      if (!s || !s.access_token) break;
+      const tok = await accessToken();
       const r = await fetch(`${SB_URL}/storage/v1/object/sign/${bucket}`, {
         method: "POST",
         headers: {
-          apikey: SB_KEY, Authorization: "Bearer " + s.access_token,
+          apikey: SB_KEY, Authorization: "Bearer " + tok,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ expiresIn: 600, paths: group.map((p) => p.object_path) }),

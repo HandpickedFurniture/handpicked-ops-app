@@ -14,7 +14,7 @@
  * render() per drag is unusable on a phone, so edits mutate a module-level model and repaint only
  * #schboard. Any error falls back to the house toast + full reload.
  */
-import { api, rpc, isSignedIn, isViewer, currentActor, getSession } from "./api.js";
+import { api, rpc, isSignedIn, isViewer, currentActor, accessToken } from "./api.js";
 import { tr, getLang } from "./i18n.js";
 import { UTIL_BANDS, STOP_TAGS, SB_URL, SB_KEY } from "./config.js";
 import { $, esc, el, num, chip, fmtDate, toast, loading, modal, confirmSheet, orderLabel } from "./ui.js";
@@ -263,8 +263,7 @@ function paintActions(date) {
 const ASK_TIMEOUT_MS = 9000;
 
 async function askEdge(runId, question) {
-  const s = getSession();
-  if (!s || !s.access_token) throw new Error("NOT_SIGNED_IN");
+  const tok = await accessToken();
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), ASK_TIMEOUT_MS);
   try {
@@ -273,7 +272,7 @@ async function askEdge(runId, question) {
       signal: ctl.signal,
       headers: {
         apikey: SB_KEY,
-        Authorization: "Bearer " + s.access_token,
+        Authorization: "Bearer " + tok,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ run_id: runId, question }),
