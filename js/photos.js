@@ -17,7 +17,7 @@
  * through the offline queue in api.js; the photo reports its own success or failure.
  */
 import {
-  SB_URL, SB_KEY, PHOTO_BUCKET, PHOTO_MAX_PX, PHOTO_QUALITY, STORAGE_PREFIX,
+  SB_URL, PHOTO_BUCKET, PHOTO_MAX_PX, PHOTO_QUALITY, STORAGE_PREFIX,
   PHOTO_RETRIES, PHOTO_RETRY_MS,
 } from "./config.js";
 import { api, rpc, authedFetch, currentActor, isViewer } from "./api.js";
@@ -246,7 +246,12 @@ export async function viewUrl(photo, purpose) {
     if (!r.ok || !j.url) throw new Error(j.error || "Could not open that photo");
     url = j.url;
   } else {
-    const r = await fetch(
+    /* authedFetch, NOT fetch. Storage validates its headers with a schema, so a request that
+     * arrives with no Authorization at all is rejected at the door - 400, "headers must have
+     * required property 'authorization'" - and that message went straight into the toast, which
+     * is what the workshop saw when they tapped a Production photo. Signing a private object is
+     * an authenticated call like any other: it needs the apikey, the bearer, and the 401 retry. */
+    const r = await authedFetch(
       `${SB_URL}/storage/v1/object/sign/${photo.bucket}/${encodeURI(photo.object_path)}`,
       {
         method: "POST",
