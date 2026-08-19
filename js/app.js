@@ -178,8 +178,10 @@ function queueSheet() {
    * phone gets you half of it; this gets you all of it. No order data, just what went wrong. */
   const details = () => JSON.stringify({
     build: BUILD, online: navigator.onLine, at: new Date().toISOString(),
-    waiting: waiting.map((r) => ({ fn: r.fn, ts: r.ts, tries: r.tries || 0, lastError: r.lastError })),
-    failed: failed.map((r) => ({ fn: r.fn, ts: r.ts, error: r.error })),
+    waiting: waiting.map((r) => ({
+      fn: r.fn, ts: r.ts, tries: r.tries || 0, lastError: r.lastError, raw: r.lastRaw || undefined,
+    })),
+    failed: failed.map((r) => ({ fn: r.fn, ts: r.ts, error: r.error, raw: r.raw || undefined })),
   }, null, 1);
 
   const m = modal(`

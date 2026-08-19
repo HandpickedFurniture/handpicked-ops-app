@@ -8,7 +8,7 @@
  * transfer (transfer_out / transfer_in), or consumed against an order.
  */
 import {
-  api, rpc, submit, currentActor, queueDepth, isSignedIn, isViewer, flush, failedWrites,
+  api, rpc, submit, currentActor, queueDepth, isSignedIn, isViewer, flush, failedWrites, rawMessage,
 } from "./api.js";
 /* fn_ops_pack_limit and the qty override both live in the database, so the rules hold however the
  * row arrives - not only through this screen. */
@@ -527,7 +527,7 @@ async function packsSection(r, act, reload) {
           toast(tr("t.saved"), "ok");
           reload();
         } catch (e) {
-          errBox.textContent = /10 pack/.test(e.message) ? tr("inv.packLimit") : e.message;
+          errBox.textContent = /10 pack/.test(rawMessage(e)) ? tr("inv.packLimit") : e.message;
           errBox.classList.remove("hidden");
         }
       };

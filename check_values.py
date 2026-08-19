@@ -31,7 +31,12 @@ EXPECTED = {
     "DISPATCH_CONTRACTORS": {"farooq", "jamal", "shahzad", "other"},
     "DISPATCH_SUBSTATES": {"planned", "sent", "received_back", "qc_passed", "paid",
                            "qc_failed", "issue"},
+    # extra_wire and extra_trunking were added to accounting_alerts_charge_type_check and to
+    # adjustment_rate_card_charge_type_check when wire and trunking stopped sharing extra_track's
+    # row. This mirror was not updated with them, so the check called two values the database
+    # accepts a rejection waiting to happen - verified against both live constraints 19 Aug 2026.
     "CHARGE_TYPES": {"alteration", "pickup", "drop_off", "moving", "removal", "extra_track",
+                     "extra_wire", "extra_trunking",
                      "scaffolding", "additional_visit", "tieback", "other"},
     "ADJ_STATUSES": {"new", "reviewed", "invoiced", "dropped"},
     # date_bucket is computed in v_ops_order_roster, not a CHECK - these must match that CASE

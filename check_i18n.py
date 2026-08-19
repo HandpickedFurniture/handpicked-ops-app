@@ -78,6 +78,13 @@ for f in glob.glob(os.path.join(os.path.dirname(path) or ".", "*.js")):
     used |= set(re.findall(r'\btr\(\s*"([^"]+)"', body))
     used |= set(re.findall(r'\bkey:\s*"([^"]+)"', body))
     used |= set(re.findall(r'\bdesc:\s*"([^"]+)"', body))
+    # err.* keys reach tr() through a variable - explain() picks one and say() translates it,
+    # and serverError() takes a fallback key as an argument - so the literal is never inside a
+    # tr(...) call for the pattern above to find. Scanning for the literals matters more than
+    # tidying the unused list: tr() returns the KEY when it cannot find it, so a mistyped
+    # err.dupliacte would put that string itself on somebody's screen, which is the exact
+    # thing these messages exist to prevent.
+    used |= set(re.findall(r'"(err[.][A-Za-z0-9_.]+)"', body))
 unknown = sorted(k for k in used if k not in ev)
 if unknown:
     problems.append(f"tr() references keys that do not exist: {unknown}")

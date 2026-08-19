@@ -12,7 +12,7 @@
  * Buckets are PRIVATE. Every link is a short-lived signed URL, minted on demand.
  */
 import { SB_URL, SB_KEY } from "./config.js";
-import { api, authedFetch } from "./api.js";
+import { api, authedFetch, serverError } from "./api.js";
 import { tr } from "./i18n.js";
 import { esc, el, chip, num, fmtDate, toast } from "./ui.js";
 
@@ -42,8 +42,8 @@ export async function signedUrl(bucket, path, download) {
                "Content-Type": "application/json" },
     body: JSON.stringify({ expiresIn: 600 }),
   });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok || !j.signedURL) throw new Error(j.message || j.error || "Could not open that file");
+  const j = await r.json().catch(() => null);
+  if (!r.ok || !j || !j.signedURL) throw serverError(r.status, j, "doc sign", "err.docOpen");
   const base = SB_URL + "/storage/v1" + (j.signedURL.startsWith("/") ? "" : "/") + j.signedURL;
   // `download` makes the browser save it rather than preview it in a tab
   return download ? base + (base.includes("?") ? "&" : "?") + "download" : base;

@@ -181,6 +181,83 @@ export async function authedFetch(url, opts = {}, retry = true) {
   return r;
 }
 
+/* ---------------------------------------------------------------- what to tell a person
+ * WHAT THE SERVER SAID AND WHAT SOMEBODY SHOULD BE TOLD ARE NOT THE SAME SENTENCE, and for a long
+ * time this app showed the first one. Tapping a photo in Production answered "headers must have
+ * required property 'authorization'" - a storage header-schema rejection, verbatim, in a toast on a
+ * phone. Nobody standing in a workshop can act on that, so nobody repeated it accurately either,
+ * and a one-line fix went unreported for a week.
+ *
+ * So an error now carries BOTH halves. `.message` is for the person and is translated; `.raw` is
+ * what the server actually said and goes to the console, to the queue, and into the paste that the
+ * Copy details button produces. `.status` and `.code` travel with it for the same reason.
+ *
+ * WHAT THIS MUST NEVER DO IS SWALLOW A MESSAGE THE DATABASE WROTE ON PURPOSE. A `raise exception`
+ * inside an fn_* - the pack limit, the roman-blind rules, every business rule that speaks to staff
+ * in their own words - arrives as PostgREST code P0001, and it is already the best sentence anybody
+ * could put on a screen. Those pass through untouched. Only infrastructure noise gets replaced,
+ * because that is the part nobody can do anything about.
+ */
+export function explain(status, j, fallbackKey) {
+  const raw = (j && (j.message || j.hint || j.details || j.error)) || "";
+  const code = String((j && j.code) || "");
+
+  // P0001 is `raise exception` in plpgsql: a rule written for staff to read. Show it as written.
+  if (/^P0/.test(code)) return { text: raw, raw, code };
+
+  const key = errorKey(status, raw, code);
+  /* A caller that knows what the person was DOING beats a generic sentence about the server.
+   * "That photo did not upload - the status change was still saved" answers the question they
+   * actually have; "the server had a problem" leaves them wondering whether they lost the work.
+   * Only the vague keys give way. A stale session, an out-of-date page or a file that is too big
+   * is specific, actionable advice and outranks whatever the caller guessed. */
+  const chosen = fallbackKey && VAGUE.has(key) ? fallbackKey : key;
+  return { text: tr(chosen, { code: code || status || "?" }), raw, code };
+}
+
+/* The keys that say something true but useless on their own. A caller with context replaces these. */
+const VAGUE = new Set(["err.unknown", "err.server", "err.busy", "err.notFound"]);
+
+function errorKey(status, raw, code) {
+  if (code === "23505" || /duplicate key|already exists/i.test(raw)) return "err.duplicate";
+
+  /* A schema mismatch is the one server-side fault a person CAN fix from where they are standing:
+   * it means the tab they have open is running against a view that has changed shape underneath
+   * it. "Refresh the page" is both true and actionable, where "server error" would send them to
+   * ring the office about something a reload fixes. */
+  if (/^PGRST/.test(code) || code === "42703" || code === "42P01") return "err.outOfDate";
+
+  if (status === 401) return "err.session";
+  if (status === 403) return "err.denied";
+  /* The failure this whole helper came from: an auth-shaped 400 out of storage. It is not a bad
+   * request in any sense the person can influence - their credentials did not arrive - so it is
+   * told as the stale session it almost always is. */
+  if (status === 400 && /authorization|jwt|api ?key|token/i.test(raw)) return "err.session";
+  if (status === 413) return "err.tooBig";
+  if (status === 404) return "err.notFound";
+  if (status === 429) return "err.busy";
+  if (status >= 500) return "err.server";
+  return "err.unknown";
+}
+
+/* Builds the Error the rest of the app throws, and puts the technical half where it belongs: on the
+ * object and in the console, never in a toast. `where` is the call site, so a console line says
+ * which request it was without anybody having to guess from the status alone. */
+export function serverError(status, j, where, fallbackKey) {
+  const { text, raw, code } = explain(status, j, fallbackKey);
+  const err = new Error(text);
+  err.status = status;
+  err.raw = raw;
+  err.code = code;
+  console.warn(("[" + (where || "request") + "] " + status + " " + code + " " + raw).replace(/\s+/g, " ").trim());
+  return err;
+}
+
+/* The server's own words, for the few places that BRANCH on them rather than show them. They must
+ * not read `.message` for that any more - that is the translated sentence now, and it will not
+ * match a pattern written against Postgres wording. */
+export function rawMessage(e) { return (e && (e.raw || e.message)) || ""; }
+
 /* ---------------------------------------------------------------- fetch */
 /* Two calls a viewer must still be allowed to make: the rate card is a read dressed as an RPC, and
  * photo access logging has to record a viewer opening a photo - that is precisely the person the
@@ -265,11 +342,9 @@ export async function api(path, opts = {}, retry = true) {
   }
 
   if (!r.ok) {
-    let m = "Request failed (" + r.status + ")";
-    try { const j = await r.json(); m = j.message || j.hint || j.details || j.error || m; } catch (e) {}
-    const err = new Error(m);
-    err.status = r.status;
-    throw err;
+    let j = null;
+    try { j = await r.json(); } catch (e) { /* not every failure answers in JSON */ }
+    throw serverError(r.status, j, path.split("?")[0]);
   }
 
   const txt = await r.text();
@@ -372,8 +447,11 @@ function dropQueued(id) {
  * it can go. A genuinely OFFLINE item is never counted against this - see below. */
 const MAX_TRIES = 5;
 
-function park(item, message) {
-  writeQueue(FAILED_KEY, readQueue(FAILED_KEY).concat([{ ...item, error: message }]));
+/* `raw` rides along beside `error`: the friendly sentence is what the list shows, the server's own
+ * words are what Copy details pastes. Losing the second one would make the paste useless for
+ * exactly the person it exists to help. */
+function park(item, message, raw) {
+  writeQueue(FAILED_KEY, readQueue(FAILED_KEY).concat([{ ...item, error: message, raw: raw || null }]));
   emit("failed", message);
 }
 
@@ -418,22 +496,22 @@ async function drain() {
         /* No signal, or the request timed out. RECORD WHY before stopping: a queue that says
          * "18 waiting" and cannot say what it is waiting on is a queue nobody can diagnose. */
         writeQueue(QUEUE_KEY, readQueue(QUEUE_KEY)
-          .map((x) => (x.id === item.id ? { ...x, lastError: e.message, lastTry: Date.now() } : x)));
+          .map((x) => (x.id === item.id ? { ...x, lastError: e.message, lastRaw: e.raw || null, lastTry: Date.now() } : x)));
         break;
       }
       if (e.status >= 500) {
         // the server broke. Worth retrying, but not forever, and not at everyone else's expense
         const tries = (item.tries || 0) + 1;
-        if (tries >= MAX_TRIES) { park(item, e.message); q = dropQueued(item.id); continue; }
+        if (tries >= MAX_TRIES) { park(item, e.message, e.raw); q = dropQueued(item.id); continue; }
         // persist the count, or every flush would start again from one and this would never park
         writeQueue(QUEUE_KEY, readQueue(QUEUE_KEY)
-          .map((x) => (x.id === item.id ? { ...x, tries, lastError: e.message } : x)));
+          .map((x) => (x.id === item.id ? { ...x, tries, lastError: e.message, lastRaw: e.raw || null } : x)));
         q = readQueue(QUEUE_KEY);
         i++;                       // leave it queued, but do not let it hold up the rest
         continue;
       }
       // refused before it left the browser, or any 3xx/4xx: it will never succeed. Park it.
-      park(item, e.message);
+      park(item, e.message, e.raw);
       q = dropQueued(item.id);     // the next item slides into this index
       continue;
     }

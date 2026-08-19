@@ -9,7 +9,7 @@
  * A revisit is itself billable, so recording visit 2+ auto-proposes an additional_visit charge. It is
  * proposed, never billed silently: it lands as status 'new' for a human to confirm or drop.
  */
-import { api, apiAll, rpc, submit, currentActor, queueDepth, isSignedIn } from "./api.js";
+import { api, apiAll, rpc, submit, currentActor, queueDepth, isSignedIn, rawMessage } from "./api.js";
 import { tr, tv, getLang } from "./i18n.js";
 import {
   ORDER_STATUSES, STATUS_TONE, CHARGE_TYPES, ADJ_STATUSES, TRANSFER_STATUSES, SPECIAL_COLS,
@@ -386,7 +386,7 @@ function wireMemberSelects(root) {
         });
       } catch (e) {
         // a duplicate is fine - the name already exists, just select it
-        if (!/duplicate|unique/i.test(e.message)) { toast(e.message, "bad"); return; }
+        if (!/duplicate|unique/i.test(rawMessage(e))) { toast(e.message, "bad"); return; }
       }
       await loadMembers(true);
       root.querySelectorAll('select[name^="vm"]').forEach((s) => {

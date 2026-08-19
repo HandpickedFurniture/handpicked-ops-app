@@ -20,7 +20,7 @@ import {
   SB_URL, PHOTO_BUCKET, PHOTO_MAX_PX, PHOTO_QUALITY, STORAGE_PREFIX,
   PHOTO_RETRIES, PHOTO_RETRY_MS,
 } from "./config.js";
-import { api, rpc, authedFetch, currentActor, isViewer } from "./api.js";
+import { api, rpc, authedFetch, serverError, currentActor, isViewer } from "./api.js";
 import { tr } from "./i18n.js";
 import { esc, el, toast, modal, fmtDateTime, num } from "./ui.js";
 
@@ -200,12 +200,10 @@ async function putSupabase(path, blob, type) {
     body: blob,
   });
   if (!r.ok) {
-    let m = "Upload failed (" + r.status + ")";
-    try { const j = await r.json(); m = j.message || j.error || m; } catch (e) {}
-    // carried so withRetry can tell a dead 4xx from a flaky connection
-    const err = new Error(m);
-    err.status = r.status;
-    throw err;
+    let j = null;
+    try { j = await r.json(); } catch (e) { /* storage does not always answer in JSON */ }
+    // serverError carries .status too, so withRetry can still tell a dead 4xx from a flaky connection
+    throw serverError(r.status, j, "photo upload", "err.photoUpload");
   }
 }
 
@@ -216,18 +214,13 @@ async function putGcs(path, blob, type) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action: "upload", path, contentType: ct }),
   });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok || !j.url) {
-    const err = new Error(j.error || "Could not get an upload link");
-    err.status = r.status;
-    throw err;
-  }
+  const j = await r.json().catch(() => null);
+  if (!r.ok || !j || !j.url) throw serverError(r.status, j, "photo upload link", "err.photoUpload");
 
   const up = await fetch(j.url, { method: "PUT", headers: { "Content-Type": ct }, body: blob });
   if (!up.ok) {
-    const err = new Error("Google Cloud upload failed (" + up.status + ")");
-    err.status = up.status;
-    throw err;
+    // Google answers in XML, so there is no JSON body to read - the status is the whole story
+    throw serverError(up.status, null, "photo upload (gcs)", "err.photoUpload");
   }
 }
 
@@ -242,8 +235,8 @@ export async function viewUrl(photo, purpose) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "view", path: photo.object_path }),
     });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok || !j.url) throw new Error(j.error || "Could not open that photo");
+    const j = await r.json().catch(() => null);
+    if (!r.ok || !j || !j.url) throw serverError(r.status, j, "photo sign (gcs)", "err.photoOpen");
     url = j.url;
   } else {
     /* authedFetch, NOT fetch. Storage validates its headers with a schema, so a request that
@@ -258,8 +251,8 @@ export async function viewUrl(photo, purpose) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ expiresIn: 600 }),
       });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok || !j.signedURL) throw new Error(j.message || j.error || "Could not open that photo");
+    const j = await r.json().catch(() => null);
+    if (!r.ok || !j || !j.signedURL) throw serverError(r.status, j, "photo sign", "err.photoOpen");
     // signedURL comes back relative, e.g. "/object/sign/ops-photos/..."
     url = SB_URL + "/storage/v1" + (j.signedURL.startsWith("/") ? "" : "/") + j.signedURL;
   }
