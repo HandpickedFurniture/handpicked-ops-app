@@ -314,6 +314,17 @@ table.dense tr.selected td{background:var(--info-bg);}
 /* ---------------------------------------------------------------- preparation (mod-prep.js)
    Rows you TICK rather than rows you read, so the whole row is the target - a workshop tap lands
    somewhere near the label, not on a 17px box. */
+/* The two switches on the visit-or-charge sheet. They read as section headings rather than as
+   ordinary tick boxes, because that is what they are - each one decides whether a whole block of
+   the form gets written at all. Big hit area: this is tapped on a phone with one thumb. */
+.wtoggle{display:flex;align-items:center;gap:9px;margin-top:14px;padding:10px 11px;
+  border:1px solid var(--line);border-radius:9px;background:var(--bg);cursor:pointer;
+  font-size:13px;}
+.wtoggle:has(input:checked){border-color:var(--brand);background:var(--info-bg);}
+.wtoggle:has(input:disabled){opacity:.6;cursor:default;}
+.wtoggle input{width:17px;height:17px;flex:none;}
+.wtoggle .muted{margin-left:auto;font-size:12px;}
+
 .unitpick{display:grid;gap:5px;margin-bottom:11px;}
 .unitrow{display:flex;gap:9px;align-items:center;padding:9px 10px;border:1px solid var(--line);
   border-radius:10px;background:var(--card);cursor:pointer;min-height:46px;}

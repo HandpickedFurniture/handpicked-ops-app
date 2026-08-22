@@ -340,19 +340,29 @@ async function renderStatusPanel(host, r, reload) {
   const vBox = el(`<div class="dsec"><h4>${esc(tr("col.visits"))} <span class="chip mute">${visits.length}</span></h4></div>`);
   visits.forEach((v) => vBox.appendChild(visitRow(r, v, reload)));
 
-  const nextNo = (visits.length ? Math.max(...visits.map((v) => v.visit_no)) : 0) + 1;
-  const addBtn = el(`<button class="btn sm" data-addvisit>+ ${esc(tr("st.addVisit"))}</button>`);
-  addBtn.addEventListener("click", () => {
-    // order_visits.visit_no is capped at 10 and v_order_status_wide pivots exactly 1..10, so block
-    // it here with a clear message rather than letting Postgres throw
-    if (nextNo > 10) { toast(tr("st.maxVisits"), "bad"); return; }
-    openVisitSheet(r, { visit_no: nextNo }, reload);
-  });
-  vBox.appendChild(addBtn);
   wrap.appendChild(vBox);
 
   /* ---- adjustments */
   wrap.appendChild(adjustmentsSection(r, adjustments, reload));
+
+  /* ---- the one button that adds to either list
+   *
+   * There used to be two, one at the foot of each section, and they were two halves of a single
+   * event: the team went back, and while they were there they did work that is chargeable. Two
+   * buttons made that two sheets and two saves, and the second save is the one people did not come
+   * back for - which is how an order ends up with a revisit recorded and no charge against it, or a
+   * charge with no visit to explain it. One sheet, one Save, either half or both. */
+  const nextNo = (visits.length ? Math.max(...visits.map((v) => v.visit_no)) : 0) + 1;
+  const addRow = el(`
+    <div class="row" style="margin:-4px 0 14px">
+      <button class="btn accent" data-addwork>+ ${esc(tr("st.addWork"))}</button>
+    </div>`);
+  addRow.querySelector("[data-addwork]").addEventListener("click", () => {
+    // order_visits.visit_no is capped at 10 and v_order_status_wide pivots exactly 1..10, so block
+    // it here with a clear message rather than letting Postgres throw
+    openWorkSheet(r, { visit_no: nextNo }, reload, { visitFull: nextNo > 10 });
+  });
+  wrap.appendChild(addRow);
 
   /* ---- links out to the modules that own the physical goods */
   wrap.appendChild(el(`
@@ -384,7 +394,7 @@ function visitRow(r, v, reload) {
         ${v.has_adjustment ? chip(aed(v.adjustment_amount), "warn") : ""}</div>
       <div><button class="btn sm" data-edit>${esc(tr("d.open"))}</button></div>
     </div>`);
-  row.querySelector("[data-edit]").addEventListener("click", () => openVisitSheet(r, v, reload));
+  row.querySelector("[data-edit]").addEventListener("click", () => openWorkSheet(r, v, reload));
   return row;
 }
 
@@ -429,40 +439,126 @@ function wireMemberSelects(root) {
   });
 }
 
-function openVisitSheet(r, v, reload) {
+/* ---------------------------------------------------------------- visit + charge, ONE sheet
+ *
+ * These were two sheets behind two buttons, and they describe ONE event. The team went back to
+ * site; while they were there they did work that is over and above the purchase order. Recording
+ * that took two openings and two saves, and the second save is the one nobody came back for -
+ * which is how the database ends up holding a revisit with no charge against it, or a charge with
+ * no visit to explain what it was for.
+ *
+ * Either half can be left out. Ticking neither and only setting the order status is a legitimate
+ * save too, so Save is refused only when all three would write nothing.
+ *
+ * Opened from a visit row it is that visit's editor, and the visit half cannot be switched off -
+ * that is the thing being edited. Opened from the button it starts on a new visit, with the charge
+ * half folded away because most trips are just trips.
+ */
+function openWorkSheet(r, v, reload, opts = {}) {
+  const editing = !!v.id;
+  /* Ten is the ceiling: order_visits.visit_no is capped there and v_order_status_wide pivots
+   * exactly 1..10. Rather than refusing the whole sheet - which would also refuse the charge, and
+   * an order on its eleventh problem is exactly the one with money on it - the visit half is
+   * switched off and locked, and the charge half still works. */
+  const visitFull = !!opts.visitFull;
+
+  /* Which visit a charge lands on, before anything is drawn. It is NOT simply v.visit_no: on a full
+   * order that number is 11, which order_visits can never hold, and an adjustment tied to a visit
+   * that cannot exist is one nobody can trace back to a trip. The toggle handler below keeps this in
+   * step when the visit half is switched off by hand. */
+  const chargeVisitNo = Math.min(10, (visitFull ? (r.last_visit_no || 1) : v.visit_no) || 1);
+
   const m = modal(`
-    <h3>${esc(tr("st.visit", { n: v.visit_no }))} — ${esc(orderLabel(r))}</h3>
-    <!-- Time and team are gone from here: the Schedule board owns both, and a second place to set
-         them was a second answer to the same question. Neither key is sent, so what Schedule wrote
-         survives - fn_ops_save_visit coalesces an absent key against the stored value. -->
-    <div class="grid2" style="margin-top:12px">
-      <div><label class="f">${esc(tr("st.visitDate"))}</label>
-        <input type="date" name="vdate" value="${esc(v.visit_date || "")}"></div>
-      <div><label class="f">${esc(tr("st.visitStatus"))}</label>
-        ${selectHtml("vstatus", ORDER_STATUSES, v.status || "", tr("f.any"))}</div>
+    <h3>${esc(editing ? tr("st.visit", { n: v.visit_no }) : tr("st.addWork"))} — ${esc(orderLabel(r))}</h3>
+
+    ${editing ? "" : `
+      <label class="cbrow wtoggle">
+        <input type="checkbox" name="dovisit"${visitFull ? " disabled" : " checked"}>
+        <b>${esc(tr("st.recordVisit"))}</b>
+        <span class="muted">${esc(tr("st.visit", { n: v.visit_no }))}</span>
+      </label>
+      ${visitFull ? `<div class="banner warn">${esc(tr("st.maxVisits"))}</div>` : ""}`}
+
+    <div data-block="visit"${!editing && visitFull ? ' class="hidden"' : ""}>
+      <!-- Time and team are gone from here: the Schedule board owns both, and a second place to set
+           them was a second answer to the same question. Neither key is sent, so what Schedule wrote
+           survives - fn_ops_save_visit coalesces an absent key against the stored value. -->
+      <div class="grid2" style="margin-top:12px">
+        <div><label class="f">${esc(tr("st.visitDate"))}</label>
+          <input type="date" name="vdate" value="${esc(v.visit_date || "")}"></div>
+        <div><label class="f">${esc(tr("st.visitStatus"))}</label>
+          ${selectHtml("vstatus", ORDER_STATUSES, v.status || "", tr("f.any"))}</div>
+      </div>
+      <div style="margin-top:12px">
+        <label class="f">${esc(tr("st.members"))}</label>
+        <div class="memgrid">
+          ${[0, 1, 2, 3, 4, 5].map((i) => memberSelect(i, (v.member_names || [])[i])).join("")}
+        </div>
+      </div>
+      <div style="margin-top:10px">
+        <label class="f">${esc(tr("st.internal"))}</label>
+        ${micField(`<textarea name="vcomment">${esc(v.comment || "")}</textarea>`, "vcomment")}
+      </div>
+      <div style="margin-top:10px">
+        <label class="f">${esc(tr("st.slack"))}</label>
+        ${micField(`<textarea name="vslack"></textarea>`, "vslack")}
+        <div class="muted" style="margin-top:4px">${esc(tr("st.slackHint"))}</div>
+      </div>
+      <div data-photos style="margin-top:12px"></div>
+      ${v.visit_no >= 2 ? `<div class="banner info" style="margin-top:12px">
+         ${esc(tr("chg.visit"))} — ${esc(tr("adj.new"))}</div>` : ""}
     </div>
-    <div style="margin-top:12px">
-      <label class="f">${esc(tr("st.members"))}</label>
-      <div class="memgrid">
-        ${[0, 1, 2, 3, 4, 5].map((i) => memberSelect(i, (v.member_names || [])[i])).join("")}
+
+    <label class="cbrow wtoggle">
+      <input type="checkbox" name="docharge">
+      <b>${esc(tr("st.addCharge"))}</b>
+      <span class="muted">${esc(tr("adj.title"))}</span>
+    </label>
+
+    <div data-block="charge" class="hidden">
+      <div class="grid2" style="margin-top:12px">
+        <div><label class="f">${esc(tr("adj.type"))}</label>
+          ${selectHtml("atype", CHARGE_TYPES.map((c) => ({ value: c.value, label: tr(c.key) })),
+                       "additional_visit")}</div>
+        <div><label class="f">${esc(tr("adj.qty"))}</label>
+          <input type="number" name="aqty" value="1" min="1" step="1"></div>
+        <div><label class="f">${esc(tr("adj.amount"))}</label>
+          <input type="number" name="aamt" step="0.01" inputmode="decimal">
+          <div class="muted" data-rate style="margin-top:4px"></div></div>
+        <!-- the interpolation argument used to sit on esc() instead of tr(), so this label read
+             literally as "Visit {n}" on screen -->
+        <div><label class="f">${esc(tr("st.visit", { n: "" })).trim()}</label>
+          <input type="number" name="avisit" min="1" max="10" step="1"
+                 value="${esc(chargeVisitNo)}"></div>
+      </div>
+      <div style="margin-top:10px">
+        <label class="f">${esc(tr("adj.reason"))}</label>
+        ${micField(`<textarea name="areason"></textarea>`, "areason")}
+        <div class="muted" style="margin-top:4px">${esc(tr("adj.reasonRequired"))}</div>
       </div>
     </div>
-    <div style="margin-top:10px">
-      <label class="f">${esc(tr("st.internal"))}</label>
-      ${micField(`<textarea name="vcomment">${esc(v.comment || "")}</textarea>`, "vcomment")}
+
+    <!-- Where the ORDER now stands, which is not the same question as how this one trip went, and
+         is why it sits outside both halves rather than inside the visit. -->
+    <div style="margin-top:14px">
+      <label class="f">${esc(tr("st.orderStatus"))}</label>
+      ${selectHtml("wstatus", ORDER_STATUSES, "", tr("adj.statusKeep"))}
+      ${r.status ? `<div class="muted" style="margin-top:4px">${
+        esc(tr("col.status"))}: ${esc(r.status)}</div>` : ""}
     </div>
-    <div style="margin-top:10px">
-      <label class="f">${esc(tr("st.slack"))}</label>
-      ${micField(`<textarea name="vslack"></textarea>`, "vslack")}
-      <div class="muted" style="margin-top:4px">${esc(tr("st.slackHint"))}</div>
-    </div>
-    <div data-photos style="margin-top:12px"></div>
-    ${v.visit_no >= 2 ? `<div class="banner info" style="margin-top:12px">
-       ${esc(tr("chg.visit"))} — ${esc(tr("adj.new"))}</div>` : ""}
+
+    <div id="werr" class="err hidden" style="margin-top:10px"></div>
     <div class="row" style="justify-content:flex-end;margin-top:14px">
       <button class="btn ghost" data-no>${esc(tr("act.cancel"))}</button>
       <button class="btn primary" data-yes>${esc(tr("act.save"))}</button>
     </div>`);
+
+  const q = (n) => m.sheet.querySelector(`[name="${n}"]`);
+  const block = (n) => m.sheet.querySelector(`[data-block="${n}"]`);
+  const errBox = m.sheet.querySelector("#werr");
+  const doVisit = q("dovisit");
+  const doCharge = q("docharge");
+  const visitOn = () => editing || (!!doVisit && doVisit.checked && !visitFull);
 
   let method = "typed";
   wireMics(m.sheet, (_t, mm) => { method = mm; });
@@ -474,26 +570,130 @@ function openVisitSheet(r, v, reload) {
     context_label: tr("st.visit", { n: v.visit_no }),
   }));
 
+  if (doVisit) doVisit.addEventListener("change", () => {
+    block("visit").classList.toggle("hidden", !doVisit.checked);
+    // a charge follows the visit it arose on, and there is no such visit if none is being recorded
+    q("avisit").value = visitOn() ? v.visit_no : (r.last_visit_no || 1);
+  });
+  doCharge.addEventListener("change", () => {
+    block("charge").classList.toggle("hidden", !doCharge.checked);
+    if (doCharge.checked) refreshRate();
+  });
+
+  /* The outcome of the trip usually IS where the order now stands, and typing it twice is how one
+   * of the two gets left behind - 1 order in 777 has a status set. So picking a visit outcome fills
+   * the order status with the same value, VISIBLY, in a control they can still change. It stops the
+   * moment they touch that control themselves: after that it is their answer, not a mirror. */
+  const wStatus = q("wstatus");
+  const vStatus = q("vstatus");
+  let statusTouched = false;
+  wStatus.addEventListener("change", () => { statusTouched = true; });
+  vStatus.addEventListener("change", () => {
+    if (!statusTouched && vStatus.value) wStatus.value = vStatus.value;
+  });
+
+  // Pre-fill from the rate card. Band-aware, so removing 4 curtains prices at 100 and 2 at 0.
+  const typeSel = q("atype");
+  const qtyIn = q("aqty");
+  const amtIn = q("aamt");
+  const rateLbl = m.sheet.querySelector("[data-rate]");
+  async function refreshRate() {
+    try {
+      const res = await rpc("fn_ops_rate_for", {
+        p_charge_type: typeSel.value, p_qty: Number(qtyIn.value || 1),
+      });
+      const row = Array.isArray(res) ? res[0] : res;
+      if (row) {
+        amtIn.value = Number(row.amount_aed).toFixed(2);
+        rateLbl.textContent = `${tr("adj.suggested")}: ${row.label} — ${aed(row.amount_aed)}`;
+      } else {
+        rateLbl.textContent = "";
+      }
+    } catch (e) { rateLbl.textContent = ""; }
+  }
+  typeSel.addEventListener("change", refreshRate);
+  qtyIn.addEventListener("change", refreshRate);
+
   m.sheet.querySelector("[data-no]").onclick = m.close;
   m.sheet.querySelector("[data-yes]").onclick = async () => {
-    const g = (n) => m.sheet.querySelector(`[name="${n}"]`).value || null;
+    const g = (n) => q(n).value || null;
+    const wantVisit = visitOn();
+    const wantCharge = doCharge.checked;
+    const newStatus = g("wstatus");
+    const fail = (msg) => {
+      errBox.textContent = msg;
+      errBox.classList.remove("hidden");
+    };
+
+    if (!wantVisit && !wantCharge && !newStatus) { fail(tr("st.nothingToSave")); return; }
+
+    let reason = "";
+    if (wantCharge) {
+      // invoice_lines.adjustment_needs_comment rejects a blank justification downstream; catching it
+      // here is far better than discovering it at invoicing time
+      reason = q("areason").value.trim();
+      if (!reason) { fail(tr("adj.reasonRequired")); return; }
+    }
     m.close();
-    await submit("fn_ops_save_visit", {
-      p_order_id: r.order_id,
-      p_visit_no: v.visit_no,
-      p_payload: {
-        visit_date: g("vdate"),
-        visit_status: g("vstatus"),
-        visit_comment: g("vcomment"), internal_comment: g("vcomment"),
-        slack_comment: g("vslack"),
-        // de-duplicated and blanks dropped, so six slots can be filled in any order
-        member_names: Array.from(new Set([0, 1, 2, 3, 4, 5]
-          .map((i) => m.sheet.querySelector(`[name="vm${i}"]`).value.trim())
-          .filter((x) => x && x !== "__new__"))),
-        input_method: method, lang: getLang(),
-      },
-      p_actor: currentActor(),
-    });
+
+    /* THE CHARGE GOES FIRST, and the order is load-bearing. fn_ops_save_visit auto-proposes an
+     * additional_visit charge on visit 2 and later, and it skips that only when a charge of that
+     * type already exists for the visit. Writing an explicit revisit charge first is what stops a
+     * hand-entered one and an auto-proposed one both landing on the same visit. Any other charge
+     * type does not match that test, so the automatic revisit charge still arrives beside it -
+     * which is right: a return trip is billable on top of the work done on it. */
+    if (wantCharge) {
+      await submit("fn_ops_add_adjustment", {
+        p_order_id: r.order_id,
+        p_charge_type: typeSel.value,
+        p_reason: reason,
+        p_quantity: Number(qtyIn.value || 1),
+        p_visit_no: Number(q("avisit").value) || null,
+        // Every adjustment captured here is a charge. Whether it is actually billed is decided
+        // afterwards, on the row itself, by Confirm or Do not charge.
+        p_chargeable: true,
+        p_amount: amtIn.value === "" ? null : Number(amtIn.value),
+        p_actor: currentActor(),
+        p_window_name: null,
+        p_notes: null,
+        p_status: "new",
+      });
+    }
+
+    if (wantVisit) {
+      await submit("fn_ops_save_visit", {
+        p_order_id: r.order_id,
+        p_visit_no: v.visit_no,
+        p_payload: {
+          visit_date: g("vdate"),
+          visit_status: g("vstatus"),
+          visit_comment: g("vcomment"), internal_comment: g("vcomment"),
+          slack_comment: g("vslack"),
+          // absent rather than null when nothing was picked - see fn_ops_save_visit, which coalesces
+          // an absent key against the stored value
+          ...(newStatus ? { status: newStatus } : {}),
+          // de-duplicated and blanks dropped, so six slots can be filled in any order
+          member_names: Array.from(new Set([0, 1, 2, 3, 4, 5]
+            .map((i) => q(`vm${i}`).value.trim())
+            .filter((x) => x && x !== "__new__"))),
+          input_method: method, lang: getLang(),
+        },
+        p_actor: currentActor(),
+      });
+    } else if (newStatus) {
+      /* No visit being recorded, so the status is written against the LAST one - this call upserts
+       * an order_visits row, and pointing it at a visit that has not happened would invent one.
+       * skip_visit_charge because the only charge here is the one just captured, if any. */
+      await submit("fn_ops_save_visit", {
+        p_order_id: r.order_id,
+        p_visit_no: Math.max(1, r.last_visit_no || 1),
+        p_payload: {
+          status: newStatus, input_method: method, lang: getLang(), skip_visit_charge: true,
+        },
+        p_actor: currentActor(),
+      });
+    }
+
     toast(queueDepth() ? tr("t.queued") : tr("t.saved"), "ok");
     reload();
   };
@@ -557,130 +757,8 @@ function adjustmentsSection(r, rows, reload) {
   // Money totals were removed from this module - they belong in the management view - and so is
   // Build draft invoice: invoicing is an accounts decision made over a whole order, not something
   // to trigger from the middle of a coordinator's status panel. fn_ops_build_invoice still exists.
-  const actions = el(`
-    <div class="row" style="margin-top:8px">
-      <button class="btn sm accent" data-add>+ ${esc(tr("adj.add"))}</button>
-    </div>`);
-
-  actions.querySelector("[data-add]").addEventListener("click",
-    () => openAdjustmentSheet(r, reload));
-
-  box.appendChild(actions);
+  //
+  // The Add button that used to sit here has moved below the section, because it now adds a visit
+  // as readily as a charge and belonged to neither list - see the one that follows both.
   return box;
-}
-
-function openAdjustmentSheet(r, reload) {
-  const m = modal(`
-    <h3>${esc(tr("adj.add"))} — ${esc(orderLabel(r))}</h3>
-    <div class="grid2" style="margin-top:12px">
-      <div><label class="f">${esc(tr("adj.type"))}</label>
-        ${selectHtml("atype", CHARGE_TYPES.map((c) => ({ value: c.value, label: tr(c.key) })),
-                     "additional_visit")}</div>
-      <div><label class="f">${esc(tr("adj.qty"))}</label>
-        <input type="number" name="aqty" value="1" min="1" step="1"></div>
-      <div><label class="f">${esc(tr("adj.amount"))}</label>
-        <input type="number" name="aamt" step="0.01" inputmode="decimal">
-        <div class="muted" data-rate style="margin-top:4px"></div></div>
-      <div><label class="f">${esc(tr("st.visit"), { n: "" })}</label>
-        <input type="number" name="avisit" min="1" max="10" step="1"
-               value="${esc(r.last_visit_no || 1)}"></div>
-    </div>
-    <div style="margin-top:10px">
-      <label class="f">${esc(tr("adj.reason"))}</label>
-      ${micField(`<textarea name="areason"></textarea>`, "areason")}
-      <div class="muted" style="margin-top:4px">${esc(tr("adj.reasonRequired"))}</div>
-    </div>
-    <!-- The outcome of the trip, recorded WITH the charge rather than after it. An adjustment is
-         almost always somebody reporting back from site, and what they report is two things: what
-         happened, and what it cost. Making them save here and then scroll up to the order-status
-         box was two saves for one visit, and the second one is the one that got forgotten. Blank
-         leaves the status exactly as it is - see fn_ops_save_visit, which coalesces an absent
-         key against the stored value. -->
-    <div style="margin-top:10px">
-      <label class="f">${esc(tr("st.orderStatus"))}</label>
-      ${selectHtml("astatus", ORDER_STATUSES, "", tr("adj.statusKeep"))}
-      ${r.status ? `<div class="muted" style="margin-top:4px">${
-        esc(tr("col.status"))}: ${esc(r.status)}</div>` : ""}
-    </div>
-    <div id="aerr" class="err hidden" style="margin-top:10px"></div>
-    <div class="row" style="justify-content:flex-end;margin-top:14px">
-      <button class="btn ghost" data-no>${esc(tr("act.cancel"))}</button>
-      <button class="btn primary" data-yes>${esc(tr("act.save"))}</button>
-    </div>`);
-
-  wireMics(m.sheet);
-  const typeSel = m.sheet.querySelector('[name="atype"]');
-  const qtyIn = m.sheet.querySelector('[name="aqty"]');
-  const amtIn = m.sheet.querySelector('[name="aamt"]');
-  const rateLbl = m.sheet.querySelector("[data-rate]");
-
-  // Pre-fill from the rate card. Band-aware, so removing 4 curtains prices at 100 and 2 at 0.
-  async function refreshRate() {
-    try {
-      const res = await rpc("fn_ops_rate_for", {
-        p_charge_type: typeSel.value, p_qty: Number(qtyIn.value || 1),
-      });
-      const row = Array.isArray(res) ? res[0] : res;
-      if (row) {
-        amtIn.value = Number(row.amount_aed).toFixed(2);
-        rateLbl.textContent = `${tr("adj.suggested")}: ${row.label} — ${aed(row.amount_aed)}`;
-      } else {
-        rateLbl.textContent = "";
-      }
-    } catch (e) { rateLbl.textContent = ""; }
-  }
-  typeSel.addEventListener("change", refreshRate);
-  qtyIn.addEventListener("change", refreshRate);
-  refreshRate();
-
-  m.sheet.querySelector("[data-no]").onclick = m.close;
-  m.sheet.querySelector("[data-yes]").onclick = async () => {
-    const reason = m.sheet.querySelector('[name="areason"]').value.trim();
-    const errBox = m.sheet.querySelector("#aerr");
-    // invoice_lines.adjustment_needs_comment rejects a blank justification downstream; catching it
-    // here is far better than discovering it at invoicing time
-    if (!reason) {
-      errBox.textContent = tr("adj.reasonRequired");
-      errBox.classList.remove("hidden");
-      return;
-    }
-    const newStatus = m.sheet.querySelector('[name="astatus"]').value;
-    m.close();
-    await submit("fn_ops_add_adjustment", {
-      p_order_id: r.order_id,
-      p_charge_type: typeSel.value,
-      p_reason: reason,
-      p_quantity: Number(qtyIn.value || 1),
-      p_visit_no: Number(m.sheet.querySelector('[name="avisit"]').value) || null,
-      // Every adjustment captured here is a charge. Whether it is actually billed is decided
-      // afterwards, on the row itself, by Confirm or Do not charge - one decision in one place
-      // rather than a dropdown at capture time that quietly disagreed with those two buttons.
-      p_chargeable: true,
-      p_amount: amtIn.value === "" ? null : Number(amtIn.value),
-      p_actor: currentActor(),
-      p_window_name: null,
-      p_notes: null,
-      p_status: "new",
-    });
-
-    /* The second half of the same report, queued behind the first so both survive a lift. The
-     * visit number is the LAST RECORDED one, never the one typed against the charge: this write
-     * upserts an order_visits row, and pointing it at a visit that has not happened yet would
-     * invent one. skip_visit_charge for the same reason the order-level save sets it - the
-     * charge is the one just captured, not a second auto-proposed revisit. */
-    if (newStatus) {
-      await submit("fn_ops_save_visit", {
-        p_order_id: r.order_id,
-        p_visit_no: Math.max(1, r.last_visit_no || 1),
-        p_payload: {
-          status: newStatus,
-          input_method: "typed", lang: getLang(),
-          skip_visit_charge: true,
-        },
-        p_actor: currentActor(),
-      });
-    }
-    toast(queueDepth() ? tr("t.queued") : tr("t.saved"), "ok");
-    reload();
-  };
 }

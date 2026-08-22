@@ -76,6 +76,25 @@ whole filtered set rather than a page.
 
 **2. Order status** (`#/status`) — ready, team assigned, order status, **multiple visits** each with
 their own outcome and team, internal + Slack comments, and chargeable extras.
+**One sheet adds a visit, a charge, or both.** There were two buttons, one at the foot of each
+section, and they were two halves of a single event: the team went back, and while they were there
+they did work that is over and above the PO. Two buttons made that two sheets and two saves, and the
+second save is the one people did not come back for — which is how an order ends up with a revisit
+recorded and no charge against it, or a charge with no visit to explain it. `+ Add visit or charge`
+now sits below both lists, with a switch on each half; opening a visit from its own row is the same
+sheet with the visit half fixed on.
+
+Three things it gets right that two sheets could not. **The charge is written first**, because
+`fn_ops_save_visit` auto-proposes an `additional_visit` charge on visit 2+ and skips it only when one
+already exists for that visit — writing the explicit charge first is what stops a hand-entered
+revisit charge and an auto-proposed one both landing on the same visit. Any other charge type does
+not match that test, so the automatic revisit charge still arrives beside it, which is right: a
+return trip is billable on top of the work done on it. **Picking a visit outcome fills the order
+status with the same value**, visibly, in a control that can still be changed — and stops mirroring
+the moment somebody edits that control themselves. **The eleventh visit does not refuse the sheet**:
+the visit half locks off at ten and the charge half still works, because an order on its eleventh
+problem is exactly the one with money on it.
+
 Above the list sits an **outcome filter**: one dropdown, *Any* plus the ten statuses, narrowing the
 board to the orders sitting on one of them. It rides outside the shared bar on its own `status`
 param — the **same key the dashboard uses**, so a link filtered on one screen opens filtered on the
@@ -444,10 +463,10 @@ It lands on `accounting_alerts` — the table the ingestion agent already feeds 
   **Do not charge**, and two controls for one decision is how they end up disagreeing. Everything
   arrives `chargeable`, status `new`; dropping one sets `chargeable = false` and status `dropped` in
   the one place that decision lives.
-- **The charge and the outcome commit together.** Both the Installation module's Add Adjustment sheet
-  and Chotu's adjustment card carry an **Order status** dropdown, blank by default, meaning *leave it
-  alone*. Pick one and the same button writes `fn_ops_add_adjustment` and then `fn_ops_save_visit`,
-  queued in that order so a phone that lost signal replays both. This exists because an adjustment is
+- **The charge and the outcome commit together.** Both the Installation module's visit-or-charge
+  sheet and Chotu's adjustment card carry an **Order status** dropdown, blank by default, meaning
+  *leave it alone*. Pick one and the same button writes `fn_ops_add_adjustment` and then
+  `fn_ops_save_visit`, queued in that order so a phone that lost signal replays both. This exists because an adjustment is
   almost always somebody reporting back from site with two things in their head at once — what
   happened and what it cost — and the second save was the one that got forgotten.
   The status write always sets `skip_visit_charge` (the charge is the one just captured, not a second

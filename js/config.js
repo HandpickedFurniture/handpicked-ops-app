@@ -5,7 +5,7 @@
  * TRANSLATED. Reverse that and writes start failing their CHECK.
  */
 
-export const BUILD = "2026-08-22.1";
+export const BUILD = "2026-08-22.2";
 
 /* Supabase project "handpicked-curtains". The publishable key is safe to ship: every table is
  * RLS-locked to the `authenticated` role and `anon` has no policy at all. The bearer token on each
