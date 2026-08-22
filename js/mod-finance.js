@@ -25,7 +25,7 @@
  * paints them and lets somebody filter to them.
  */
 import { api, apiAll, rpc, submit, currentActor, queueDepth, isSignedIn, isViewer } from "./api.js";
-import { ORDER_STATUSES, PAGE_SIZE } from "./config.js";
+import { ORDER_STATUSES, ADJ_REASONS, PAGE_SIZE } from "./config.js";
 import { tr } from "./i18n.js";
 import {
   $, esc, el, chip, aed, num, fmtDate, toast, loading, modal, downloadCsv, copyText, today,
@@ -37,7 +37,11 @@ import { syncBar } from "./sync.js";
 let TAB = "orders";
 let SORT = { orders: { col: "order_id", dir: 1 }, adj: { col: "order_id", dir: 1 } };
 let SEL = { orders: new Set(), adj: new Set() };
-let FILTERS = { status: "", from: "", to: "", invoice: "", review: "" };
+/* `invoice` is the ORDER's invoice status from finance_order_state; `sheetUpdated` and
+ * `invCreated` are the per-ADJUSTMENT tick boxes. Different grain, different columns, so they are
+ * separate fields and the two adjustment ones are only offered - and only applied - on that tab. */
+let FILTERS = { status: "", from: "", to: "", invoice: "", review: "",
+                sheetUpdated: "", invCreated: "" };
 let ROWS = { orders: [], adj: [] };
 let EXPANDED = new Set();
 
@@ -106,6 +110,9 @@ async function loadOrders() {
 
 async function loadAdjustments() {
   let q = "/rest/v1/v_ops_finance_adjustments?select=*&order=order_id.asc,id.asc";
+  // booleans on the row itself, so these narrow in Postgres rather than over a page of results
+  if (FILTERS.sheetUpdated) q += `&sheet_updated=is.${FILTERS.sheetUpdated}`;
+  if (FILTERS.invCreated)   q += `&invoice_created=is.${FILTERS.invCreated}`;
   if (FILTERS.status === "(none)") q += "&order_status=is.null";
   else if (FILTERS.status) q += `&order_status=eq.${encodeURIComponent(FILTERS.status)}`;
   if (FILTERS.invoice) q += `&invoice_status=eq.${encodeURIComponent(FILTERS.invoice)}`;
@@ -191,6 +198,19 @@ function paintFilters(mount, state) {
             ${opt("yes", tr("t.yes"), FILTERS.review)}
             ${opt("no", tr("t.no"), FILTERS.review)}
           </select></div>
+        ${TAB === "adj" ? `
+        <div><label class="f">${esc(tr("fin.sheetUpdated"))}</label>
+          <select name="fsheet">
+            ${opt("", tr("f.any"), FILTERS.sheetUpdated)}
+            ${opt("true", tr("t.yes"), FILTERS.sheetUpdated)}
+            ${opt("false", tr("t.no"), FILTERS.sheetUpdated)}
+          </select></div>
+        <div><label class="f">${esc(tr("fin.invoiceCreated"))}</label>
+          <select name="finvcreated">
+            ${opt("", tr("f.any"), FILTERS.invCreated)}
+            ${opt("true", tr("t.yes"), FILTERS.invCreated)}
+            ${opt("false", tr("t.no"), FILTERS.invCreated)}
+          </select></div>` : ""}
         <div style="display:flex;align-items:flex-end">
           <button class="btn sm ghost" data-clear>${esc(tr("f.clear"))}</button></div>
       </div>
@@ -200,8 +220,10 @@ function paintFilters(mount, state) {
     .addEventListener("change", (e) => { FILTERS[key] = e.target.value; reload(mount, state); });
   wire("fstatus", "status"); wire("ffrom", "from"); wire("fto", "to");
   wire("finvoice", "invoice"); wire("freview", "review");
+  if (TAB === "adj") { wire("fsheet", "sheetUpdated"); wire("finvcreated", "invCreated"); }
   bar.querySelector("[data-clear]").addEventListener("click", () => {
-    FILTERS = { status: "", from: "", to: "", invoice: "", review: "" };
+    FILTERS = { status: "", from: "", to: "", invoice: "", review: "",
+                sheetUpdated: "", invCreated: "" };
     paintFilters(mount, state); reload(mount, state);
   });
 }
@@ -464,7 +486,16 @@ function actionBarWire(mount, state, which, rows, repaint) {
     which === "orders"
       ? (isViewer() ? "" : `<button class="btn sm primary" data-invoiced>${esc(tr("fin.markInvoiced"))}</button>`)
       : (isViewer() ? "" : `<button class="btn sm accent" data-propose>${esc(tr("fin.proposeAmount"))}</button>`
-                         + `<button class="btn sm primary" data-applied>${esc(tr("fin.markApplied"))}</button>`)
+                         /* The same two tick boxes the grid carries, done to a selection. Marking
+                          * forty rows one at a time after a sheet paste is how the ticking stops
+                          * happening at all - and an unticked box is indistinguishable from work
+                          * nobody did. Mark adjustment applied used to sit here; it set an
+                          * ORDER-level status that the per-adjustment Invoice created box now
+                          * answers properly, one row at a time instead of all-or-nothing. */
+                         + `<button class="btn sm primary" data-mark="sheet_updated">${
+                             esc(tr("fin.markSheet"))}</button>`
+                         + `<button class="btn sm primary" data-mark="invoice_created">${
+                             esc(tr("fin.markInvCreated"))}</button>`)
         + `<button class="btn sm" data-copy>${esc(tr("fin.copySheet"))}</button>`);
 
   box.querySelector("[data-selall]").addEventListener("click", () => {
@@ -481,8 +512,8 @@ function actionBarWire(mount, state, which, rows, repaint) {
   const inv = box.querySelector("[data-invoiced]");
   if (inv) inv.addEventListener("click", () => markInvoiced(rows, repaint));
 
-  const app = box.querySelector("[data-applied]");
-  if (app) app.addEventListener("click", () => markApplied(rows, repaint));
+  box.querySelectorAll("[data-mark]").forEach((b) =>
+    b.addEventListener("click", () => markAdjFlag(b.dataset.mark, rows, repaint)));
 
   const prop = box.querySelector("[data-propose]");
   if (prop) prop.addEventListener("click", () => proposeAmounts(rows, repaint));
@@ -528,6 +559,9 @@ const adjExportRow = (r) => ({
   "Customer name": r.customer_name || "",
   "Amount": r.amount_aed ?? "",
   "Reason": r.reason || "",
+  // APPENDED, never inserted - the six above are pasted into the sheet positionally
+  "Why": r.reason_code
+    ? tr((ADJ_REASONS.find((x) => x.value === r.reason_code) || {}).key || "rsn.other") : "",
 });
 
 /* Tab-separated, which is what a spreadsheet expects off the clipboard - a comma-separated paste
@@ -535,7 +569,8 @@ const adjExportRow = (r) => ({
 function copyForSheet(rows) {
   const sel = selectedRows("adj", rows);
   const use = sel.length ? sel : rows;
-  const cols = ["City", "Comment from Installation", "Order name", "Customer name", "Amount", "Reason"];
+  const cols = ["City", "Comment from Installation", "Order name", "Customer name", "Amount",
+                "Reason", "Why"];
   const body = use.map((r) => {
     const o = adjExportRow(r);
     // a tab or newline inside a comment would break the grid the paste lands in
@@ -560,17 +595,27 @@ async function markInvoiced(rows, repaint) {
   } catch (e) { toast(e.message, "bad"); }
 }
 
-async function markApplied(rows, repaint) {
+/* One tick box, applied to everything selected. Only ever sets it TRUE: un-ticking is a correction
+ * to one row and belongs on that row, where the person can see which one they are undoing.
+ *
+ * The selection is deliberately NOT cleared afterwards - the two buttons are usually pressed one
+ * after the other on the same rows, and clearing would make the second press select all over again.
+ * fn_finance_set_adjustment_status and its order-level Invoiced status are untouched and still
+ * exist; nothing in this screen calls them any more. */
+async function markAdjFlag(flag, rows, repaint) {
   const sel = selectedRows("adj", rows);
   if (!sel.length) { toast(tr("fin.nothingSelected"), "bad"); return; }
-  const ids = Array.from(new Set(sel.map((r) => r.order_id)));
+  const ids = sel.map((r) => Number(r.id));
   try {
-    await submit("fn_finance_set_adjustment_status", {
-      p_order_ids: ids, p_status: "Invoiced", p_actor: currentActor(),
+    await submit("fn_finance_set_adjustment_flag", {
+      p_ids: ids, p_flag: flag, p_on: true, p_actor: currentActor(),
     });
-    rows.forEach((r) => { if (ids.includes(r.order_id)) r.adjustment_status = "Invoiced"; });
-    SEL.adj.clear();
-    toast(queueDepth() ? tr("t.queued") : tr("fin.markedOrders", { n: ids.length }), "ok");
+    const now = new Date().toISOString();
+    rows.forEach((r) => {
+      if (!ids.includes(Number(r.id))) return;
+      r[flag] = true; r[`${flag}_at`] = now; r[`${flag}_by`] = currentActor();
+    });
+    toast(queueDepth() ? tr("t.queued") : tr("fin.markedAdj", { n: ids.length }), "ok");
     repaint();
   } catch (e) { toast(e.message, "bad"); }
 }
@@ -604,6 +649,7 @@ function paintAdjustments(mount, state) {
           ${sortableTh(tr("col.customer"), "customer_name", "adj")}
           ${sortableTh(tr("adj.amount"), "amount_aed", "adj")}
           ${sortableTh(tr("adj.reason"), "reason", "adj")}
+          ${sortableTh(tr("adj.reasonCode"), "reason_code", "adj")}
           ${ADJ_FLAGS.map((f) => sortableTh(tr(f.key), f.col, "adj")).join("")}
           ${sortableTh(tr("fin.invoiceStatus"), "invoice_status", "adj")}
           ${sortableTh(tr("fin.adjStatus"), "adjustment_status", "adj")}
@@ -637,7 +683,20 @@ function paintAdjustments(mount, state) {
                 ${r.amount_is_system ? chip(tr("fin.systemCalc"), "info", "∑") : ""}
                 ${cardHint}
               </td>
-              <td class="wide">${esc(r.reason || "—")}</td>
+              <!-- Editable, because the cause is picked on site in the moment and the accounts
+                   team is the one who later has to explain the bill. A supplier fault filed as our
+                   own production issue is the expensive direction to get it wrong, and it was
+                   write-once until now. Blank is a real state - nobody has said - not 'other'. -->
+              <td class="rsn">
+                <select class="fincell" data-id="${esc(r.id)}" data-rsn${ro ? " disabled" : ""}>
+                  <option value="">—</option>
+                  ${ADJ_REASONS.map((x) => `<option value="${esc(x.value)}"${
+                    r.reason_code === x.value ? " selected" : ""}>${esc(tr(x.key))}</option>`).join("")}
+                </select>
+                ${r.reason_code && (ADJ_REASONS.find((x) => x.value === r.reason_code) || {}).charged === false
+                    && Number(r.amount_aed || 0) > 0
+                  ? chip(tr("fin.absorbedCharged"), "bad", "!") : ""}
+              </td>
               ${ADJ_FLAGS.map((f) => {
                 const at = r[`${f.col}_at`], by = r[`${f.col}_by`];
                 // who and when, on hover - the columns exist so that question has an answer
@@ -672,6 +731,9 @@ function paintAdjustments(mount, state) {
   // one amount saved per change, through the same queue as every other write on this screen
   table.querySelectorAll("[data-amt]").forEach((inp) =>
     inp.addEventListener("change", () => saveAdjAmount(inp, rows, repaint)));
+
+  table.querySelectorAll("[data-rsn]").forEach((sel) =>
+    sel.addEventListener("change", () => saveAdjReason(sel, rows, repaint)));
 
   /* The three tick boxes. No repaint on toggle: redrawing the grid under somebody working down a
    * column of checkboxes moves the next box out from under their finger. The row object is updated
@@ -709,6 +771,26 @@ async function saveAdjAmount(inp, rows, repaint) {
     repaint();          // the System calculated chip and the rate-card hint both just changed
   } catch (e) {
     inp.classList.add("bad");
+    toast(e.message, "bad");
+  }
+}
+
+/* The cause, corrected in place. repaint() afterwards because picking one of the three causes that
+ * mean the work is OURS lights a warning beside it when the row still carries money - the same
+ * distinction the capture sheet draws, drawn again where the invoice actually gets raised. */
+async function saveAdjReason(sel, rows, repaint) {
+  const id = Number(sel.dataset.id);
+  const row = rows.find((r) => Number(r.id) === id);
+  try {
+    await rpc("fn_finance_set_adjustment_reason", {
+      p_id: id, p_reason_code: sel.value || null, p_actor: currentActor(),
+    });
+    if (row) row.reason_code = sel.value || null;
+    sel.classList.add("saved");
+    toast(tr("t.saved"), "ok");
+    repaint();
+  } catch (e) {
+    sel.classList.add("bad");
     toast(e.message, "bad");
   }
 }

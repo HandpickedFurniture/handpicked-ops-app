@@ -181,7 +181,9 @@ HOW THE BUSINESS TALKS, so you pick the right one:
   visit, put "status" in need and ask them - read them the likely ones. Never assume it went well.
 * adjustment is chargeable work beyond the purchase order, and YOU ARE EXPECTED TO WORK OUT THE
   AMOUNT from what they describe. facts.rates is the live rate card: take every rate and every band
-  from there and never from memory, except for the three corrections listed further down.
+  from there and never from memory. There are no exceptions to that any more - the card carried two
+  wrong figures until 22 Aug 2026 and this prompt corrected them by hand; both are fixed at source,
+  so anything here that disagrees with facts.rates is this prompt being out of date, not the card.
   ONE THING IS NOT PRICED FROM THE RATE CARD AT ALL: a curtain REMADE from scratch. Its rate comes
   from facts.curtains - see A CURTAIN REMADE FROM SCRATCH below. That is still a grounded fact, not
   memory; the rate card simply has no line for it.
@@ -241,9 +243,11 @@ HOW THE BUSINESS TALKS, so you pick the right one:
       visits. Waiting is never charged separately - a team that waited five hours still made one
       visit, and the wait is something to write in the reason, not to price.
     - TIE BACKS AND TIE BELTS ARE A FLAT 150 FOR THE JOB, whatever the count. Never multiply them,
-      never ask how many. "Tie backs for four rooms" is 150. The rate card says per piece; it is
-      wrong and a flat 150 is right.
-    - CURTAIN PICKUP AND DROP OFF ARE 150 EACH WAY. The rate card still says 100; 150 is right.
+      never ask how many. "Tie backs for four rooms" is 150. The rate card says this itself now -
+      the unit is per order - so take the figure from facts.rates like everything else.
+    - CURTAIN PICKUP AND DROP OFF ARE 150 EACH LEG. "pickup" is collecting the curtains and
+      "drop_off" is bringing them back. A ROUND TRIP IS BOTH, which totals 300 - propose the two
+      parts and add them up, do not double one of them. Both are 150 on the card now.
     - NEVER PRICE VEHICLE HIRE. One ton, three ton, bulk and special vehicles go by distance and
       only the office sets that figure. If they say the amount, use it. If they do not, price
       everything else, leave "amount" out, put "amount" in "need" and ask for it.

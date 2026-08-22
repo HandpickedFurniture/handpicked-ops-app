@@ -837,3 +837,9 @@ table.dense tfoot th{position:sticky;bottom:0;background:var(--info-bg);border-t
    the charge's reason. It sits directly under the calculator because that is where it comes from. */
 .commentbox{margin-top:14px;}
 .commentbox .spread{margin-bottom:5px;}
+
+/* The cause on an adjustment: a dropdown in the grid, because the person on site picks it in the
+   moment and finance is the one who later has to explain the bill. */
+.fintable td.rsn{white-space:normal;min-width:150px;}
+.fintable td.rsn select.fincell{min-height:30px;}
+.fintable td.rsn .chip{margin-top:3px;}

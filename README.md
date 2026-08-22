@@ -286,7 +286,19 @@ to `manual`, and **clearing the box hands the row back to the rate card** rather
 which is the only way to undo an override without knowing what the figure used to be.
 
 **Three tick boxes per adjustment** — Updated on 3D sheet, Invoice created, Paid — each with an
-`_at` / `_by` pair, on hover. They are deliberately independent rather than one three-step status:
+`_at` / `_by` pair, on hover. The first two also have a **filter** and a **bulk button**: marking
+forty rows one at a time after a sheet paste is how the ticking stops happening at all, and an
+unticked box is indistinguishable from work nobody did. The bulk buttons only ever set a box TRUE
+— un-ticking is a correction to one row and belongs on that row — and they deliberately leave the
+selection intact, because the two are usually pressed one after the other on the same rows.
+*Mark adjustment applied* is gone: it set an ORDER-level `finance_order_state.adjustment_status`,
+all-or-nothing across every adjustment on the order, which the per-adjustment Invoice created box
+now answers properly. `fn_finance_set_adjustment_status` still exists; nothing calls it.
+
+The **cause** (`reason_code`) is an editable dropdown in the grid — the person on site picks it in
+the moment and the accounts team is the one who later has to explain the bill, so a wrong one used
+to be stuck. A row whose cause is one of the three that mean the work is OURS, still carrying money,
+gets an **Ours, but charged** chip beside it. They are deliberately independent rather than one three-step status:
 an adjustment can be invoiced without ever reaching the 3D sheet, and paid work still has to be
 reconciled onto it afterwards. Un-ticking clears the stamp; a timestamp left standing beside a
 `false` is a record of something that is no longer true. Toggling does **not** repaint the grid —
@@ -296,12 +308,17 @@ Migrations: `adjustment_amount_source_and_finance_flags`,
 `finance_adjustment_amount_and_flag_rpcs`,
 `expose_adjustment_amount_source_and_finance_flags_in_views` (22 Aug 2026).
 
-**One thing to know before trusting a proposed figure.** The rate card and the written policy
-disagree in two places, and Propose amount follows the **card**, like every other screen: `tieback`
-is stored as 150 *per piece*, so four tie backs propose 600 where the policy is a flat 150 for the
-job; and `pickup` is stored at 100 where the policy says 150 each way. Chotu is told to correct both
-in its prompt, which is why its totals can differ from this button's. Fixing that belongs in
-`adjustment_rate_card`, not in a third opinion in the browser.
+**The card and the policy agreed at last on 22 Aug 2026.** `tieback` was 150 *per piece*, so four
+tie backs priced at 600 where the policy is a flat 150 for the job — it is now `per order`, which is
+what `fn_ops_rate_for` treats as flat. `pickup` and `drop_off` were both 100 and `pickup` was
+labelled "Curtain pickup and drop-off", reading as a round trip for one charge; a **leg is 150**, so
+both are 150 and a round trip is recorded as **both lines, 300**. Chotu had been carrying hand-written
+corrections for both, which is exactly how the voice assistant came to quote different money from
+every typed screen; those corrections are out of its prompt now.
+
+The card is **effective-dated**, so the old rows were closed rather than overwritten — an adjustment
+agreed last week still has a card row that explains its figure, and `agreed_amount_aed` is a snapshot
+anyway, so nothing already captured moved.
 
 ## The offline write queue
 
