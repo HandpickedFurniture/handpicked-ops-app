@@ -134,10 +134,19 @@ In their place, a calculator that **never invents a rate**:
 about, so the multiplication happens against `rate_aed` in the browser — asking it for three visits
 would otherwise price as one.
 
-Every line shows its own working, and the whole sum is written out in words into the comment box
-with a **Copy** button, ready to paste into Slack. The same text becomes the adjustment's reason,
-which is what `invoice_lines.adjustment_needs_comment` demands and what an accountant reads three
-weeks later. Two details that were got wrong first time and are worth keeping: the remade line
+**One comment box, not three.** There were a Summary for Slack, a Reason on the charge and a
+Kurtains comment, all auto-filled from the same calculation — three copies of one sentence, three
+chances for them to disagree, and two of them editable by somebody who did not know the others
+existed. There is now one box, directly under the calculator because that is where it comes from.
+It is built from the calculation, **edited or dictated** (the mic is on it), copied to the clipboard
+for Slack, saved with the order on the Kurtains channel, and used as the charge's reason — which is
+what `invoice_lines.adjustment_needs_comment` demands and what an accountant reads three weeks later.
+A charge with an empty box is refused here rather than at invoicing time.
+
+Touching it — typed or spoken, since `attachMic` fires an `input` event — stops it being rebuilt
+underneath the writer, and a **Rebuild** button appears. So nothing written is ever silently
+replaced, and nothing is ever stuck stale with no way back. *Charge this total* deliberately does not
+touch it either: that button is about the money. Two details that were got wrong first time and are worth keeping: the remade line
 prints the **doubled** rate (92, not 46) so it multiplies out to the amount beside it, and widths
 keep **two** decimals — `num()` rounds to one, and 1.84 m shown as 1.8 m does not reproduce the
 figure.

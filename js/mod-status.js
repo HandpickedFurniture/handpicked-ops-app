@@ -621,11 +621,24 @@ async function openWorkSheet(r, v, reload, opts = {}) {
         <button type="button" class="btn sm accent" data-usetotal>${esc(tr("calc.useTotal"))}</button>
       </div>
 
-      <div style="margin-top:10px">
-        <div class="spread"><label class="f">${esc(tr("calc.summary"))}</label>
-          <button type="button" class="btn sm ghost" data-copy>${esc(tr("calc.copy"))}</button></div>
-        <textarea name="csummary" rows="6" class="summarybox"></textarea>
+    </div>
+
+    <!-- ONE BOX. There were three, and all three held the same text: a Summary for Slack, a Reason
+         on the charge, and a Kurtains comment, each auto-filled from the same calculation. Three
+         copies of one sentence is three chances for them to disagree, and two of them to be edited
+         by somebody who did not realise the other two existed. This is built from the calculation
+         above, it can be edited or dictated, it is what Copy puts on the clipboard, it is saved
+         with the order, and it is the charge's reason. -->
+    <div class="commentbox">
+      <div class="spread">
+        <label class="f">${esc(tr("st.slack"))}</label>
+        <div class="row" style="gap:6px">
+          <button type="button" class="btn sm ghost hidden" data-regen>${esc(tr("calc.regen"))}</button>
+          <button type="button" class="btn sm ghost" data-copy>${esc(tr("calc.copy"))}</button>
+        </div>
       </div>
+      ${micField(`<textarea name="wcomment" rows="6" class="summarybox"></textarea>`, "wcomment")}
+      <div class="muted" style="margin-top:4px">${esc(tr("st.slackHint"))}</div>
     </div>
 
     <label class="cbrow wtoggle">
@@ -654,11 +667,7 @@ async function openWorkSheet(r, v, reload, opts = {}) {
         <div class="banner warn hidden" data-absorb style="margin-top:6px">${
           esc(tr("adj.absorbed"))}</div>
       </div>
-      <div style="margin-top:10px">
-        <label class="f">${esc(tr("adj.reason"))}</label>
-        <textarea name="areason" rows="3"></textarea>
-        <div class="muted" style="margin-top:4px">${esc(tr("adj.reasonRequired"))}</div>
-      </div>
+      <div class="muted" style="margin-top:10px">${esc(tr("adj.reasonFromComment"))}</div>
     </div>
 
     <!-- Where the ORDER now stands, which is not the same question as what this trip cost. -->
@@ -667,12 +676,6 @@ async function openWorkSheet(r, v, reload, opts = {}) {
       ${selectHtml("wstatus", ORDER_STATUSES, "", tr("adj.statusKeep"))}
       ${r.status ? `<div class="muted" style="margin-top:4px">${
         esc(tr("col.status"))}: ${esc(r.status)}</div>` : ""}
-    </div>
-
-    <div style="margin-top:10px">
-      <label class="f">${esc(tr("st.slack"))}</label>
-      ${micField(`<textarea name="wcomment" rows="4"></textarea>`, "wcomment")}
-      <div class="muted" style="margin-top:4px">${esc(tr("st.slackHint"))}</div>
     </div>
 
     <div id="werr" class="err hidden" style="margin-top:10px"></div>
@@ -708,13 +711,15 @@ async function openWorkSheet(r, v, reload, opts = {}) {
 
   /* ---- the arithmetic, in one place, recomputed from the controls on every change */
   let totalEdited = false;      // typing in the Total box takes it off the calculator
-  let summaryEdited = false;    // ...and editing the summary stops it being regenerated
+  /* ...and touching the comment - typed OR dictated, since attachMic fires an input event - stops
+   * it being rebuilt underneath them. The Rebuild button is how they ask for it back, so nothing
+   * they wrote is ever silently replaced and nothing is ever stuck stale without a way out. */
+  let commentEdited = false;
   /* The charge follows the calculator until somebody types in the charge itself. Without this the
    * amount captured at the moment Charge this total was pressed would stay put while the total
    * moved on, and the sheet would show two different figures for the same job - the summary saying
    * one thing and the adjustment writing another. */
   let amtEdited = false;
-  let reasonEdited = false;
   // the alteration counts belong to the ORDER; they are only written back if somebody moved them
   let altTouched = false;
 
@@ -770,16 +775,8 @@ async function openWorkSheet(r, v, reload, opts = {}) {
     });
     if (!totalEdited) qs("ctotal").value = computed().toFixed(2);
     m.sheet.querySelector("[data-edited]").classList.toggle("hidden", !totalEdited);
-    if (!summaryEdited) {
-      const text = buildSummary();
-      qs("csummary").value = text;
-      // the comment box is the thing that gets saved; the summary box is what gets copied
-      if (!qs("wcomment").value || qs("wcomment").dataset.gen === "1") {
-        qs("wcomment").value = text;
-        qs("wcomment").dataset.gen = "1";
-      }
-      if (!reasonEdited) qs("areason").value = text;
-    }
+    if (!commentEdited) qs("wcomment").value = buildSummary();
+    m.sheet.querySelector("[data-regen]").classList.toggle("hidden", !commentEdited);
     // the amount the adjustment will actually carry, kept equal to the total on screen
     if (!amtEdited) qs("aamt").value = Number(qs("ctotal").value || 0).toFixed(2);
   };
@@ -788,8 +785,10 @@ async function openWorkSheet(r, v, reload, opts = {}) {
     qs(n).addEventListener("input", paintCalc));
   ["calt1", "calt2"].forEach((n) => qs(n).addEventListener("input", () => { altTouched = true; }));
   qs("ctotal").addEventListener("input", () => { totalEdited = true; paintCalc(); });
-  qs("csummary").addEventListener("input", () => { summaryEdited = true; });
-  qs("wcomment").addEventListener("input", () => { qs("wcomment").dataset.gen = "0"; });
+  qs("wcomment").addEventListener("input", () => {
+    commentEdited = true;
+    m.sheet.querySelector("[data-regen]").classList.remove("hidden");
+  });
   qs("aamt").addEventListener("input", () => { amtEdited = true; });
   /* Three of the eleven causes mean the work is ours to put right and is normally absorbed at zero.
    * Said, not enforced: a coordinator who has agreed a figure with a client outranks a rule. */
@@ -797,7 +796,10 @@ async function openWorkSheet(r, v, reload, opts = {}) {
     const rs = ADJ_REASONS.find((x) => x.value === e.target.value);
     m.sheet.querySelector("[data-absorb]").classList.toggle("hidden", !rs || rs.charged !== false);
   });
-  qs("areason").addEventListener("input", () => { reasonEdited = true; });
+  m.sheet.querySelector("[data-regen]").addEventListener("click", () => {
+    commentEdited = false;
+    paintCalc();
+  });
 
   rework.forEach((row, i) => {
     m.sheet.querySelector(`[data-rwon="${i}"]`).addEventListener("change", (e) => {
@@ -817,7 +819,7 @@ async function openWorkSheet(r, v, reload, opts = {}) {
   });
 
   m.sheet.querySelector("[data-copy]").addEventListener("click", () => {
-    copyText(qs("csummary").value);
+    copyText(qs("wcomment").value);
     toast(tr("calc.copied"), "ok");
   });
 
@@ -834,11 +836,11 @@ async function openWorkSheet(r, v, reload, opts = {}) {
     doCharge.checked = true;
     block("charge").classList.remove("hidden");
     qs("atype").value = biggest.v > 0 ? biggest.t : "other";
-    // pressing this is saying "take the calculator's word", so any earlier hand edit is released
+    // pressing this is saying "take the calculator's word" about the MONEY. It deliberately does
+    // not touch the comment: that may be a sentence somebody wrote, and Rebuild is how they ask
+    // for the breakdown back.
     amtEdited = false;
-    reasonEdited = false;
     qs("aamt").value = Number(qs("ctotal").value || 0).toFixed(2);
-    qs("areason").value = qs("csummary").value;
   });
 
   paintCalc();
@@ -867,13 +869,10 @@ async function openWorkSheet(r, v, reload, opts = {}) {
       fail(tr("st.nothingToSave")); return;
     }
 
-    let reason = "";
-    if (wantCharge) {
-      // invoice_lines.adjustment_needs_comment rejects a blank justification downstream; catching it
-      // here is far better than discovering it at invoicing time
-      reason = qs("areason").value.trim();
-      if (!reason) { fail(tr("adj.reasonRequired")); return; }
-    }
+    /* The comment IS the reason. invoice_lines.adjustment_needs_comment rejects a blank
+     * justification downstream, so an empty box with a charge on it is stopped here rather than
+     * discovered at invoicing time. */
+    if (wantCharge && !comment) { fail(tr("adj.reasonRequired")); return; }
     m.close();
 
     /* THE CHARGE GOES FIRST, and the order is load-bearing. fn_ops_save_visit auto-proposes an
@@ -885,7 +884,7 @@ async function openWorkSheet(r, v, reload, opts = {}) {
       await submit("fn_ops_add_adjustment", {
         p_order_id: r.order_id,
         p_charge_type: qs("atype").value,
-        p_reason: reason,
+        p_reason: comment,
         p_quantity: 1,
         p_visit_no: Number(qs("avisit").value) || null,
         // Every adjustment captured here is a charge. Whether it is actually billed is decided

@@ -832,3 +832,8 @@ table.dense tfoot th{position:sticky;bottom:0;background:var(--info-bg);border-t
    but it starts with no width and says why, so a zero amount is explained rather than mysterious. */
 .rwrow.nowidth > b{color:var(--muted);}
 .rwname i{font-size:10.5px;font-style:normal;white-space:nowrap;}
+
+/* The one comment box: built from the calculation, edited or dictated, copied, saved, and used as
+   the charge's reason. It sits directly under the calculator because that is where it comes from. */
+.commentbox{margin-top:14px;}
+.commentbox .spread{margin-bottom:5px;}
