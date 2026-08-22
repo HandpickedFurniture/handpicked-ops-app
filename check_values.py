@@ -39,6 +39,11 @@ EXPECTED = {
                      "extra_wire", "extra_trunking",
                      "scaffolding", "additional_visit", "tieback", "other"},
     "ADJ_STATUSES": {"new", "reviewed", "invoiced", "dropped"},
+    # accounting_alerts_reason_code_check. The column is nullable - every row written before
+    # 22 Aug 2026 has no cause recorded - but anything the app DOES write must be one of these.
+    "ADJ_REASONS": {"client_change_of_mind", "scope_change", "consultation_issue", "supplier_issue",
+                    "client_not_available", "site_not_ready", "client_damaged",
+                    "production_issue", "installation_issue", "missing_item", "other"},
     # date_bucket is computed in v_ops_order_roster, not a CHECK - these must match that CASE
     "DATE_BUCKETS": {"overdue", "today", "tomorrow", "day_after", "this_week",
                      "later", "nodate", "done"},

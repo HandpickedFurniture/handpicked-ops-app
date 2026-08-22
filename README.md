@@ -83,14 +83,19 @@ happened on site, and all three are one tap from Home.
 **The status is a coloured pill beside the dropdown**, so the panel and the list say the same thing
 the same way — a select only shows its value to someone who reads it.
 
-**Alteration is four counts, not a yes/no.** *Planned* is what the PO already covers; *Adjustment*
-is what arose on site and is chargeable. Each is entered as windows-by-layer-count, and the curtain
-total is derived beside it — because **a 2 layer window is two curtains**, and that doubling is the
-single most expensive mistake in this business. `order_status.alteration` stays and is now
-**derived** from the four (`fn_ops_save_visit` sets it when any count is sent): it is read by the
-shared filter bar, the dashboard tile, column and CSV, the production flag chips, Chotu's
-`order_edit` and the schedule tags, and unpicking it from all of those is a change of its own. A
-caller that sends no count keys keeps the explicit boolean it has always sent.
+**Alteration is counts, not a yes/no**, and the two kinds live where each is used. The panel carries
+*Planned* — what the PO already covers, a property of the order as sold. *Adjustment* — what arose on
+site — is in the charge sheet, next to the money it produces, because having it in both places meant
+the same numbers were entered twice, a day apart, by the same person.
+
+Each is entered as **windows by layer count** and the curtain total is derived beside it, because
+**a 2 layer window is two curtains** and that doubling is the single most expensive mistake in this
+business. `order_status.alteration` stays and is now **derived** from the four counts
+(`fn_ops_save_visit` sets it when any count key is sent): it is read by the shared filter bar, the
+dashboard tile, column and CSV, the production flag chips, Chotu's `order_edit` and the schedule
+tags, and unpicking it from all of those is a change of its own. A caller that sends no count keys
+keeps the explicit boolean it has always sent — which is what keeps Chotu working. Each screen sends
+only its own pair, so neither can wipe the other's.
 
 **One sheet adds a visit, a charge, or both.** There were two buttons, one at the foot of each
 section, and they were two halves of a single event: the team went back, and while they were there
@@ -120,8 +125,8 @@ In their place, a calculator that **never invents a rate**:
 | Line | Where the money comes from |
 |---|---|
 | Extra visits | `adjustment_rate_card` via `fn_ops_rate_for`, the **unit** rate × the count |
-| Alteration curtains | same, pre-filled from the order's *Adjustment alteration* counts |
-| Curtains remade | `remake_rate_card` through `v_ops_order_curtains` — one tick-box per curtain on the order, style, layers and width pre-filled and all three overridable |
+| Adjustment alteration | same rate, entered here as 1-layer and 2-layer window counts and written back to `order_status` |
+| Curtains remade | `remake_rate_card` through `v_ops_order_windows` — one tick-box per **window**, style, layers and width pre-filled and all three overridable |
 | Additional materials | typed — there is no rate for it |
 | Transport | typed — vehicle hire goes by distance and only the office sets that figure |
 
@@ -136,6 +141,26 @@ weeks later. Two details that were got wrong first time and are worth keeping: t
 prints the **doubled** rate (92, not 46) so it multiplies out to the amount beside it, and widths
 keep **two** decimals — `num()` rounds to one, and 1.84 m shown as 1.8 m does not reproduce the
 figure.
+
+**The picker lists every window, not every priceable line.** `v_ops_order_curtains` holds only lines
+with a width, which is right for pricing and wrong for a picker: 100 of the 2,742 windows in the book
+carry no priceable line at all — a tie back, a remote, a velcro job — and were silently not offered,
+though any of them can still have been reworked. `v_ops_order_windows` is every window, with its
+**widest** priceable curtain attached when it has one. Window names are **whitespace-normalised**
+(17 pairs in the book differ by nothing but a double space and would otherwise appear twice), a
+window with no width says so and waits for one to be typed, and a window with more than one curtain
+— 367 of them — says how many rather than quietly dropping the rest.
+
+**Why the charge exists is a value now.** `accounting_alerts.reason_code` is a closed list beside the
+free-text reason: client changed their mind, new work after the PO, consultation issue, supplier
+issue, client not available, site not ready, client damaged the goods, production issue, installation
+issue, missing item, other. The last three mean the work is **ours to put right** and is normally
+absorbed at AED 0 — picking one says so in a banner, without refusing the charge, because a
+coordinator who has agreed a figure with a client outranks a rule of thumb. **Supplier issue is
+charged** and is deliberately not the same value as production issue: folding the two together is
+where this business loses the most money. The list lives in `ADJ_REASONS` in `js/config.js` and is
+guarded by `check_values.py` against `accounting_alerts_reason_code_check`, like every other
+vocabulary. It reaches Finance through `v_ops_finance_adjustments`.
 
 **Charge this total** turns the calculation into one adjustment: the total in the amount, the
 working in the reason, and the charge type set to whichever part was biggest — the same rule Chotu

@@ -5,7 +5,7 @@
  * TRANSLATED. Reverse that and writes start failing their CHECK.
  */
 
-export const BUILD = "2026-08-22.3";
+export const BUILD = "2026-08-22.4";
 
 /* Supabase project "handpicked-curtains". The publishable key is safe to ship: every table is
  * RLS-locked to the `authenticated` role and `anon` has no policy at all. The bearer token on each
@@ -254,6 +254,36 @@ export const CHARGE_TYPES = [
   { value: "extra_trunking",   key: "chg.trunking" },
   { value: "moving",           key: "chg.moving" },
   { value: "other",            key: "chg.other" },
+];
+
+/* accounting_alerts.reason_code - WHY the charge exists, as a value rather than as prose.
+ *
+ * `reason` stays free text: it prints on the invoice and it carries the arithmetic. This is the
+ * other half of the question, and it has a small closed set of answers.
+ *
+ * `charged: false` marks the three causes where the work is OURS TO PUT RIGHT and is normally
+ * absorbed at zero - our making, our fitting, and something that should have been supplied and was
+ * not. The sheet says so when one of them is picked; it does not refuse the charge, because a
+ * coordinator who has agreed a figure with a client outranks a rule of thumb.
+ *
+ * A SUPPLIER'S FAULT IS NOT OUR PRODUCTION FAULT and is CHARGED - wrong or damaged fabric, a faulty
+ * mechanism, brackets that never arrived. It is a value of its own precisely because folding it into
+ * production_issue is where this business loses the most money. Consultation issue is charged too,
+ * for the same reason it is in Chotu's prompt: the client signed the order off that consultation.
+ *
+ * Keep in step with accounting_alerts_reason_code_check - see check_values.py. */
+export const ADJ_REASONS = [
+  { value: "client_change_of_mind", key: "rsn.changeOfMind",   charged: true },
+  { value: "scope_change",          key: "rsn.scopeChange",    charged: true },
+  { value: "consultation_issue",    key: "rsn.consultation",   charged: true },
+  { value: "supplier_issue",        key: "rsn.supplier",       charged: true },
+  { value: "client_not_available",  key: "rsn.notAvailable",   charged: true },
+  { value: "site_not_ready",        key: "rsn.siteNotReady",   charged: true },
+  { value: "client_damaged",        key: "rsn.clientDamaged",  charged: true },
+  { value: "production_issue",      key: "rsn.production",     charged: false },
+  { value: "installation_issue",    key: "rsn.installation",   charged: false },
+  { value: "missing_item",          key: "rsn.missingItem",    charged: false },
+  { value: "other",                 key: "rsn.other",          charged: true },
 ];
 
 export const ADJ_STATUSES = [

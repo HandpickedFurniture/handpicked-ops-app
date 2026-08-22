@@ -818,3 +818,17 @@ table.dense tfoot th{position:sticky;bottom:0;background:var(--info-bg);border-t
 .pokv{display:flex;gap:6px;font-size:12px;}
 .pokv b{color:var(--muted);font-weight:600;flex:none;}
 .pokv span{word-break:break-word;}
+
+/* The alteration pair inside the calculator: two small counts that make one curtain total, kept on
+   one line so the "1 layer / 2 layer" relationship is visible rather than implied. */
+.calcalt{grid-template-columns:1fr auto auto 92px;}
+.altpair{display:flex;gap:8px;}
+.altpair label{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--muted);}
+.altpair input{width:54px;}
+@media(max-width:640px){.calcalt{grid-template-columns:1fr auto;}
+  .altpair{grid-column:1/3;}}
+
+/* A window with no priceable line on the order is still offered - it can still have been reworked -
+   but it starts with no width and says why, so a zero amount is explained rather than mysterious. */
+.rwrow.nowidth > b{color:var(--muted);}
+.rwname i{font-size:10.5px;font-style:normal;white-space:nowrap;}

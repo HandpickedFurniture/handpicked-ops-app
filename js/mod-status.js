@@ -12,7 +12,8 @@
 import { api, apiAll, rpc, submit, currentActor, queueDepth, isSignedIn, rawMessage } from "./api.js";
 import { tr, tv, getLang } from "./i18n.js";
 import {
-  ORDER_STATUSES, STATUS_TONE, CHARGE_TYPES, ADJ_STATUSES, TRANSFER_STATUSES, SPECIAL_COLS,
+  ORDER_STATUSES, STATUS_TONE, CHARGE_TYPES, ADJ_STATUSES, ADJ_REASONS, TRANSFER_STATUSES,
+  SPECIAL_COLS,
 } from "./config.js";
 import {
   $, esc, el, chip, aed, num, fmtDate, toast, loading, modal, selectHtml, orderLabel, copyText,
@@ -280,13 +281,16 @@ async function renderStatusPanel(host, r, reload) {
       ${Array.from({ length: 21 }, (_, i) =>
         `<option value="${i}"${Number(val || 0) === i ? " selected" : ""}>${i}</option>`).join("")}
     </select>`;
-  const altGroup = (key, p1, p2, n1, n2) => `
+  /* PLANNED ONLY. Adjustment alteration used to sit beside this and has moved to the sheet that
+   * actually charges for it - the counts and the money were being entered in two places, a day
+   * apart, by the same person. Planned belongs here because it describes the order as sold. */
+  const altGroup = (p1, p2) => `
     <div class="altgrp">
-      <div class="altgrph"><b>${esc(tr(key))}</b>
-        <span class="chip mute" data-curtains="${esc(key)}"></span></div>
+      <div class="altgrph"><b>${esc(tr("st.altPlanned"))}</b>
+        <span class="chip mute" data-curtains></span></div>
       <div class="grid2">
-        <div><label class="f">${esc(tr("st.alt1L"))}</label>${cnt(n1, p1)}</div>
-        <div><label class="f">${esc(tr("st.alt2L"))}</label>${cnt(n2, p2)}</div>
+        <div><label class="f">${esc(tr("st.alt1L"))}</label>${cnt("op1", p1)}</div>
+        <div><label class="f">${esc(tr("st.alt2L"))}</label>${cnt("op2", p2)}</div>
       </div>
     </div>`;
 
@@ -304,10 +308,7 @@ async function renderStatusPanel(host, r, reload) {
                  value="${esc(r.removal_curtain_count ?? "")}"></div>
       </div>
       <div class="altsplit">
-        ${altGroup("st.altPlanned", (ostat || {}).alteration_planned_1l,
-                   (ostat || {}).alteration_planned_2l, "op1", "op2")}
-        ${altGroup("st.altAdjustment", (ostat || {}).alteration_adj_1l,
-                   (ostat || {}).alteration_adj_2l, "oa1", "oa2")}
+        ${altGroup((ostat || {}).alteration_planned_1l, (ostat || {}).alteration_planned_2l)}
       </div>
       <div style="margin-top:10px">
         <label class="f">${esc(tr("st.alterationNote"))}</label>
@@ -329,13 +330,10 @@ async function renderStatusPanel(host, r, reload) {
   // visible rather than something the reader has to do in their head
   const curtainsOf = (a, b) => numOf(a) + 2 * numOf(b);
   const paintCurtains = () => {
-    orderBox.querySelector('[data-curtains="st.altPlanned"]').textContent =
+    orderBox.querySelector("[data-curtains]").textContent =
       tr("st.altCurtains", { n: curtainsOf("op1", "op2") });
-    orderBox.querySelector('[data-curtains="st.altAdjustment"]').textContent =
-      tr("st.altCurtains", { n: curtainsOf("oa1", "oa2") });
   };
-  ["op1", "op2", "oa1", "oa2"].forEach((n) =>
-    oq(n).addEventListener("change", paintCurtains));
+  ["op1", "op2"].forEach((n) => oq(n).addEventListener("change", paintCurtains));
   paintCurtains();
 
   // the pill follows the dropdown before anything is saved, so the choice is legible immediately
@@ -368,8 +366,10 @@ async function renderStatusPanel(host, r, reload) {
         /* The four counts, not the boolean. fn_ops_save_visit derives `alteration` from them when
          * they are present - it is still read by the filter bar, the dashboard, the production
          * chips and the schedule tags, so it has to stay true to what is entered here. */
+        /* Only the PLANNED pair. The adjustment pair is absent, not zero - fn_ops_save_visit
+         * coalesces an absent key against the stored value, so saving here cannot wipe what the
+         * charge sheet recorded. */
         alteration_planned_1l: numOf("op1"), alteration_planned_2l: numOf("op2"),
-        alteration_adj_1l: numOf("oa1"), alteration_adj_2l: numOf("oa2"),
         alteration_special_requirement: oq("oaltnote").value || null,
         removal_curtain_count: oq("oremoval").value || null,
         comment: oq("ocomment").value || null,
@@ -473,7 +473,7 @@ async function openWorkSheet(r, v, reload, opts = {}) {
   let curtains = [], remakeRates = [], visitRate = 0, altRate = 0, adjAlt = null;
   try {
     const [cur, rates, vr, ar, stat] = await Promise.all([
-      api(`/rest/v1/v_ops_order_curtains?select=line_no,window_name,description,style,layers,width_m,po_rate,remake_rate_per_layer&order_id=eq.${q}&order=line_no`),
+      api(`/rest/v1/v_ops_order_windows?select=window_name,first_line_no,line_no,description,style,layers,width_m,po_rate,remake_rate_per_layer,curtain_lines,priceable&order_id=eq.${q}&order=first_line_no`),
       api("/rest/v1/remake_rate_card?select=style,rate_aed_per_layer,label&order=style"),
       rpc("fn_ops_rate_for", { p_charge_type: "additional_visit", p_qty: 1 }),
       rpc("fn_ops_rate_for", { p_charge_type: "alteration", p_qty: 1 }),
@@ -498,22 +498,23 @@ async function openWorkSheet(r, v, reload, opts = {}) {
   remakeRates.forEach((x) => { RATE_BY_STYLE[x.style] = x; });
   const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
-  // curtains altered as an ADJUSTMENT, straight off the order panel - a 2 layer window is 2 curtains
-  const altCurtainsFromOrder = adjAlt
-    ? Number(adjAlt.alteration_adj_1l || 0) + 2 * Number(adjAlt.alteration_adj_2l || 0) : 0;
-
-  /* The rework rows start as the order's own curtains, with the style, layer count and width the
-   * order says they have. All three stay editable: a window can be remade in a different style
-   * from the one it was sold in, and the width that matters for a remake is the width that was
-   * actually cut. */
+  /* EVERY WINDOW ON THE ORDER, not only the ones carrying a curtain that can be priced by width.
+   * 100 windows in the book have no priceable line at all - they hold a tie back, a remote, a
+   * velcro job - and leaving them out of the picker meant a window that had genuinely been reworked
+   * could not be ticked. One with no width simply starts blank and asks for one.
+   *
+   * Style, layers and width all stay editable: a window can be remade in a different style from the
+   * one it was sold in, and the width that matters for a remake is the width actually cut. */
   const rework = curtains.map((c) => ({
     line_no: c.line_no,
-    window: c.window_name || c.description || `#${c.line_no}`,
+    window: c.window_name || c.description || `#${c.first_line_no}`,
     description: c.description || "",
     po_rate: Number(c.po_rate || 0),
-    style: c.style,
+    style: c.style || "other",
     layers: Number(c.layers || 1),
     width: Number(c.width_m || 0),
+    priceable: c.priceable !== false,
+    curtainLines: Number(c.curtain_lines || 0),
     on: false,
   }));
 
@@ -560,20 +561,36 @@ async function openWorkSheet(r, v, reload, opts = {}) {
         <b data-sub="visits">${esc(aed(0))}</b>
       </div>
 
-      <div class="calcrow">
-        <label class="f">${esc(tr("calc.alterations"))}</label>
-        <input type="number" name="calts" min="0" step="1" value="${esc(altCurtainsFromOrder)}">
-        <span class="muted">× ${esc(aed(altRate))}</span>
-        <b data-sub="alts">${esc(aed(altCurtainsFromOrder * altRate))}</b>
+      <!-- Entered as WINDOWS BY LAYER COUNT, not as a curtain total, so the doubling a two layer
+           window carries happens here rather than in whoever is typing. The curtain count is shown
+           between the inputs and the money, where it can be read back. These two are the ORDER's
+           adjustment counts - they used to sit on the panel as well, which meant the same numbers
+           were entered twice, a day apart, by the same person. -->
+      <div class="calcrow calcalt">
+        <label class="f">${esc(tr("st.altAdjustment"))}</label>
+        <div class="altpair">
+          <label>${esc(tr("calc.alt1L"))}
+            <input type="number" name="calt1" min="0" step="1"
+                   value="${esc(Number((adjAlt || {}).alteration_adj_1l || 0))}"></label>
+          <label>${esc(tr("calc.alt2L"))}
+            <input type="number" name="calt2" min="0" step="1"
+                   value="${esc(Number((adjAlt || {}).alteration_adj_2l || 0))}"></label>
+        </div>
+        <span class="muted" data-altc></span>
+        <b data-sub="alts"></b>
       </div>
 
       <div class="calcsec">
         <div class="calcsech">${esc(tr("calc.rework"))}
           <b data-sub="rework">${esc(aed(0))}</b></div>
         ${rework.length ? rework.map((row, i) => `
-          <div class="rwrow" data-rw="${i}">
+          <div class="rwrow${row.priceable ? "" : " nowidth"}" data-rw="${i}">
             <label class="rwname"><input type="checkbox" data-rwon="${i}">
-              <span>${esc(row.window)}</span></label>
+              <span>${esc(row.window)}</span>
+              ${!row.priceable ? `<i class="muted">${esc(tr("calc.notPriceable"))}</i>`
+                : row.curtainLines > 1
+                  ? `<i class="muted">${esc(tr("calc.manyCurtains", { n: row.curtainLines }))}</i>`
+                  : ""}</label>
             <select data-rwstyle="${i}" aria-label="${esc(tr("calc.style"))}">${styleOptions(row)}</select>
             <select data-rwlayers="${i}" aria-label="${esc(tr("calc.layers"))}">
               <option value="1"${row.layers === 1 ? " selected" : ""}>1</option>
@@ -583,7 +600,7 @@ async function openWorkSheet(r, v, reload, opts = {}) {
                    aria-label="${esc(tr("calc.width"))}">
             <b data-rwamt="${i}">${esc(aed(rowAmount(row)))}</b>
           </div>`).join("")
-        : `<div class="dnone">${esc(tr("calc.noCurtains"))}</div>`}
+        : `<div class="dnone">${esc(tr("calc.noWindows"))}</div>`}
       </div>
 
       <div class="calcrow">
@@ -629,6 +646,13 @@ async function openWorkSheet(r, v, reload, opts = {}) {
       <div style="margin-top:10px">
         <label class="f">${esc(tr("adj.amount"))}</label>
         <input type="number" name="aamt" step="0.01" inputmode="decimal">
+      </div>
+      <div style="margin-top:10px">
+        <label class="f">${esc(tr("adj.reasonCode"))}</label>
+        ${selectHtml("arsn", ADJ_REASONS.map((x) => ({ value: x.value, label: tr(x.key) })),
+                     "", tr("adj.pickReason"))}
+        <div class="banner warn hidden" data-absorb style="margin-top:6px">${
+          esc(tr("adj.absorbed"))}</div>
       </div>
       <div style="margin-top:10px">
         <label class="f">${esc(tr("adj.reason"))}</label>
@@ -691,11 +715,15 @@ async function openWorkSheet(r, v, reload, opts = {}) {
    * one thing and the adjustment writing another. */
   let amtEdited = false;
   let reasonEdited = false;
+  // the alteration counts belong to the ORDER; they are only written back if somebody moved them
+  let altTouched = false;
 
   const numOf = (n) => Number(qs(n).value || 0);
+  // a 2 layer window is two curtains - the doubling lives here and nowhere else
+  const altCurtains = () => numOf("calt1") + 2 * numOf("calt2");
   const parts = () => {
     const visits = r2(numOf("cvisits") * visitRate);
-    const alts = r2(numOf("calts") * altRate);
+    const alts = r2(altCurtains() * altRate);
     const rw = rework.filter((x) => x.on).map((x) => ({ row: x, amount: rowAmount(x) }));
     const reworkTotal = r2(rw.reduce((a, x) => a + x.amount, 0));
     return { visits, alts, rw, reworkTotal, mat: r2(numOf("cmat")), trans: r2(numOf("ctrans")) };
@@ -712,7 +740,7 @@ async function openWorkSheet(r, v, reload, opts = {}) {
     const p = parts();
     const out = [`${orderLabel(r)}`];
     if (p.visits) out.push(`${tr("calc.visits")}: ${num(numOf("cvisits"))} × ${aed(visitRate)} = ${aed(p.visits)}`);
-    if (p.alts) out.push(`${tr("calc.alterations")}: ${num(numOf("calts"))} × ${aed(altRate)} = ${aed(p.alts)}`);
+    if (p.alts) out.push(`${tr("st.altAdjustment")}: ${num(altCurtains())} × ${aed(altRate)} = ${aed(p.alts)}`);
     p.rw.forEach(({ row, amount }) => {
       const label = (RATE_BY_STYLE[row.style] || {}).label || tr("calc.fromOrder");
       /* The rate printed here is the per-layer rate TIMES THE LAYERS, not the per-layer rate on its
@@ -735,6 +763,8 @@ async function openWorkSheet(r, v, reload, opts = {}) {
     const set = (k, val) => { m.sheet.querySelector(`[data-sub="${k}"]`).textContent = aed(val); };
     set("visits", p.visits); set("alts", p.alts); set("rework", p.reworkTotal);
     set("mat", p.mat); set("trans", p.trans);
+    m.sheet.querySelector("[data-altc]").textContent =
+      `${tr("st.altCurtains", { n: altCurtains() })} × ${aed(altRate)}`;
     rework.forEach((row, i) => {
       m.sheet.querySelector(`[data-rwamt="${i}"]`).textContent = aed(rowAmount(row));
     });
@@ -754,12 +784,19 @@ async function openWorkSheet(r, v, reload, opts = {}) {
     if (!amtEdited) qs("aamt").value = Number(qs("ctotal").value || 0).toFixed(2);
   };
 
-  ["cvisits", "calts", "cmat", "ctrans"].forEach((n) =>
+  ["cvisits", "calt1", "calt2", "cmat", "ctrans"].forEach((n) =>
     qs(n).addEventListener("input", paintCalc));
+  ["calt1", "calt2"].forEach((n) => qs(n).addEventListener("input", () => { altTouched = true; }));
   qs("ctotal").addEventListener("input", () => { totalEdited = true; paintCalc(); });
   qs("csummary").addEventListener("input", () => { summaryEdited = true; });
   qs("wcomment").addEventListener("input", () => { qs("wcomment").dataset.gen = "0"; });
   qs("aamt").addEventListener("input", () => { amtEdited = true; });
+  /* Three of the eleven causes mean the work is ours to put right and is normally absorbed at zero.
+   * Said, not enforced: a coordinator who has agreed a figure with a client outranks a rule. */
+  qs("arsn").addEventListener("change", (e) => {
+    const rs = ADJ_REASONS.find((x) => x.value === e.target.value);
+    m.sheet.querySelector("[data-absorb]").classList.toggle("hidden", !rs || rs.charged !== false);
+  });
   qs("areason").addEventListener("input", () => { reasonEdited = true; });
 
   rework.forEach((row, i) => {
@@ -819,7 +856,16 @@ async function openWorkSheet(r, v, reload, opts = {}) {
       errBox.classList.remove("hidden");
     };
 
-    if (!wantVisit && !wantCharge && !newStatus && !comment) { fail(tr("st.nothingToSave")); return; }
+    /* The alteration counts belong to the ORDER, not to the charge, so they are written whether or
+     * not a charge is captured - and only when somebody moved them. Sending them unchanged would
+     * still count as "counts were sent" to fn_ops_save_visit, which re-derives the alteration flag
+     * off values nobody touched. */
+    const altPayload = () => (altTouched
+      ? { alteration_adj_1l: numOf("calt1"), alteration_adj_2l: numOf("calt2") } : {});
+
+    if (!wantVisit && !wantCharge && !newStatus && !comment && !altTouched) {
+      fail(tr("st.nothingToSave")); return;
+    }
 
     let reason = "";
     if (wantCharge) {
@@ -850,6 +896,7 @@ async function openWorkSheet(r, v, reload, opts = {}) {
         p_window_name: null,
         p_notes: null,
         p_status: "new",
+        p_reason_code: qs("arsn").value || null,
       });
     }
 
@@ -860,6 +907,7 @@ async function openWorkSheet(r, v, reload, opts = {}) {
         p_payload: {
           // one comment box now, and it goes to the Kurtains channel
           ...(comment ? { slack_comment: comment } : {}),
+          ...altPayload(),
           // absent rather than null when nothing was picked - see fn_ops_save_visit, which coalesces
           // an absent key against the stored value
           ...(newStatus ? { status: newStatus } : {}),
@@ -877,6 +925,7 @@ async function openWorkSheet(r, v, reload, opts = {}) {
         p_payload: {
           ...(comment ? { slack_comment: comment } : {}),
           ...(newStatus ? { status: newStatus } : {}),
+          ...altPayload(),
           input_method: method, lang: getLang(), skip_visit_charge: true,
         },
         p_actor: currentActor(),
