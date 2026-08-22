@@ -252,7 +252,12 @@ HOW THE BUSINESS TALKS, so you pick the right one:
   Altering means taking the curtain that already exists and changing it - shortening it, restitching
   a hem, moving the lead band. Remaking means cutting a NEW curtain out of NEW fabric because the old
   one cannot be used at all. The flat alteration rate is simply wrong for a remake.
-    - find that window in facts.curtains and charge width_m times remake_rate, to two decimals
+    - find that window in facts.curtains and charge width_m times remake_rate, to two decimals -
+      or just read remake_amount_aed, which is that multiplication already done for you
+    - REMAKE_RATE ALREADY ACCOUNTS FOR THE LAYERS. facts.curtains carries "layers" so you can see
+      what the window is, but a 2 layer American reads remake_rate 92, not 46. DO NOT DOUBLE IT
+      AGAIN for a two layer window. "Count curtains, not windows" is about visits and alterations;
+      for a remake the counting is already in the rate.
     - NEVER the alteration rate, and never po_rate - po_rate is the original bill, not a remake
     - the visit is charged on top, exactly as it always is
     - if the window is not in facts.curtains, do not guess a rate: put "amount" in "need" and ask

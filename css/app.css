@@ -314,6 +314,53 @@ table.dense tr.selected td{background:var(--info-bg);}
 /* ---------------------------------------------------------------- preparation (mod-prep.js)
    Rows you TICK rather than rows you read, so the whole row is the target - a workshop tap lands
    somewhere near the label, not on a 17px box. */
+/* ---- the order panel's status row and split alteration counts */
+.statusrow{display:flex;gap:8px;align-items:center;}
+.statusrow select{flex:1;min-width:0;}
+
+.altsplit{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;}
+@media(max-width:640px){.altsplit{grid-template-columns:1fr;}}
+.altgrp{border:1px solid var(--line);border-radius:9px;padding:9px 10px;background:var(--bg);}
+.altgrph{display:flex;align-items:center;gap:7px;margin-bottom:7px;font-size:12.5px;}
+.altgrph .chip{margin-left:auto;}
+
+/* ---- the visit calculator
+   Every line shows its own working - count, rate, and what the two make - because a total nobody
+   can check is a total nobody argues with, and these are the numbers a client queries. */
+.calcbox{margin-top:14px;border:1px solid var(--brand);border-radius:11px;padding:11px 12px;
+  background:var(--card);}
+.calcbox > h4{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--brand);
+  margin:0 0 9px;}
+.calcrow{display:grid;grid-template-columns:1fr 78px auto 92px;gap:8px;align-items:center;
+  padding:5px 0;border-bottom:1px solid var(--line);}
+.calcrow .f{margin:0;}
+.calcrow > b{text-align:right;font-variant-numeric:tabular-nums;}
+.calcrow .muted{font-size:11.5px;white-space:nowrap;}
+
+.calcsec{padding:7px 0;border-bottom:1px solid var(--line);}
+.calcsech{display:flex;align-items:center;font-size:11px;text-transform:uppercase;
+  letter-spacing:.03em;color:var(--muted);margin-bottom:5px;}
+.calcsech > b{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--fg);
+  text-transform:none;letter-spacing:0;font-size:12.5px;}
+.rwrow{display:grid;grid-template-columns:1fr 96px 54px 74px 92px;gap:6px;align-items:center;
+  padding:4px 5px;border-radius:7px;font-size:12.5px;}
+.rwrow.on{background:var(--info-bg);}
+.rwrow > b{text-align:right;font-variant-numeric:tabular-nums;}
+.rwname{display:flex;gap:6px;align-items:center;min-width:0;cursor:pointer;}
+.rwname > span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+@media(max-width:640px){
+  .calcrow{grid-template-columns:1fr 66px 84px;}
+  .calcrow .muted{grid-column:2/4;font-size:11px;}
+  .rwrow{grid-template-columns:1fr 84px;row-gap:4px;}
+  .rwrow > b{grid-column:2;}
+}
+
+.calctotal{display:flex;gap:8px;align-items:center;padding-top:10px;flex-wrap:wrap;}
+.calctotal .f{margin:0;font-size:13px;color:var(--fg);font-weight:700;}
+.calctotal input{width:120px;font-weight:700;font-variant-numeric:tabular-nums;}
+.summarybox{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;
+  white-space:pre;overflow-wrap:normal;overflow-x:auto;}
+
 /* The two switches on the visit-or-charge sheet. They read as section headings rather than as
    ordinary tick boxes, because that is what they are - each one decides whether a whole block of
    the form gets written at all. Big hit area: this is tapped on a phone with one thumb. */

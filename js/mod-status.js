@@ -15,7 +15,7 @@ import {
   ORDER_STATUSES, STATUS_TONE, CHARGE_TYPES, ADJ_STATUSES, TRANSFER_STATUSES, SPECIAL_COLS,
 } from "./config.js";
 import {
-  $, esc, el, chip, aed, num, fmtDate, toast, loading, modal, selectHtml, orderLabel,
+  $, esc, el, chip, aed, num, fmtDate, toast, loading, modal, selectHtml, orderLabel, copyText,
 } from "./ui.js";
 import { renderFilterBar, toQuery, deriveOptions, activeCount, writeHash } from "./filters.js";
 import { micField, wireMics } from "./voice.js";
@@ -44,27 +44,12 @@ const BOARD_COLS = [
 ].join(",");
 
 let OPTIONS = null;
-let MEMBERS = null;   // the installer name list behind the six per-visit dropdowns
-
-async function loadMembers(force) {
-  if (MEMBERS && !force) return MEMBERS;
-  try {
-    // sorted case-insensitively: the seed list mixes AJISH and Hafis, and a plain sort would put
-    // every capitalised name above every mixed-case one
-    const rows = await api("/rest/v1/team_members?select=id,name&active=is.true");
-    MEMBERS = rows.map((r) => r.name)
-      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
-  } catch (e) { MEMBERS = []; }
-  return MEMBERS;
-}
-
 export async function render(mount, state, setFilters) {
   if (!isSignedIn()) return;
   mount.innerHTML = `<div class="sectionbar"><span></span><span id="stsync"></span></div>
                      <div id="fbar"></div><div id="extra"></div><div id="board"></div>`;
   $("#stsync", mount).appendChild(syncBar());
 
-  await loadMembers();
   if (!OPTIONS) {
     try {
       const all = await apiAll("/rest/v1/v_ops_order_roster?select=city,sheet_status,stitching_types,commercial_names,window_refs,fabric_1_codes,fabric_2_codes");
@@ -243,21 +228,28 @@ async function renderStatusPanel(host, r, reload) {
   host.innerHTML = `<div class="drawer"><span class="muted">${esc(tr("t.loading"))}</span></div>`;
   const q = encodeURIComponent(r.order_id);
   let visits = [], adjustments = [], roster = null, rails = [], units = [], stacked = [];
+  let ostat = null;
   try {
     /* The readiness counts are NOT on v_ops_status_board - that view carries production_state and
      * the special-requirement columns but none of the receiving or prep tallies - so they are read
-     * here, on expand, from the views that do have them. Five requests in one Promise.all is one
-     * round trip, and only for the order somebody actually opened. */
-    let rosterRows;
-    [visits, adjustments, rosterRows, rails, units, stacked] = await Promise.all([
+     * here, on expand, from the views that do have them. Six requests in one Promise.all is one
+     * round trip, and only for the order somebody actually opened.
+     *
+     * order_status is read straight from the table for the four alteration counts. They could have
+     * been added to v_ops_status_board instead, but that view is fetched for every row on the board
+     * and these four numbers are wanted for exactly one order at a time. */
+    let rosterRows, statRows;
+    [visits, adjustments, rosterRows, rails, units, stacked, statRows] = await Promise.all([
       api(`/rest/v1/order_visits?select=*&order_id=eq.${q}&order=visit_no`),
       api(`/rest/v1/v_ops_adjustments?select=*&order_id=eq.${q}&order=id`),
       api(`/rest/v1/v_ops_order_roster?select=recv_fab_done,recv_fab_total,recv_mat_done,recv_mat_total,prep_done,prep_total&order_id=eq.${q}`),
       api(`/rest/v1/v_ops_report_railing?select=line_id,rail_done&order_id=eq.${q}`),
       api(`/rest/v1/v_ops_prep_units?select=window_name,layer_no&order_id=eq.${q}`),
       api(`/rest/v1/v_ops_prep_locations?select=window_name,layer_no&order_id=eq.${q}`),
+      api(`/rest/v1/order_status?select=alteration_planned_1l,alteration_planned_2l,alteration_adj_1l,alteration_adj_2l&order_id=eq.${q}`),
     ]);
     roster = (rosterRows || [])[0] || null;
+    ostat = (statRows || [])[0] || null;
   } catch (e) {
     host.innerHTML = `<div class="drawer"><span class="err">${esc(e.message)}</span></div>`;
     return;
@@ -269,22 +261,53 @@ async function renderStatusPanel(host, r, reload) {
   wrap.appendChild(readinessSection(r, roster, rails, units, stacked));
 
   /* ---- order level */
+  /* THE STATUS PILL beside the dropdown. A select shows the current value only if you read it, and
+   * the same order in the list above is already colour-coded - so the panel and the list disagreed
+   * at a glance. Same chip(), same STATUS_TONE, so they now say the same thing the same way. */
+  const statusPill = (v) => (v ? chip(v, STATUS_TONE[v] || "mute") : chip(tr("st.noStatus"), "mute"));
+
+  /* COUNTS, NOT A BOOLEAN, and split by who pays.
+   *
+   * "Was there an alteration" cannot price anything. What prices an alteration is HOW MANY CURTAINS
+   * were altered, and a 2 layer window is TWO curtains - the single most expensive mistake in this
+   * business, per the charge rules. So each group is entered as windows-by-layer-count and the
+   * curtain total is derived beside it, where it can be read back and checked.
+   *
+   * Planned is what the purchase order already covers. Adjustment is what arose on site and is
+   * chargeable - and it is the number the visit calculator starts from. */
+  const cnt = (name, val) => `
+    <select name="${esc(name)}">
+      ${Array.from({ length: 21 }, (_, i) =>
+        `<option value="${i}"${Number(val || 0) === i ? " selected" : ""}>${i}</option>`).join("")}
+    </select>`;
+  const altGroup = (key, p1, p2, n1, n2) => `
+    <div class="altgrp">
+      <div class="altgrph"><b>${esc(tr(key))}</b>
+        <span class="chip mute" data-curtains="${esc(key)}"></span></div>
+      <div class="grid2">
+        <div><label class="f">${esc(tr("st.alt1L"))}</label>${cnt(n1, p1)}</div>
+        <div><label class="f">${esc(tr("st.alt2L"))}</label>${cnt(n2, p2)}</div>
+      </div>
+    </div>`;
+
   const orderBox = el(`
     <div class="dsec">
       <h4>${esc(tr("st.orderStatus"))}</h4>
-      <div class="grid3">
+      <div class="grid2">
         <div><label class="f">${esc(tr("col.status"))}</label>
-          ${selectHtml("ostatus", ORDER_STATUSES, r.status || "", tr("f.any"))}</div>
-        <!-- Yes/No rather than "—"/"Alteration": the old pair read as "unset" vs "set", so a
-             deliberate No looked identical to never having been asked. -->
-        <div><label class="f">${esc(tr("st.alteration"))}</label>
-          <select name="oalteration">
-            <option value="false"${!r.alteration ? " selected" : ""}>${esc(tr("t.no"))}</option>
-            <option value="true"${r.alteration ? " selected" : ""}>${esc(tr("t.yes"))}</option>
-          </select></div>
+          <div class="statusrow">
+            ${selectHtml("ostatus", ORDER_STATUSES, r.status || "", tr("f.any"))}
+            <span data-pill>${statusPill(r.status)}</span>
+          </div></div>
         <div><label class="f">${esc(tr("st.removalCount"))}</label>
           <input type="number" name="oremoval" min="0" step="1"
                  value="${esc(r.removal_curtain_count ?? "")}"></div>
+      </div>
+      <div class="altsplit">
+        ${altGroup("st.altPlanned", (ostat || {}).alteration_planned_1l,
+                   (ostat || {}).alteration_planned_2l, "op1", "op2")}
+        ${altGroup("st.altAdjustment", (ostat || {}).alteration_adj_1l,
+                   (ostat || {}).alteration_adj_2l, "oa1", "oa2")}
       </div>
       <div style="margin-top:10px">
         <label class="f">${esc(tr("st.alterationNote"))}</label>
@@ -300,8 +323,28 @@ async function renderStatusPanel(host, r, reload) {
       </div>
     </div>`);
 
+  const oq = (n) => orderBox.querySelector(`[name="${n}"]`);
+  const numOf = (n) => Number(oq(n).value || 0);
+  // curtains = single-layer windows + twice the two-layer ones, shown live so the doubling is
+  // visible rather than something the reader has to do in their head
+  const curtainsOf = (a, b) => numOf(a) + 2 * numOf(b);
+  const paintCurtains = () => {
+    orderBox.querySelector('[data-curtains="st.altPlanned"]').textContent =
+      tr("st.altCurtains", { n: curtainsOf("op1", "op2") });
+    orderBox.querySelector('[data-curtains="st.altAdjustment"]').textContent =
+      tr("st.altCurtains", { n: curtainsOf("oa1", "oa2") });
+  };
+  ["op1", "op2", "oa1", "oa2"].forEach((n) =>
+    oq(n).addEventListener("change", paintCurtains));
+  paintCurtains();
+
+  // the pill follows the dropdown before anything is saved, so the choice is legible immediately
+  oq("ostatus").addEventListener("change", (e) => {
+    orderBox.querySelector("[data-pill]").innerHTML = statusPill(e.target.value);
+  });
+
   // Removal count drives the banded removal charge, so offer it right where it is entered.
-  const remIn = orderBox.querySelector('[name="oremoval"]');
+  const remIn = oq("oremoval");
   remIn.addEventListener("change", () => {
     const n = Number(remIn.value || 0);
     if (n > 2) toast(tr("chg.removal") + " — " + tr("adj.add"), "ok");
@@ -321,11 +364,15 @@ async function renderStatusPanel(host, r, reload) {
        * null would be the same thing here, but sending `false` for ready - which is what a
        * removed dropdown would have read as - would silently un-ready every order saved. */
       p_payload: {
-        status: orderBox.querySelector('[name="ostatus"]').value || null,
-        alteration: orderBox.querySelector('[name="oalteration"]').value === "true",
-        alteration_special_requirement: orderBox.querySelector('[name="oaltnote"]').value || null,
-        removal_curtain_count: orderBox.querySelector('[name="oremoval"]').value || null,
-        comment: orderBox.querySelector('[name="ocomment"]').value || null,
+        status: oq("ostatus").value || null,
+        /* The four counts, not the boolean. fn_ops_save_visit derives `alteration` from them when
+         * they are present - it is still read by the filter bar, the dashboard, the production
+         * chips and the schedule tags, so it has to stay true to what is entered here. */
+        alteration_planned_1l: numOf("op1"), alteration_planned_2l: numOf("op2"),
+        alteration_adj_1l: numOf("oa1"), alteration_adj_2l: numOf("oa2"),
+        alteration_special_requirement: oq("oaltnote").value || null,
+        removal_curtain_count: oq("oremoval").value || null,
+        comment: oq("ocomment").value || null,
         input_method: method, lang: getLang(),
         skip_visit_charge: true,   // editing order-level fields must not invent a visit charge
       },
@@ -364,19 +411,10 @@ async function renderStatusPanel(host, r, reload) {
   });
   wrap.appendChild(addRow);
 
-  /* ---- links out to the modules that own the physical goods */
-  wrap.appendChild(el(`
-    <div class="dsec">
-      <h4>${esc(tr("inv.linked"))}</h4>
-      <div class="row">
-        <a class="btn sm" href="#/transfer?order=${encodeURIComponent(r.order_id)}">
-          ${esc(tr("tr.title"))}${r.transfer_status
-            ? " — " + esc(tv(TRANSFER_STATUSES, r.transfer_status)) : ""}</a>
-        <a class="btn sm" href="#/inventory">${esc(tr("inv.viewStock"))}</a>
-        <a class="btn sm" href="#/audit?order=${encodeURIComponent(r.order_id)}">
-          ${esc(tr("audit.title"))}${r.photo_count ? " (" + esc(r.photo_count) + ")" : ""}</a>
-      </div>
-    </div>`));
+  /* The links out to Transfers, Stock and Photo audit used to sit here. They were three ways to
+   * leave the screen somebody had just opened to record what happened on site, and all three
+   * screens are one tap away from Home. Every route they pointed at still exists and is still
+   * linkable; the panel simply stopped advertising them. */
 
   host.innerHTML = "";
   host.appendChild(wrap);
@@ -398,75 +436,102 @@ function visitRow(r, v, reload) {
   return row;
 }
 
-/* One of six slots. Dropdowns rather than free text so "IKBAL", "Ikbal" and "ikbal " do not become
- * three different installers; the "+ New name" option keeps a new hire from blocking the visit. */
-function memberSelect(i, current) {
-  const opts = (MEMBERS || []).map((n) =>
-    `<option value="${esc(n)}"${n === current ? " selected" : ""}>${esc(n)}</option>`).join("");
-  return `<select name="vm${i}" aria-label="${esc(tr("st.member", { n: i + 1 }))}">
-    <option value="">${esc(tr("st.memberNone"))}</option>
-    ${opts}
-    <option value="__new__">${esc(tr("st.newMember"))}</option>
-  </select>`;
-}
-
-/* Wires the "+ New name" sentinel on every member dropdown in a container. */
-function wireMemberSelects(root) {
-  root.querySelectorAll('select[name^="vm"]').forEach((sel) => {
-    sel.addEventListener("change", async () => {
-      if (sel.value !== "__new__") return;
-      sel.value = "";
-      const name = (prompt(tr("st.addMember")) || "").trim();
-      if (!name) return;
-      try {
-        await api("/rest/v1/team_members", {
-          method: "POST",
-          body: JSON.stringify({ name, created_by: currentActor() }),
-        });
-      } catch (e) {
-        // a duplicate is fine - the name already exists, just select it
-        if (!/duplicate|unique/i.test(rawMessage(e))) { toast(e.message, "bad"); return; }
-      }
-      await loadMembers(true);
-      root.querySelectorAll('select[name^="vm"]').forEach((s) => {
-        const keep = s.value;
-        s.innerHTML = memberSelect(0, keep).replace(/^<select[^>]*>|<\/select>$/g, "");
-        s.value = keep;
-      });
-      sel.value = name;
-      toast(tr("st.memberAdded"), "ok");
-    });
-  });
-}
-
 /* ---------------------------------------------------------------- visit + charge, ONE sheet
  *
- * These were two sheets behind two buttons, and they describe ONE event. The team went back to
- * site; while they were there they did work that is over and above the purchase order. Recording
- * that took two openings and two saves, and the second save is the one nobody came back for -
- * which is how the database ends up holding a revisit with no charge against it, or a charge with
- * no visit to explain what it was for.
+ * WHAT CAME BACK FROM SITE, AND WHAT IT COST, in one place with one Save.
  *
- * Either half can be left out. Ticking neither and only setting the order status is a legitimate
- * save too, so Save is refused only when all three would write nothing.
+ * The old sheet asked for a visit date, an outcome and six installer names, and got none of them:
+ * 0 of 120 visits carry a status. Meanwhile the thing this screen is actually for - working out
+ * what a return trip cost and writing it up - was being done on paper. So the fields nobody filled
+ * in are gone and a CALCULATOR takes their place.
  *
- * Opened from a visit row it is that visit's editor, and the visit half cannot be switched off -
- * that is the thing being edited. Opened from the button it starts on a new visit, with the charge
- * half folded away because most trips are just trips.
+ * THE CALCULATOR NEVER INVENTS A RATE. Visits and alterations come from adjustment_rate_card
+ * through fn_ops_rate_for, remakes from remake_rate_card through v_ops_order_curtains, and the two
+ * free lines - materials and transport - are typed because nobody has a rate for them (vehicle hire
+ * goes by distance and only the office sets that figure). Every part is shown with its own working,
+ * so the total can be checked rather than trusted.
+ *
+ * IT PRODUCES A SENTENCE, NOT JUST A NUMBER. The breakdown is written out in words into the comment
+ * box, ready to paste into Slack, and the same text becomes the adjustment's reason - which is what
+ * invoice_lines.adjustment_needs_comment demands and what an accountant reads three weeks later.
+ *
+ * Opened from a visit row it is that visit's editor and the visit half cannot be switched off.
  */
-function openWorkSheet(r, v, reload, opts = {}) {
+async function openWorkSheet(r, v, reload, opts = {}) {
   const editing = !!v.id;
   /* Ten is the ceiling: order_visits.visit_no is capped there and v_order_status_wide pivots
    * exactly 1..10. Rather than refusing the whole sheet - which would also refuse the charge, and
    * an order on its eleventh problem is exactly the one with money on it - the visit half is
    * switched off and locked, and the charge half still works. */
   const visitFull = !!opts.visitFull;
-
-  /* Which visit a charge lands on, before anything is drawn. It is NOT simply v.visit_no: on a full
-   * order that number is 11, which order_visits can never hold, and an adjustment tied to a visit
-   * that cannot exist is one nobody can trace back to a trip. The toggle handler below keeps this in
-   * step when the visit half is switched off by hand. */
   const chargeVisitNo = Math.min(10, (visitFull ? (r.last_visit_no || 1) : v.visit_no) || 1);
+
+  /* Everything the calculator prices with, fetched before the sheet is drawn rather than after -
+   * a rate arriving late would mean a total that changes under somebody's hand. */
+  loading(true, tr("t.loading"));
+  const q = encodeURIComponent(r.order_id);
+  let curtains = [], remakeRates = [], visitRate = 0, altRate = 0, adjAlt = null;
+  try {
+    const [cur, rates, vr, ar, stat] = await Promise.all([
+      api(`/rest/v1/v_ops_order_curtains?select=line_no,window_name,description,style,layers,width_m,po_rate,remake_rate_per_layer&order_id=eq.${q}&order=line_no`),
+      api("/rest/v1/remake_rate_card?select=style,rate_aed_per_layer,label&order=style"),
+      rpc("fn_ops_rate_for", { p_charge_type: "additional_visit", p_qty: 1 }),
+      rpc("fn_ops_rate_for", { p_charge_type: "alteration", p_qty: 1 }),
+      api(`/rest/v1/order_status?select=alteration_adj_1l,alteration_adj_2l&order_id=eq.${q}`),
+    ]);
+    curtains = cur || [];
+    remakeRates = rates || [];
+    /* rate_aed, NOT amount_aed. additional_visit is priced 'per visit', and fn_ops_rate_for returns
+     * the flat rate for that unit whatever quantity it is asked about - so multiplying has to
+     * happen here, against the unit rate, or three visits would price as one. */
+    visitRate = Number(((Array.isArray(vr) ? vr[0] : vr) || {}).rate_aed || 0);
+    altRate = Number(((Array.isArray(ar) ? ar[0] : ar) || {}).rate_aed || 0);
+    adjAlt = (stat || [])[0] || null;
+  } catch (e) {
+    loading(false);
+    toast(e.message, "bad");
+    return;
+  }
+  loading(false);
+
+  const RATE_BY_STYLE = {};
+  remakeRates.forEach((x) => { RATE_BY_STYLE[x.style] = x; });
+  const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
+  // curtains altered as an ADJUSTMENT, straight off the order panel - a 2 layer window is 2 curtains
+  const altCurtainsFromOrder = adjAlt
+    ? Number(adjAlt.alteration_adj_1l || 0) + 2 * Number(adjAlt.alteration_adj_2l || 0) : 0;
+
+  /* The rework rows start as the order's own curtains, with the style, layer count and width the
+   * order says they have. All three stay editable: a window can be remade in a different style
+   * from the one it was sold in, and the width that matters for a remake is the width that was
+   * actually cut. */
+  const rework = curtains.map((c) => ({
+    line_no: c.line_no,
+    window: c.window_name || c.description || `#${c.line_no}`,
+    description: c.description || "",
+    po_rate: Number(c.po_rate || 0),
+    style: c.style,
+    layers: Number(c.layers || 1),
+    width: Number(c.width_m || 0),
+    on: false,
+  }));
+
+  const perLayer = (row) => (row.style === "other"
+    ? row.po_rate
+    : Number((RATE_BY_STYLE[row.style] || {}).rate_aed_per_layer || 0));
+  const rowAmount = (row) => r2(perLayer(row) * row.layers * row.width);
+
+  const styleOptions = (row) => {
+    const opts = remakeRates.map((x) =>
+      `<option value="${esc(x.style)}"${row.style === x.style ? " selected" : ""}>${esc(x.label)}</option>`);
+    // a line that is not one of the three named styles keeps its own catalog rate as an option,
+    // because a roller blind has no agreed remake figure and inventing one would be worse
+    if (row.style === "other") {
+      opts.unshift(`<option value="other" selected>${esc(tr("calc.fromOrder"))}</option>`);
+    }
+    return opts.join("");
+  };
 
   const m = modal(`
     <h3>${esc(editing ? tr("st.visit", { n: v.visit_no }) : tr("st.addWork"))} — ${esc(orderLabel(r))}</h3>
@@ -480,33 +545,70 @@ function openWorkSheet(r, v, reload, opts = {}) {
       ${visitFull ? `<div class="banner warn">${esc(tr("st.maxVisits"))}</div>` : ""}`}
 
     <div data-block="visit"${!editing && visitFull ? ' class="hidden"' : ""}>
-      <!-- Time and team are gone from here: the Schedule board owns both, and a second place to set
-           them was a second answer to the same question. Neither key is sent, so what Schedule wrote
-           survives - fn_ops_save_visit coalesces an absent key against the stored value. -->
-      <div class="grid2" style="margin-top:12px">
-        <div><label class="f">${esc(tr("st.visitDate"))}</label>
-          <input type="date" name="vdate" value="${esc(v.visit_date || "")}"></div>
-        <div><label class="f">${esc(tr("st.visitStatus"))}</label>
-          ${selectHtml("vstatus", ORDER_STATUSES, v.status || "", tr("f.any"))}</div>
-      </div>
-      <div style="margin-top:12px">
-        <label class="f">${esc(tr("st.members"))}</label>
-        <div class="memgrid">
-          ${[0, 1, 2, 3, 4, 5].map((i) => memberSelect(i, (v.member_names || [])[i])).join("")}
-        </div>
-      </div>
-      <div style="margin-top:10px">
-        <label class="f">${esc(tr("st.internal"))}</label>
-        ${micField(`<textarea name="vcomment">${esc(v.comment || "")}</textarea>`, "vcomment")}
-      </div>
-      <div style="margin-top:10px">
-        <label class="f">${esc(tr("st.slack"))}</label>
-        ${micField(`<textarea name="vslack"></textarea>`, "vslack")}
-        <div class="muted" style="margin-top:4px">${esc(tr("st.slackHint"))}</div>
-      </div>
       <div data-photos style="margin-top:12px"></div>
       ${v.visit_no >= 2 ? `<div class="banner info" style="margin-top:12px">
          ${esc(tr("chg.visit"))} — ${esc(tr("adj.new"))}</div>` : ""}
+    </div>
+
+    <div class="calcbox">
+      <h4>${esc(tr("calc.title"))}</h4>
+
+      <div class="calcrow">
+        <label class="f">${esc(tr("calc.visits"))}</label>
+        <input type="number" name="cvisits" min="0" step="1" value="0">
+        <span class="muted">× ${esc(aed(visitRate))}</span>
+        <b data-sub="visits">${esc(aed(0))}</b>
+      </div>
+
+      <div class="calcrow">
+        <label class="f">${esc(tr("calc.alterations"))}</label>
+        <input type="number" name="calts" min="0" step="1" value="${esc(altCurtainsFromOrder)}">
+        <span class="muted">× ${esc(aed(altRate))}</span>
+        <b data-sub="alts">${esc(aed(altCurtainsFromOrder * altRate))}</b>
+      </div>
+
+      <div class="calcsec">
+        <div class="calcsech">${esc(tr("calc.rework"))}
+          <b data-sub="rework">${esc(aed(0))}</b></div>
+        ${rework.length ? rework.map((row, i) => `
+          <div class="rwrow" data-rw="${i}">
+            <label class="rwname"><input type="checkbox" data-rwon="${i}">
+              <span>${esc(row.window)}</span></label>
+            <select data-rwstyle="${i}" aria-label="${esc(tr("calc.style"))}">${styleOptions(row)}</select>
+            <select data-rwlayers="${i}" aria-label="${esc(tr("calc.layers"))}">
+              <option value="1"${row.layers === 1 ? " selected" : ""}>1</option>
+              <option value="2"${row.layers === 2 ? " selected" : ""}>2</option>
+            </select>
+            <input type="number" data-rwwidth="${i}" step="0.01" min="0" value="${esc(row.width)}"
+                   aria-label="${esc(tr("calc.width"))}">
+            <b data-rwamt="${i}">${esc(aed(rowAmount(row)))}</b>
+          </div>`).join("")
+        : `<div class="dnone">${esc(tr("calc.noCurtains"))}</div>`}
+      </div>
+
+      <div class="calcrow">
+        <label class="f">${esc(tr("calc.materials"))}</label>
+        <input type="number" name="cmat" step="0.01" min="0" inputmode="decimal" placeholder="0">
+        <span></span><b data-sub="mat">${esc(aed(0))}</b>
+      </div>
+      <div class="calcrow">
+        <label class="f">${esc(tr("calc.transport"))}</label>
+        <input type="number" name="ctrans" step="0.01" min="0" inputmode="decimal" placeholder="0">
+        <span></span><b data-sub="trans">${esc(aed(0))}</b>
+      </div>
+
+      <div class="calctotal">
+        <label class="f">${esc(tr("calc.total"))}</label>
+        <input type="number" name="ctotal" step="0.01" inputmode="decimal" value="0">
+        <span class="muted hidden" data-edited>${esc(tr("calc.totalEdited"))}</span>
+        <button type="button" class="btn sm accent" data-usetotal>${esc(tr("calc.useTotal"))}</button>
+      </div>
+
+      <div style="margin-top:10px">
+        <div class="spread"><label class="f">${esc(tr("calc.summary"))}</label>
+          <button type="button" class="btn sm ghost" data-copy>${esc(tr("calc.copy"))}</button></div>
+        <textarea name="csummary" rows="6" class="summarybox"></textarea>
+      </div>
     </div>
 
     <label class="cbrow wtoggle">
@@ -520,31 +622,33 @@ function openWorkSheet(r, v, reload, opts = {}) {
         <div><label class="f">${esc(tr("adj.type"))}</label>
           ${selectHtml("atype", CHARGE_TYPES.map((c) => ({ value: c.value, label: tr(c.key) })),
                        "additional_visit")}</div>
-        <div><label class="f">${esc(tr("adj.qty"))}</label>
-          <input type="number" name="aqty" value="1" min="1" step="1"></div>
-        <div><label class="f">${esc(tr("adj.amount"))}</label>
-          <input type="number" name="aamt" step="0.01" inputmode="decimal">
-          <div class="muted" data-rate style="margin-top:4px"></div></div>
-        <!-- the interpolation argument used to sit on esc() instead of tr(), so this label read
-             literally as "Visit {n}" on screen -->
         <div><label class="f">${esc(tr("st.visit", { n: "" })).trim()}</label>
           <input type="number" name="avisit" min="1" max="10" step="1"
                  value="${esc(chargeVisitNo)}"></div>
       </div>
       <div style="margin-top:10px">
+        <label class="f">${esc(tr("adj.amount"))}</label>
+        <input type="number" name="aamt" step="0.01" inputmode="decimal">
+      </div>
+      <div style="margin-top:10px">
         <label class="f">${esc(tr("adj.reason"))}</label>
-        ${micField(`<textarea name="areason"></textarea>`, "areason")}
+        <textarea name="areason" rows="3"></textarea>
         <div class="muted" style="margin-top:4px">${esc(tr("adj.reasonRequired"))}</div>
       </div>
     </div>
 
-    <!-- Where the ORDER now stands, which is not the same question as how this one trip went, and
-         is why it sits outside both halves rather than inside the visit. -->
+    <!-- Where the ORDER now stands, which is not the same question as what this trip cost. -->
     <div style="margin-top:14px">
       <label class="f">${esc(tr("st.orderStatus"))}</label>
       ${selectHtml("wstatus", ORDER_STATUSES, "", tr("adj.statusKeep"))}
       ${r.status ? `<div class="muted" style="margin-top:4px">${
         esc(tr("col.status"))}: ${esc(r.status)}</div>` : ""}
+    </div>
+
+    <div style="margin-top:10px">
+      <label class="f">${esc(tr("st.slack"))}</label>
+      ${micField(`<textarea name="wcomment" rows="4"></textarea>`, "wcomment")}
+      <div class="muted" style="margin-top:4px">${esc(tr("st.slackHint"))}</div>
     </div>
 
     <div id="werr" class="err hidden" style="margin-top:10px"></div>
@@ -553,16 +657,15 @@ function openWorkSheet(r, v, reload, opts = {}) {
       <button class="btn primary" data-yes>${esc(tr("act.save"))}</button>
     </div>`);
 
-  const q = (n) => m.sheet.querySelector(`[name="${n}"]`);
+  const qs = (n) => m.sheet.querySelector(`[name="${n}"]`);
   const block = (n) => m.sheet.querySelector(`[data-block="${n}"]`);
   const errBox = m.sheet.querySelector("#werr");
-  const doVisit = q("dovisit");
-  const doCharge = q("docharge");
+  const doVisit = qs("dovisit");
+  const doCharge = qs("docharge");
   const visitOn = () => editing || (!!doVisit && doVisit.checked && !visitFull);
 
   let method = "typed";
   wireMics(m.sheet, (_t, mm) => { method = mm; });
-  wireMemberSelects(m.sheet);
 
   // Site photos belong to the visit that produced them.
   m.sheet.querySelector("[data-photos]").appendChild(photoStrip({
@@ -573,65 +676,156 @@ function openWorkSheet(r, v, reload, opts = {}) {
   if (doVisit) doVisit.addEventListener("change", () => {
     block("visit").classList.toggle("hidden", !doVisit.checked);
     // a charge follows the visit it arose on, and there is no such visit if none is being recorded
-    q("avisit").value = visitOn() ? v.visit_no : (r.last_visit_no || 1);
+    qs("avisit").value = visitOn() ? v.visit_no : (r.last_visit_no || 1);
   });
   doCharge.addEventListener("change", () => {
     block("charge").classList.toggle("hidden", !doCharge.checked);
-    if (doCharge.checked) refreshRate();
   });
 
-  /* The outcome of the trip usually IS where the order now stands, and typing it twice is how one
-   * of the two gets left behind - 1 order in 777 has a status set. So picking a visit outcome fills
-   * the order status with the same value, VISIBLY, in a control they can still change. It stops the
-   * moment they touch that control themselves: after that it is their answer, not a mirror. */
-  const wStatus = q("wstatus");
-  const vStatus = q("vstatus");
-  let statusTouched = false;
-  wStatus.addEventListener("change", () => { statusTouched = true; });
-  vStatus.addEventListener("change", () => {
-    if (!statusTouched && vStatus.value) wStatus.value = vStatus.value;
-  });
+  /* ---- the arithmetic, in one place, recomputed from the controls on every change */
+  let totalEdited = false;      // typing in the Total box takes it off the calculator
+  let summaryEdited = false;    // ...and editing the summary stops it being regenerated
+  /* The charge follows the calculator until somebody types in the charge itself. Without this the
+   * amount captured at the moment Charge this total was pressed would stay put while the total
+   * moved on, and the sheet would show two different figures for the same job - the summary saying
+   * one thing and the adjustment writing another. */
+  let amtEdited = false;
+  let reasonEdited = false;
 
-  // Pre-fill from the rate card. Band-aware, so removing 4 curtains prices at 100 and 2 at 0.
-  const typeSel = q("atype");
-  const qtyIn = q("aqty");
-  const amtIn = q("aamt");
-  const rateLbl = m.sheet.querySelector("[data-rate]");
-  async function refreshRate() {
-    try {
-      const res = await rpc("fn_ops_rate_for", {
-        p_charge_type: typeSel.value, p_qty: Number(qtyIn.value || 1),
-      });
-      const row = Array.isArray(res) ? res[0] : res;
-      if (row) {
-        amtIn.value = Number(row.amount_aed).toFixed(2);
-        rateLbl.textContent = `${tr("adj.suggested")}: ${row.label} — ${aed(row.amount_aed)}`;
-      } else {
-        rateLbl.textContent = "";
+  const numOf = (n) => Number(qs(n).value || 0);
+  const parts = () => {
+    const visits = r2(numOf("cvisits") * visitRate);
+    const alts = r2(numOf("calts") * altRate);
+    const rw = rework.filter((x) => x.on).map((x) => ({ row: x, amount: rowAmount(x) }));
+    const reworkTotal = r2(rw.reduce((a, x) => a + x.amount, 0));
+    return { visits, alts, rw, reworkTotal, mat: r2(numOf("cmat")), trans: r2(numOf("ctrans")) };
+  };
+  const computed = () => {
+    const p = parts();
+    return r2(p.visits + p.alts + p.reworkTotal + p.mat + p.trans);
+  };
+
+  /* The whole sum in words, in the order it was worked out, so a coordinator can read it back to a
+   * client and an accountant can check it later. This is the text that goes to Slack AND becomes
+   * the adjustment's reason - one sentence, written once. */
+  const buildSummary = () => {
+    const p = parts();
+    const out = [`${orderLabel(r)}`];
+    if (p.visits) out.push(`${tr("calc.visits")}: ${num(numOf("cvisits"))} × ${aed(visitRate)} = ${aed(p.visits)}`);
+    if (p.alts) out.push(`${tr("calc.alterations")}: ${num(numOf("calts"))} × ${aed(altRate)} = ${aed(p.alts)}`);
+    p.rw.forEach(({ row, amount }) => {
+      const label = (RATE_BY_STYLE[row.style] || {}).label || tr("calc.fromOrder");
+      /* The rate printed here is the per-layer rate TIMES THE LAYERS, not the per-layer rate on its
+       * own, so the line multiplies out to the amount beside it. Printing 51 against an amount of
+       * 187.68 invites the reader to check 1.84 x 51, get 93.84, and conclude the total is wrong.
+       * Width keeps two decimals for the same reason - num() rounds to one, and 1.84 m shown as
+       * 1.8 m does not reproduce the figure either. */
+      out.push(`${tr("calc.rework")}: ${row.window} (${label} L${row.layers}) `
+             + `${row.width.toFixed(2)} m × ${aed(perLayer(row) * row.layers)} ${tr("calc.perM")}`
+             + ` = ${aed(amount)}`);
+    });
+    if (p.mat) out.push(`${tr("calc.materials")}: ${aed(p.mat)}`);
+    if (p.trans) out.push(`${tr("calc.transport")}: ${aed(p.trans)}`);
+    out.push(`${tr("calc.total")}: ${aed(totalEdited ? numOf("ctotal") : computed())}`);
+    return out.join("\n");
+  };
+
+  const paintCalc = () => {
+    const p = parts();
+    const set = (k, val) => { m.sheet.querySelector(`[data-sub="${k}"]`).textContent = aed(val); };
+    set("visits", p.visits); set("alts", p.alts); set("rework", p.reworkTotal);
+    set("mat", p.mat); set("trans", p.trans);
+    rework.forEach((row, i) => {
+      m.sheet.querySelector(`[data-rwamt="${i}"]`).textContent = aed(rowAmount(row));
+    });
+    if (!totalEdited) qs("ctotal").value = computed().toFixed(2);
+    m.sheet.querySelector("[data-edited]").classList.toggle("hidden", !totalEdited);
+    if (!summaryEdited) {
+      const text = buildSummary();
+      qs("csummary").value = text;
+      // the comment box is the thing that gets saved; the summary box is what gets copied
+      if (!qs("wcomment").value || qs("wcomment").dataset.gen === "1") {
+        qs("wcomment").value = text;
+        qs("wcomment").dataset.gen = "1";
       }
-    } catch (e) { rateLbl.textContent = ""; }
-  }
-  typeSel.addEventListener("change", refreshRate);
-  qtyIn.addEventListener("change", refreshRate);
+      if (!reasonEdited) qs("areason").value = text;
+    }
+    // the amount the adjustment will actually carry, kept equal to the total on screen
+    if (!amtEdited) qs("aamt").value = Number(qs("ctotal").value || 0).toFixed(2);
+  };
+
+  ["cvisits", "calts", "cmat", "ctrans"].forEach((n) =>
+    qs(n).addEventListener("input", paintCalc));
+  qs("ctotal").addEventListener("input", () => { totalEdited = true; paintCalc(); });
+  qs("csummary").addEventListener("input", () => { summaryEdited = true; });
+  qs("wcomment").addEventListener("input", () => { qs("wcomment").dataset.gen = "0"; });
+  qs("aamt").addEventListener("input", () => { amtEdited = true; });
+  qs("areason").addEventListener("input", () => { reasonEdited = true; });
+
+  rework.forEach((row, i) => {
+    m.sheet.querySelector(`[data-rwon="${i}"]`).addEventListener("change", (e) => {
+      row.on = e.target.checked;
+      m.sheet.querySelector(`[data-rw="${i}"]`).classList.toggle("on", row.on);
+      paintCalc();
+    });
+    m.sheet.querySelector(`[data-rwstyle="${i}"]`).addEventListener("change", (e) => {
+      row.style = e.target.value; paintCalc();
+    });
+    m.sheet.querySelector(`[data-rwlayers="${i}"]`).addEventListener("change", (e) => {
+      row.layers = Number(e.target.value) || 1; paintCalc();
+    });
+    m.sheet.querySelector(`[data-rwwidth="${i}"]`).addEventListener("input", (e) => {
+      row.width = Number(e.target.value) || 0; paintCalc();
+    });
+  });
+
+  m.sheet.querySelector("[data-copy]").addEventListener("click", () => {
+    copyText(qs("csummary").value);
+    toast(tr("calc.copied"), "ok");
+  });
+
+  /* One button that turns the calculation into the charge: the total in the amount, the working in
+   * the reason, and the charge type set to whichever part was biggest - the same rule Chotu is
+   * given for an adjustment made of several parts. */
+  m.sheet.querySelector("[data-usetotal]").addEventListener("click", () => {
+    const p = parts();
+    const biggest = [
+      { t: "additional_visit", v: p.visits },
+      { t: "alteration", v: p.alts },
+      { t: "other", v: p.reworkTotal + p.mat + p.trans },
+    ].sort((a, b) => b.v - a.v)[0];
+    doCharge.checked = true;
+    block("charge").classList.remove("hidden");
+    qs("atype").value = biggest.v > 0 ? biggest.t : "other";
+    // pressing this is saying "take the calculator's word", so any earlier hand edit is released
+    amtEdited = false;
+    reasonEdited = false;
+    qs("aamt").value = Number(qs("ctotal").value || 0).toFixed(2);
+    qs("areason").value = qs("csummary").value;
+  });
+
+  paintCalc();
+
+  const wStatus = qs("wstatus");
 
   m.sheet.querySelector("[data-no]").onclick = m.close;
   m.sheet.querySelector("[data-yes]").onclick = async () => {
-    const g = (n) => q(n).value || null;
     const wantVisit = visitOn();
     const wantCharge = doCharge.checked;
-    const newStatus = g("wstatus");
+    const newStatus = wStatus.value || null;
+    const comment = qs("wcomment").value.trim() || null;
     const fail = (msg) => {
       errBox.textContent = msg;
       errBox.classList.remove("hidden");
     };
 
-    if (!wantVisit && !wantCharge && !newStatus) { fail(tr("st.nothingToSave")); return; }
+    if (!wantVisit && !wantCharge && !newStatus && !comment) { fail(tr("st.nothingToSave")); return; }
 
     let reason = "";
     if (wantCharge) {
       // invoice_lines.adjustment_needs_comment rejects a blank justification downstream; catching it
       // here is far better than discovering it at invoicing time
-      reason = q("areason").value.trim();
+      reason = qs("areason").value.trim();
       if (!reason) { fail(tr("adj.reasonRequired")); return; }
     }
     m.close();
@@ -639,20 +833,19 @@ function openWorkSheet(r, v, reload, opts = {}) {
     /* THE CHARGE GOES FIRST, and the order is load-bearing. fn_ops_save_visit auto-proposes an
      * additional_visit charge on visit 2 and later, and it skips that only when a charge of that
      * type already exists for the visit. Writing an explicit revisit charge first is what stops a
-     * hand-entered one and an auto-proposed one both landing on the same visit. Any other charge
-     * type does not match that test, so the automatic revisit charge still arrives beside it -
-     * which is right: a return trip is billable on top of the work done on it. */
+     * hand-entered one and an auto-proposed one both landing on the same visit. */
     if (wantCharge) {
+      const amt = qs("aamt").value;
       await submit("fn_ops_add_adjustment", {
         p_order_id: r.order_id,
-        p_charge_type: typeSel.value,
+        p_charge_type: qs("atype").value,
         p_reason: reason,
-        p_quantity: Number(qtyIn.value || 1),
-        p_visit_no: Number(q("avisit").value) || null,
+        p_quantity: 1,
+        p_visit_no: Number(qs("avisit").value) || null,
         // Every adjustment captured here is a charge. Whether it is actually billed is decided
         // afterwards, on the row itself, by Confirm or Do not charge.
         p_chargeable: true,
-        p_amount: amtIn.value === "" ? null : Number(amtIn.value),
+        p_amount: amt === "" ? null : Number(amt),
         p_actor: currentActor(),
         p_window_name: null,
         p_notes: null,
@@ -665,30 +858,26 @@ function openWorkSheet(r, v, reload, opts = {}) {
         p_order_id: r.order_id,
         p_visit_no: v.visit_no,
         p_payload: {
-          visit_date: g("vdate"),
-          visit_status: g("vstatus"),
-          visit_comment: g("vcomment"), internal_comment: g("vcomment"),
-          slack_comment: g("vslack"),
+          // one comment box now, and it goes to the Kurtains channel
+          ...(comment ? { slack_comment: comment } : {}),
           // absent rather than null when nothing was picked - see fn_ops_save_visit, which coalesces
           // an absent key against the stored value
           ...(newStatus ? { status: newStatus } : {}),
-          // de-duplicated and blanks dropped, so six slots can be filled in any order
-          member_names: Array.from(new Set([0, 1, 2, 3, 4, 5]
-            .map((i) => q(`vm${i}`).value.trim())
-            .filter((x) => x && x !== "__new__"))),
           input_method: method, lang: getLang(),
         },
         p_actor: currentActor(),
       });
-    } else if (newStatus) {
-      /* No visit being recorded, so the status is written against the LAST one - this call upserts
-       * an order_visits row, and pointing it at a visit that has not happened would invent one.
-       * skip_visit_charge because the only charge here is the one just captured, if any. */
+    } else if (newStatus || comment) {
+      /* No visit being recorded, so this is written against the LAST one - fn_ops_save_visit
+       * upserts an order_visits row, and pointing it at a visit that has not happened would invent
+       * one. skip_visit_charge because the only charge here is the one just captured, if any. */
       await submit("fn_ops_save_visit", {
         p_order_id: r.order_id,
         p_visit_no: Math.max(1, r.last_visit_no || 1),
         p_payload: {
-          status: newStatus, input_method: method, lang: getLang(), skip_visit_charge: true,
+          ...(comment ? { slack_comment: comment } : {}),
+          ...(newStatus ? { status: newStatus } : {}),
+          input_method: method, lang: getLang(), skip_visit_charge: true,
         },
         p_actor: currentActor(),
       });

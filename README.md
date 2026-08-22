@@ -74,8 +74,24 @@ several columns each (Fabrics by code, Special requirements by total, Tailors by
 The sort runs in the browser over the rows already fetched, so it costs no round trip and covers the
 whole filtered set rather than a page.
 
-**2. Order status** (`#/status`) — ready, team assigned, order status, **multiple visits** each with
-their own outcome and team, internal + Slack comments, and chargeable extras.
+**2. Installation** (`#/status`) — ready, team assigned, order status, **multiple visits**, the
+Kurtains comment, and chargeable extras. The expanded panel is readiness, the order's own fields,
+its visits, its extra work, and one button. It no longer carries links out to Transfers, Stock and
+Photo audit: those were three ways to leave the screen somebody had just opened to record what
+happened on site, and all three are one tap from Home.
+
+**The status is a coloured pill beside the dropdown**, so the panel and the list say the same thing
+the same way — a select only shows its value to someone who reads it.
+
+**Alteration is four counts, not a yes/no.** *Planned* is what the PO already covers; *Adjustment*
+is what arose on site and is chargeable. Each is entered as windows-by-layer-count, and the curtain
+total is derived beside it — because **a 2 layer window is two curtains**, and that doubling is the
+single most expensive mistake in this business. `order_status.alteration` stays and is now
+**derived** from the four (`fn_ops_save_visit` sets it when any count is sent): it is read by the
+shared filter bar, the dashboard tile, column and CSV, the production flag chips, Chotu's
+`order_edit` and the schedule tags, and unpicking it from all of those is a change of its own. A
+caller that sends no count keys keeps the explicit boolean it has always sent.
+
 **One sheet adds a visit, a charge, or both.** There were two buttons, one at the foot of each
 section, and they were two halves of a single event: the team went back, and while they were there
 they did work that is over and above the PO. Two buttons made that two sheets and two saves, and the
@@ -84,16 +100,48 @@ recorded and no charge against it, or a charge with no visit to explain it. `+ A
 now sits below both lists, with a switch on each half; opening a visit from its own row is the same
 sheet with the visit half fixed on.
 
-Three things it gets right that two sheets could not. **The charge is written first**, because
-`fn_ops_save_visit` auto-proposes an `additional_visit` charge on visit 2+ and skips it only when one
-already exists for that visit — writing the explicit charge first is what stops a hand-entered
-revisit charge and an auto-proposed one both landing on the same visit. Any other charge type does
-not match that test, so the automatic revisit charge still arrives beside it, which is right: a
-return trip is billable on top of the work done on it. **Picking a visit outcome fills the order
-status with the same value**, visibly, in a control that can still be changed — and stops mirroring
-the moment somebody edits that control themselves. **The eleventh visit does not refuse the sheet**:
-the visit half locks off at ten and the charge half still works, because an order on its eleventh
-problem is exactly the one with money on it.
+**The charge is written first**, and the order is load-bearing: `fn_ops_save_visit` auto-proposes an
+`additional_visit` charge on visit 2+ and skips it only when one already exists for that visit, so
+writing the explicit charge first is what stops a hand-entered revisit charge and an auto-proposed
+one both landing on the same visit. Any other charge type does not match that test and the automatic
+one still arrives beside it, which is right: a return trip is billable on top of the work done on it.
+**The eleventh visit does not refuse the sheet** — the visit half locks off at ten and the charge
+half still works, because an order on its eleventh problem is exactly the one with money on it.
+
+### The visit calculator
+
+Visit date, visit outcome and the six installer dropdowns are **gone**: 0 of 120 visits ever carried
+a status and nobody filled the names in, while the thing this screen is actually for — working out
+what a return trip cost — was being done on paper. The two comment boxes are now one, saved to the
+**Kurtains** channel.
+
+In their place, a calculator that **never invents a rate**:
+
+| Line | Where the money comes from |
+|---|---|
+| Extra visits | `adjustment_rate_card` via `fn_ops_rate_for`, the **unit** rate × the count |
+| Alteration curtains | same, pre-filled from the order's *Adjustment alteration* counts |
+| Curtains remade | `remake_rate_card` through `v_ops_order_curtains` — one tick-box per curtain on the order, style, layers and width pre-filled and all three overridable |
+| Additional materials | typed — there is no rate for it |
+| Transport | typed — vehicle hire goes by distance and only the office sets that figure |
+
+`fn_ops_rate_for` returns the **flat** rate for a `per visit` unit whatever quantity it is asked
+about, so the multiplication happens against `rate_aed` in the browser — asking it for three visits
+would otherwise price as one.
+
+Every line shows its own working, and the whole sum is written out in words into the comment box
+with a **Copy** button, ready to paste into Slack. The same text becomes the adjustment's reason,
+which is what `invoice_lines.adjustment_needs_comment` demands and what an accountant reads three
+weeks later. Two details that were got wrong first time and are worth keeping: the remade line
+prints the **doubled** rate (92, not 46) so it multiplies out to the amount beside it, and widths
+keep **two** decimals — `num()` rounds to one, and 1.84 m shown as 1.8 m does not reproduce the
+figure.
+
+**Charge this total** turns the calculation into one adjustment: the total in the amount, the
+working in the reason, and the charge type set to whichever part was biggest — the same rule Chotu
+is given for an adjustment made of several parts. The amount then **tracks the total** until
+somebody types in the amount box itself; without that the figure captured when the button was
+pressed would sit frozen while the total moved on, and the sheet would show two numbers for one job.
 
 Above the list sits an **outcome filter**: one dropdown, *Any* plus the ten statuses, narrowing the
 board to the orders sitting on one of them. It rides outside the shared bar on its own `status`
