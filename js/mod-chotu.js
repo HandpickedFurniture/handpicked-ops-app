@@ -24,7 +24,8 @@
  * and a free-text one at that, so the same person could be "Kausar", "kausar" and "Kausar M" on
  * three different records. One account per person is the rule here; the account IS the name.
  */
-import { api, rpc, submit, currentActor, queueDepth, isSignedIn, isViewer, authedFetch } from "./api.js";
+import { api, rpc, submit, currentActor, queueDepth, isSignedIn, isViewer, authedFetch,
+         serverError } from "./api.js";
 import {
   SB_URL, SB_KEY, ORDER_STATUSES, DISPATCH_SUBSTATES, DISPATCH_CONTRACTORS, PREP_STAGES,
   STACK_FLOORS, STACK_RACKS, STACK_SHELVES, STACK_ZONES, CHARGE_TYPES,
@@ -103,7 +104,16 @@ async function ask(said) {
     throw new Error(e.message === "NOT_SIGNED_IN" ? tr("auth.required") : e.message);
   }
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || `Chotu is unavailable (${r.status})`);
+  /* Hand this to serverError like every other call site instead of writing the sentence here.
+   * The old line said "Chotu is unavailable (401)" - untranslated, in an app that runs in three
+   * languages, and wrong about the cause. A 401 here is almost always a dead SESSION, not a dead
+   * Chotu: errorKey() maps 401 to err.session ("Your sign-in has expired. Sign out and sign in
+   * again."), and err.session is deliberately outside the VAGUE set so it outranks the fallback
+   * below. Seen for real on 21 Aug 2026 - a tab holding a token three hours stale, after another
+   * account had signed in and out of the same browser and revoked the refresh token. The person
+   * was told the service was down when all they had to do was sign in.
+   * The server's own words are not lost: they travel on err.raw and to the console. */
+  if (!r.ok) throw serverError(r.status, j, "chotu", "chotu.unavailable");
   return j;
 }
 
@@ -435,9 +445,11 @@ function paintProposal(mount, res) {
         <textarea name="comment" rows="2">${esc(f.comment || "")}</textarea>`;
       break;
 
-    /* Chargeable work beyond the PO. The amount box starts from whatever the model proposed but is
-     * overwritten by fn_ops_rate_for as soon as the card is on screen - the rate card is the one
-     * place rates live, and a remembered rate is how 100 and 150 end up on the same invoice. */
+    /* Chargeable work beyond the PO. If the model proposed an amount it STAYS - see wireRate below,
+     * where a model-supplied amount counts as already touched - and fn_ops_rate_for shows its banded
+     * rate underneath as a cross-check. Chotu is asked to total a whole adjustment (two visits plus
+     * four alterations), which no single banded rate can express, and its arithmetic is written out
+     * in the reason. Only when the model left the amount empty does the rate card fill the box. */
     case "adjustment":
       fields = `
         <div class="grid2">
@@ -457,11 +469,14 @@ function paintProposal(mount, res) {
         <label class="f" style="margin-top:8px">${esc(tr("adj.reason"))}</label>
         <textarea name="reason" rows="2">${esc(f.reason || "")}</textarea>
         <div class="muted" style="margin-top:4px">${esc(tr("adj.reasonRequired"))}</div>
-        <label class="f" style="margin-top:8px">${esc(tr("adj.chargeable"))}</label>
-        <select name="chargeable">
-          <option value="true"${f.chargeable === false ? "" : " selected"}>${esc(tr("adj.chargeable"))}</option>
-          <option value="false"${f.chargeable === false ? " selected" : ""}>${esc(tr("adj.dropped"))}</option>
-        </select>`;
+        <!-- The outcome of the visit, on the same card as the money, committed by the same button.
+             Somebody phoning in an extra charge is reporting back from site and has both halves in
+             their head at once; asking for the status in a second sentence is how the app ends up
+             with the charge recorded and the order still marked Scheduled. Blank changes nothing. -->
+        <label class="f" style="margin-top:8px">${esc(tr("st.orderStatus"))}</label>
+        <select name="status">
+          <option value="">${esc(tr("adj.statusKeep"))}</option>
+          ${opts(ORDER_STATUSES.map((s) => ({ value: s, label: s })), f.status)}</select>`;
       break;
 
     case "order_edit":
@@ -638,7 +653,8 @@ function readCard(box, res) {
       f.amount = (amt === "" || amt === undefined) ? null : Number(amt);
       f.reason = (v("reason") || "").trim();
       f.visit_no = Number(v("visit_no")) || null;
-      f.chargeable = v("chargeable") !== "false";
+      // blank means "do not touch the order status", which is not the same as any of the ten
+      f.status = v("status") || null;
       break;
     }
 
@@ -848,14 +864,18 @@ async function commitAction(res, actor) {
         p_actor: actor,
       });
 
-    case "adjustment":
-      return submit("fn_ops_add_adjustment", {
+    /* The charge, and - when they said one - the outcome it came back with, as TWO writes behind
+     * ONE Commit. Both go through submit(), so a phone that lost signal mid-sentence replays them
+     * in this order and neither half is lost. */
+    case "adjustment": {
+      await submit("fn_ops_add_adjustment", {
         p_order_id: res.order_id,
         p_charge_type: f.charge_type,
         p_reason: f.reason,
         p_quantity: Number(f.qty) || 1,
         p_visit_no: Number(f.visit_no) || null,
-        p_chargeable: f.chargeable !== false,
+        // capture is always a charge; Confirm and Do not charge on the row decide the rest
+        p_chargeable: true,
         // null lets fn_ops_add_adjustment fall back to the rate card itself
         p_amount: (f.amount === null || f.amount === undefined || f.amount === "")
           ? null : Number(f.amount),
@@ -864,6 +884,23 @@ async function commitAction(res, actor) {
         p_notes: note,
         p_status: "new",
       });
+      /* Visit 1 with skip_visit_charge, exactly as the order_status intent writes it: this sets the
+       * ORDER's status and must not auto-propose a revisit charge on top of the one just captured.
+       * Only the status is sent. The reason is already on the adjustment row, and order_status
+       * .comment is a single field a coordinator types into - appending the charge's reason to
+       * this write would overwrite whatever they had put there. */
+      if (f.status) {
+        await submit("fn_ops_save_visit", {
+          p_order_id: res.order_id, p_visit_no: 1,
+          p_payload: {
+            status: f.status,
+            input_method: "chotu", lang: getLang(), skip_visit_charge: true,
+          },
+          p_actor: actor,
+        });
+      }
+      return null;
+    }
 
     /* Order-level fields rather than an event. Keys are spread in conditionally because
      * fn_ops_save_visit coalesces an ABSENT key against the stored value - so leaving one out is

@@ -726,6 +726,13 @@ table.dense tfoot th{position:sticky;bottom:0;background:var(--info-bg);border-t
 .fintable td.wide{white-space:normal;max-width:300px;min-width:180px;}
 .fintable td.rv{white-space:normal;max-width:260px;}
 
+/* The amount cell carries three things now - the editable figure, where it came from, and what the
+   rate card would say - so it is the one cell allowed to be two lines tall. min-width stops the
+   System calculated chip from squeezing the input down to nothing. */
+.fintable td.amt{white-space:normal;min-width:132px;}
+.fintable td.amt .chip{margin-top:3px;}
+.amthint{font-size:11px;margin-top:2px;}
+
 /* Never-credit lines are faded rather than hidden: the accountant still has to see that the tie-back
    is on the order, they just must never bill for it. */
 .finrow.nocredit{opacity:.55;background:var(--line);}

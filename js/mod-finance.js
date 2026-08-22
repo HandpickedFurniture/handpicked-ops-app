@@ -28,7 +28,7 @@ import { api, apiAll, rpc, submit, currentActor, queueDepth, isSignedIn, isViewe
 import { ORDER_STATUSES, PAGE_SIZE } from "./config.js";
 import { tr } from "./i18n.js";
 import {
-  $, esc, el, chip, aed, num, fmtDate, toast, loading, downloadCsv, copyText, today,
+  $, esc, el, chip, aed, num, fmtDate, toast, loading, modal, downloadCsv, copyText, today,
 } from "./ui.js";
 import { syncBar } from "./sync.js";
 
@@ -55,6 +55,19 @@ const REVIEW_FLAGS = [
 const ADJ_REVIEW_FLAGS = [
   { col: "rv_incomplete", key: "fin.rvIncomplete" },
   { col: "rv_rate_drift", key: "fin.rvDrift" },
+];
+
+/* What the finance team DOES with an adjustment once its figure is settled, in the order it happens.
+ * One list so the three columns, the three writes and the three tooltips cannot drift apart, and so
+ * a fourth step later is one entry here rather than a fourth copy of the same wiring.
+ *
+ * They are deliberately INDEPENDENT rather than one three-step status: an adjustment can be invoiced
+ * without ever going on the 3D sheet, and paid work still has to be reconciled onto the sheet
+ * afterwards. A single status column would force an order on them that the work does not have. */
+const ADJ_FLAGS = [
+  { col: "sheet_updated",   key: "fin.sheetUpdated" },
+  { col: "invoice_created", key: "fin.invoiceCreated" },
+  { col: "paid",            key: "fin.paid" },
 ];
 
 /* A row needs review when any rule fires, unless a human has explicitly said otherwise.
@@ -450,7 +463,8 @@ function actionBarWire(mount, state, which, rows, repaint) {
   const box = actionBar(mount, state, which,
     which === "orders"
       ? (isViewer() ? "" : `<button class="btn sm primary" data-invoiced>${esc(tr("fin.markInvoiced"))}</button>`)
-      : (isViewer() ? "" : `<button class="btn sm primary" data-applied>${esc(tr("fin.markApplied"))}</button>`)
+      : (isViewer() ? "" : `<button class="btn sm accent" data-propose>${esc(tr("fin.proposeAmount"))}</button>`
+                         + `<button class="btn sm primary" data-applied>${esc(tr("fin.markApplied"))}</button>`)
         + `<button class="btn sm" data-copy>${esc(tr("fin.copySheet"))}</button>`);
 
   box.querySelector("[data-selall]").addEventListener("click", () => {
@@ -469,6 +483,9 @@ function actionBarWire(mount, state, which, rows, repaint) {
 
   const app = box.querySelector("[data-applied]");
   if (app) app.addEventListener("click", () => markApplied(rows, repaint));
+
+  const prop = box.querySelector("[data-propose]");
+  if (prop) prop.addEventListener("click", () => proposeAmounts(rows, repaint));
 
   const cp = box.querySelector("[data-copy]");
   if (cp) cp.addEventListener("click", () => copyForSheet(rows));
@@ -587,12 +604,22 @@ function paintAdjustments(mount, state) {
           ${sortableTh(tr("col.customer"), "customer_name", "adj")}
           ${sortableTh(tr("adj.amount"), "amount_aed", "adj")}
           ${sortableTh(tr("adj.reason"), "reason", "adj")}
+          ${ADJ_FLAGS.map((f) => sortableTh(tr(f.key), f.col, "adj")).join("")}
           ${sortableTh(tr("fin.invoiceStatus"), "invoice_status", "adj")}
           ${sortableTh(tr("fin.adjStatus"), "adjustment_status", "adj")}
           <th>${esc(tr("fin.review"))}</th>
         </tr></thead>
         <tbody>
-          ${rows.map((r) => `
+          ${rows.map((r) => {
+            const ro = isViewer();
+            /* The rate card's figure for this charge type at this quantity, shown only when it is
+             * NOT what the row already holds. Printing it beside an identical number is noise on
+             * every row; printing it when they differ is the whole reason to look. */
+            const cardHint = r.card_amount_aed != null
+              && Number(r.card_amount_aed) !== Number(r.amount_aed ?? NaN)
+              ? `<div class="muted amthint">${esc(tr("adj.suggested"))}: ${esc(aed(r.card_amount_aed))}</div>`
+              : "";
+            return `
             <tr class="finrow${needsReview(r, ADJ_REVIEW_FLAGS) ? " review" : ""}">
               <td class="tick"><input type="checkbox" data-pick="${esc(r.id)}"${
                 SEL.adj.has(String(r.id)) ? " checked" : ""}></td>
@@ -600,12 +627,32 @@ function paintAdjustments(mount, state) {
               <td class="wide">${esc(r.installation_comment || "—")}</td>
               <td class="oid">${esc(r.order_name || r.order_id)}</td>
               <td>${esc(r.customer_name || "—")}</td>
-              <td class="ro">${r.amount_aed == null ? "—" : aed(r.amount_aed)}</td>
+              <!-- Editable, and labelled with where the number came from. A figure the rate card
+                   produced and a figure somebody agreed with a client look identical in a column of
+                   money, and they are not the same thing when the client queries the invoice. -->
+              <td class="amt">
+                <input class="fincell" type="number" step="0.01" inputmode="decimal"
+                       data-id="${esc(r.id)}" data-amt value="${esc(r.amount_aed ?? "")}"${
+                  ro ? " disabled" : ""}>
+                ${r.amount_is_system ? chip(tr("fin.systemCalc"), "info", "∑") : ""}
+                ${cardHint}
+              </td>
               <td class="wide">${esc(r.reason || "—")}</td>
+              ${ADJ_FLAGS.map((f) => {
+                const at = r[`${f.col}_at`], by = r[`${f.col}_by`];
+                // who and when, on hover - the columns exist so that question has an answer
+                const title = r[f.col] && (at || by)
+                  ? `${tr(f.key)} — ${[by, at ? fmtDate(at) : ""].filter(Boolean).join(" · ")}`
+                  : tr(f.key);
+                return `<td class="tick"><input type="checkbox" data-flag="${esc(f.col)}"
+                          data-id="${esc(r.id)}" title="${esc(title)}" aria-label="${esc(title)}"${
+                  r[f.col] ? " checked" : ""}${ro ? " disabled" : ""}></td>`;
+              }).join("")}
               <td>${chip(r.invoice_status, r.invoice_status === "Invoiced" ? "ok" : "mute")}</td>
               <td>${chip(r.adjustment_status, r.adjustment_status === "Invoiced" ? "ok" : "mute")}</td>
               <td class="rv">${reviewChips(r, ADJ_REVIEW_FLAGS)}</td>
-            </tr>`).join("")}
+            </tr>`;
+          }).join("")}
         </tbody>
       </table>
     </div>`;
@@ -622,5 +669,150 @@ function paintAdjustments(mount, state) {
     repaint();
   });
 
+  // one amount saved per change, through the same queue as every other write on this screen
+  table.querySelectorAll("[data-amt]").forEach((inp) =>
+    inp.addEventListener("change", () => saveAdjAmount(inp, rows, repaint)));
+
+  /* The three tick boxes. No repaint on toggle: redrawing the grid under somebody working down a
+   * column of checkboxes moves the next box out from under their finger. The row object is updated
+   * in place instead, so a later sort or filter still sees the new value. */
+  table.querySelectorAll("[data-flag]").forEach((cb) =>
+    cb.addEventListener("change", () => setAdjFlag(cb, rows)));
+
   actionBarWire(mount, state, "adj", rows, repaint);
+}
+
+/* One adjustment's amount, typed over whatever was proposed.
+ *
+ * Blank does NOT mean zero - it hands the row back to the rate card, which is the only way to undo
+ * an override without knowing what the figure used to be. fn_finance_set_adjustment_amount is what
+ * decides the replacement, from the card as it stands today. */
+async function saveAdjAmount(inp, rows, repaint) {
+  const id = Number(inp.dataset.id);
+  const raw = inp.value.trim();
+  const row = rows.find((r) => Number(r.id) === id);
+  try {
+    const res = await rpc("fn_finance_set_adjustment_amount", {
+      p_id: id,
+      p_amount: raw === "" ? null : Number(raw),
+      p_actor: currentActor(),
+    });
+    const out = Array.isArray(res) ? res[0] : res;
+    if (row) {
+      row.amount_aed = out && out.amount_aed != null ? Number(out.amount_aed) : null;
+      row.amount_source = (out && out.amount_source) || (raw === "" ? "system" : "manual");
+      row.amount_is_system = row.amount_source === "system";
+      row.rv_incomplete = !row.reason || row.amount_aed == null;
+    }
+    inp.classList.add("saved");
+    toast(tr("t.saved"), "ok");
+    repaint();          // the System calculated chip and the rate-card hint both just changed
+  } catch (e) {
+    inp.classList.add("bad");
+    toast(e.message, "bad");
+  }
+}
+
+/* Updated on 3D sheet / Invoice created / Paid. submit() rather than rpc() because unlike the
+ * amount there is nothing to read back - the tick is the whole write, and it should survive a lift
+ * the same way marking an order invoiced does. */
+async function setAdjFlag(cb, rows) {
+  const id = Number(cb.dataset.id);
+  const flag = cb.dataset.flag;
+  const on = cb.checked;
+  const row = rows.find((r) => Number(r.id) === id);
+  try {
+    await submit("fn_finance_set_adjustment_flag", {
+      p_ids: [id], p_flag: flag, p_on: on, p_actor: currentActor(),
+    });
+    if (row) {
+      row[flag] = on;
+      row[`${flag}_at`] = on ? new Date().toISOString() : null;
+      row[`${flag}_by`] = on ? currentActor() : null;
+    }
+    toast(queueDepth() ? tr("t.queued") : tr("t.saved"), "ok");
+  } catch (e) {
+    cb.checked = !on;            // the box must never show a state the database does not hold
+    toast(e.message, "bad");
+  }
+}
+
+/* ---------------------------------------------------------------- propose amounts
+ * What the rate card says these adjustments should cost, written onto them.
+ *
+ * The arithmetic is NOT done here. fn_finance_propose_adjustment_amount looks every row up through
+ * fn_ops_rate_for, the same function the Installation module's capture sheet and Chotu both call,
+ * so three screens can never quote different money for the same work. What this shows is
+ * card_amount_aed, which the view computes through that same function - so the preview and the
+ * write cannot disagree either.
+ *
+ * IT IS SHOWN BEFORE IT IS WRITTEN. This changes money on rows somebody else captured, in bulk, and
+ * a bulk money write with no preview is one mis-click away from restating a whole day's charges. */
+function proposeAmounts(rows, repaint) {
+  const sel = selectedRows("adj", rows);
+  if (!sel.length) { toast(tr("fin.nothingSelected"), "bad"); return; }
+
+  const rated = sel.filter((r) => r.card_amount_aed != null);
+  const norate = sel.filter((r) => r.card_amount_aed == null);
+  const manual = rated.filter((r) => r.amount_source === "manual");
+  const auto = rated.filter((r) => r.amount_source !== "manual");
+
+  if (!auto.length && !manual.length) {
+    toast(norate.length ? tr("fin.noRate") : tr("fin.proposeNone"), "bad");
+    return;
+  }
+
+  const line = (r) => `
+    <div class="tline">
+      <div><b>${esc(r.order_name || r.order_id)}</b>
+        <div class="muted">${esc(r.reason || r.charge_type || "")}${
+          r.quantity != null && Number(r.quantity) !== 1 ? " · ×" + esc(num(r.quantity)) : ""}</div></div>
+      <div>${r.amount_source === "manual" ? chip(tr("fin.proposeOverwrite"), "warn", "!") : ""}
+        <span class="muted">${esc(tr("fin.wasAmount"))} ${esc(aed(r.amount_aed ?? 0))}</span>
+        → <b>${esc(aed(r.card_amount_aed))}</b></div>
+    </div>`;
+
+  const m = modal(`
+    <h3>${esc(tr("fin.proposeTitle"))}</h3>
+    <p class="muted" style="margin:8px 0 12px">${esc(tr("fin.proposeBody"))}</p>
+    <div class="failedlist">${auto.map(line).join("")}${manual.map(line).join("")}</div>
+    ${manual.length ? `<label class="cbrow" style="margin-top:12px">
+       <input type="checkbox" data-over> ${esc(tr("fin.proposeOverwrite"))}
+         (${esc(num(manual.length))})</label>
+     <div class="muted" style="margin-top:4px">${esc(tr("fin.proposeOverwriteHint"))}</div>` : ""}
+    ${norate.length ? `<div class="banner warn" style="margin-top:12px">${
+      esc(tr("fin.noRate"))} — ${esc(num(norate.length))}</div>` : ""}
+    <div class="row" style="justify-content:flex-end;margin-top:14px">
+      <button class="btn ghost" data-no>${esc(tr("act.cancel"))}</button>
+      <button class="btn primary" data-yes>${esc(tr("fin.proposeAmount"))}</button>
+    </div>`);
+
+  m.sheet.querySelector("[data-no]").onclick = m.close;
+  m.sheet.querySelector("[data-yes]").onclick = async () => {
+    const over = m.sheet.querySelector("[data-over]");
+    const overwrite = !!(over && over.checked);
+    m.close();
+    try {
+      const res = await rpc("fn_finance_propose_adjustment_amount", {
+        p_ids: sel.map((r) => Number(r.id)),
+        p_overwrite_manual: overwrite,
+        p_actor: currentActor(),
+      });
+      const out = Array.isArray(res) ? res[0] : res;
+      // repainted from the server's own numbers rather than from what we guessed it would do
+      const touched = new Set((overwrite ? rated : auto).map((r) => Number(r.id)));
+      rows.forEach((r) => {
+        if (!touched.has(Number(r.id))) return;
+        r.amount_aed = Number(r.card_amount_aed);
+        r.amount_source = "system";
+        r.amount_is_system = true;
+        r.rv_incomplete = !r.reason || r.amount_aed == null;
+      });
+      const n = out ? Number(out.updated || 0) : touched.size;
+      const skipped = out ? Number(out.skipped_manual || 0) + Number(out.skipped_no_rate || 0) : 0;
+      toast(tr("fin.proposeDone", { n }) + (skipped ? " " + tr("fin.proposeSkipped", { n: skipped }) : ""),
+            "ok");
+      repaint();
+    } catch (e) { toast(e.message, "bad"); }
+  };
 }

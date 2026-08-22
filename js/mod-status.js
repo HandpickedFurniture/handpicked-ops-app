@@ -17,7 +17,7 @@ import {
 import {
   $, esc, el, chip, aed, num, fmtDate, toast, loading, modal, selectHtml, orderLabel,
 } from "./ui.js";
-import { renderFilterBar, toQuery, deriveOptions, activeCount } from "./filters.js";
+import { renderFilterBar, toQuery, deriveOptions, activeCount, writeHash } from "./filters.js";
 import { micField, wireMics } from "./voice.js";
 import { photoStrip } from "./photos.js";
 import { syncBar } from "./sync.js";
@@ -61,7 +61,7 @@ async function loadMembers(force) {
 export async function render(mount, state, setFilters) {
   if (!isSignedIn()) return;
   mount.innerHTML = `<div class="sectionbar"><span></span><span id="stsync"></span></div>
-                     <div id="fbar"></div><div id="board"></div>`;
+                     <div id="fbar"></div><div id="extra"></div><div id="board"></div>`;
   $("#stsync", mount).appendChild(syncBar());
 
   await loadMembers();
@@ -74,14 +74,42 @@ export async function render(mount, state, setFilters) {
 
   const bar = $("#fbar", mount);
   const box = $("#board", mount);
-  const paintBar = () => renderFilterBar(bar, state, OPTIONS, setFilters, CAPS);
+
+  /* THE OUTCOME FILTER, and the one thing this board could not be narrowed by until now: which of
+   * the ten statuses an order is sitting on. It rides OUTSIDE the shared bar on its own `status`
+   * param, exactly as the management dashboard's does and under the same key - so a link filtered
+   * on one screen opens filtered on the other, which is the whole reason the filters live in the
+   * hash. Everything else this module filters by is a property of the ORDER; this is the property
+   * of the visit that the module exists to record, so it sits on its own line above the list. */
+  const fStatus = state.params.get("status") || "";
+  /* Apply on the shared bar carries the status with it. Without this the bar would rebuild the
+   * whole query string from the filter fields alone and silently drop it - see writeHash, which
+   * writes exactly the keys it is given. */
+  const applyFilters = (f) => writeHash("status", f, { status: fStatus });
+  const paintBar = () => renderFilterBar(bar, state, OPTIONS, applyFilters, CAPS);
   paintBar();
+
+  const ex = el(`
+    <div class="card">
+      <div class="fgrid" style="margin:0">
+        <div><label class="f">${esc(tr("col.status"))}</label>
+          ${selectHtml("ststatus", ORDER_STATUSES, fStatus, tr("f.any"))}</div>
+      </div>
+    </div>`);
+  // filters on pick rather than on Apply: it is one control with one value, and there is nothing
+  // else on this line to wait for
+  ex.querySelector('[name="ststatus"]').addEventListener("change", (e) => {
+    writeHash("status", state.filters, { status: e.target.value });
+  });
+  $("#extra", mount).appendChild(ex);
 
   loading(true, tr("t.loading"));
   let rows = [];
   try {
     rows = await apiAll(
-      `/rest/v1/v_ops_status_board?select=${BOARD_COLS}&order=installation_date.asc.nullslast${toQuery(state.filters, CAPS)}`,
+      `/rest/v1/v_ops_status_board?select=${BOARD_COLS}&order=installation_date.asc.nullslast${
+        toQuery(state.filters, CAPS)}${
+        fStatus ? `&status=eq.${encodeURIComponent(fStatus)}` : ""}`,
       200);
   } catch (e) {
     loading(false);
@@ -95,7 +123,8 @@ export async function render(mount, state, setFilters) {
 
   if (!rows.length) {
     box.innerHTML = `<div class="card"><span class="muted">${
-      esc(activeCount(state.filters, CAPS) ? tr("t.empty") : tr("t.emptyUnfiltered"))}</span></div>`;
+      esc(activeCount(state.filters, CAPS) || fStatus
+            ? tr("t.empty") : tr("t.emptyUnfiltered"))}</span></div>`;
     return;
   }
 
@@ -561,12 +590,17 @@ function openAdjustmentSheet(r, reload) {
       ${micField(`<textarea name="areason"></textarea>`, "areason")}
       <div class="muted" style="margin-top:4px">${esc(tr("adj.reasonRequired"))}</div>
     </div>
+    <!-- The outcome of the trip, recorded WITH the charge rather than after it. An adjustment is
+         almost always somebody reporting back from site, and what they report is two things: what
+         happened, and what it cost. Making them save here and then scroll up to the order-status
+         box was two saves for one visit, and the second one is the one that got forgotten. Blank
+         leaves the status exactly as it is - see fn_ops_save_visit, which coalesces an absent
+         key against the stored value. -->
     <div style="margin-top:10px">
-      <label class="f">${esc(tr("adj.chargeable"))}</label>
-      <select name="acharge">
-        <option value="true" selected>${esc(tr("adj.chargeable"))}</option>
-        <option value="false">${esc(tr("adj.dropped"))}</option>
-      </select>
+      <label class="f">${esc(tr("st.orderStatus"))}</label>
+      ${selectHtml("astatus", ORDER_STATUSES, "", tr("adj.statusKeep"))}
+      ${r.status ? `<div class="muted" style="margin-top:4px">${
+        esc(tr("col.status"))}: ${esc(r.status)}</div>` : ""}
     </div>
     <div id="aerr" class="err hidden" style="margin-top:10px"></div>
     <div class="row" style="justify-content:flex-end;margin-top:14px">
@@ -610,6 +644,7 @@ function openAdjustmentSheet(r, reload) {
       errBox.classList.remove("hidden");
       return;
     }
+    const newStatus = m.sheet.querySelector('[name="astatus"]').value;
     m.close();
     await submit("fn_ops_add_adjustment", {
       p_order_id: r.order_id,
@@ -617,13 +652,34 @@ function openAdjustmentSheet(r, reload) {
       p_reason: reason,
       p_quantity: Number(qtyIn.value || 1),
       p_visit_no: Number(m.sheet.querySelector('[name="avisit"]').value) || null,
-      p_chargeable: m.sheet.querySelector('[name="acharge"]').value === "true",
+      // Every adjustment captured here is a charge. Whether it is actually billed is decided
+      // afterwards, on the row itself, by Confirm or Do not charge - one decision in one place
+      // rather than a dropdown at capture time that quietly disagreed with those two buttons.
+      p_chargeable: true,
       p_amount: amtIn.value === "" ? null : Number(amtIn.value),
       p_actor: currentActor(),
       p_window_name: null,
       p_notes: null,
       p_status: "new",
     });
+
+    /* The second half of the same report, queued behind the first so both survive a lift. The
+     * visit number is the LAST RECORDED one, never the one typed against the charge: this write
+     * upserts an order_visits row, and pointing it at a visit that has not happened yet would
+     * invent one. skip_visit_charge for the same reason the order-level save sets it - the
+     * charge is the one just captured, not a second auto-proposed revisit. */
+    if (newStatus) {
+      await submit("fn_ops_save_visit", {
+        p_order_id: r.order_id,
+        p_visit_no: Math.max(1, r.last_visit_no || 1),
+        p_payload: {
+          status: newStatus,
+          input_method: "typed", lang: getLang(),
+          skip_visit_charge: true,
+        },
+        p_actor: currentActor(),
+      });
+    }
     toast(queueDepth() ? tr("t.queued") : tr("t.saved"), "ok");
     reload();
   };

@@ -66,9 +66,12 @@ export async function render(mount, state, setFilters) {
         <div><label class="f">${esc(tr("st.ready"))}</label>
           ${selectHtml("dready", [{ value: "true", label: tr("st.ready") },
                                   { value: "false", label: "—" }], fReady, tr("f.any"))}</div>
+        <!-- Yes/No, because this filter asks whether the order HAS any extra work recorded - it was
+             labelled with the chargeable wording, which read as "which of them are being billed"
+             and is a different question the row-level Confirm / Do not charge answers. -->
         <div><label class="f">${esc(tr("col.adjustments"))}</label>
-          ${selectHtml("dadj", [{ value: "true", label: tr("adj.chargeable") },
-                                { value: "false", label: tr("adj.dropped") }], fAdj, tr("f.any"))}</div>
+          ${selectHtml("dadj", [{ value: "true", label: tr("t.yes") },
+                                { value: "false", label: tr("t.no") }], fAdj, tr("f.any"))}</div>
       </div>
     </div>`);
   ex.querySelectorAll("select,input").forEach((i) => i.addEventListener("change", () => {

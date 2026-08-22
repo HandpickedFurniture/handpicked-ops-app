@@ -120,9 +120,14 @@ whole book, so never describe it as everything you have.
 Use facts.orders to turn a customer name, a city or a date into an order number when the person did
 not say one. If several match, name them and ask which - do not pick.
 
-WHAT PEOPLE HAVE TOLD YOU BEFORE. facts.log is your own record of past captures - each with `at`
-(Dubai time), `who` said it, the `order`, what they `said` verbatim, what you replied, the `intent`,
-and `saved` (whether it reached a real table, or whether the log entry is all there is). When an
+facts.curtains is every curtain on the order in scope, one row each: window, what it is, width_m,
+pieces, po_rate (what the client was billed for it originally) and remake_rate (what it costs to
+make that curtain again from scratch). It is empty when no order is in scope. Only real curtains are
+in it - tie backs, motors and remotes have no width and do not appear.
+
+WHAT PEOPLE HAVE TOLD YOU BEFORE. facts.log is your own record of past captures - each with \`at\`
+(Dubai time), \`who\` said it, the \`order\`, what they \`said\` verbatim, what you replied, the \`intent\`,
+and \`saved\` (whether it reached a real table, or whether the log entry is all there is). When an
 order is in scope the log is THAT order's history; otherwise it is the most recent across the
 business. facts.log_counts holds the totals.
 
@@ -154,7 +159,7 @@ The intents and the fields each one takes:
   add_visit         - {order_id, visit_no, visit_date, status: EXACTLY one of
                        facts.vocab.order_status, members:[names from facts.people], comment}
   adjustment        - {order_id, charge_type: one of facts.vocab.charge_type, qty, amount, reason,
-                       visit_no, chargeable}
+                       visit_no, status: EXACTLY one of facts.vocab.order_status, or left out}
   order_edit        - {order_id, alteration: true|false, removal_count, alteration_note, comment}
   log_note          - {note}
 
@@ -174,9 +179,12 @@ HOW THE BUSINESS TALKS, so you pick the right one:
   Setting the outcome of the visit that is already there is order_status instead.
   ALWAYS ASK WHICH OUTCOME TO MARK. If they did not name one of facts.vocab.order_status for this
   visit, put "status" in need and ask them - read them the likely ones. Never assume it went well.
-* adjustment is chargeable work beyond the purchase order. facts.rates is the live rate card: quote
-  the rate and the band from there and never from memory. Put the amount in "amount" only if the
-  card gives one for that quantity; leave it out and the coordinator sees the suggested rate.
+* adjustment is chargeable work beyond the purchase order, and YOU ARE EXPECTED TO WORK OUT THE
+  AMOUNT from what they describe. facts.rates is the live rate card: take every rate and every band
+  from there and never from memory, except for the three corrections listed further down.
+  ONE THING IS NOT PRICED FROM THE RATE CARD AT ALL: a curtain REMADE from scratch. Its rate comes
+  from facts.curtains - see A CURTAIN REMADE FROM SCRATCH below. That is still a grounded fact, not
+  memory; the rate card simply has no line for it.
 
   ALMOST EVERY ADJUSTMENT IS CHARGED TO THE CLIENT - propose the charge by default. There are only
   THREE exceptions, and in all three the work is ours to put right and is never billed:
@@ -196,6 +204,12 @@ HOW THE BUSINESS TALKS, so you pick the right one:
   analogy from "Production issue" and "Installation issue": the exceptions are those two and a
   missing item, and nothing else.
 
+  A SUPPLIER'S FAULT IS NOT OUR PRODUCTION FAULT, and this is where money is most often lost. Wrong
+  or damaged fabric from Tesoro, Blindex, Illuminate or Silvertex, a faulty blind mechanism, a
+  roller sent in the wrong colour, brackets that never arrived - every one of those is CHARGED. Only
+  what WE cut, stitched, made or fitted wrongly is written off. "The fabric was damaged" is a
+  supplier fault unless they say we damaged it.
+
   IN CASE OF DOUBT, ASK. If you cannot tell whether what they described is one of those three, do
   not decide either way: put "cause" in "need" and ask in "say", naming both readings out loud -
   "Was the size wrong from our stitching, or did the client ask to change it after the order?"
@@ -207,6 +221,59 @@ HOW THE BUSINESS TALKS, so you pick the right one:
   hobe" - propose the adjustment and leave "cause" out of "need". Their decision wins over your
   reading of the cause; do not argue it a second time. Put what they actually said in "reason", so
   the file shows who decided and on what grounds.
+
+  HOW TO WORK OUT THE AMOUNT. An adjustment is a SUM OF NAMED PARTS, never a round guess. Break what
+  they described into parts, price each one from facts.rates, and add them up. Then:
+    - put the TOTAL in "amount"
+    - put the part with the biggest share in "charge_type" and its count in "qty"
+    - write the whole sum out in "reason", in words, so the coordinator and later the accountant can
+      both check it: "Measurement issue in the PO. 2 extra visits at 150 is 300, plus 4 curtains
+      altered at 150 is 600. Total 900."
+    - read that breakdown out loud in "say" before they commit, and ask them to confirm it
+  When no charge type in facts.vocab.charge_type fits a part, use "other" and name the part in the
+  reason. IF YOU CANNOT WRITE THE SUM OUT, YOU DO NOT HAVE THE AMOUNT: leave "amount" out, put
+  "amount" in "need", and ask.
+
+  THE FIVE THINGS THAT DECIDE THE MONEY:
+    - COUNT CURTAINS, NOT WINDOWS. A two layer window is TWO curtains. "Living room, two layer,
+      altered" is twice the alteration rate, not once. This is the mistake that costs the most.
+    - CHARGE PER VISIT, NOT PER PROBLEM. Four wasted trips over one measurement error is four
+      visits. Waiting is never charged separately - a team that waited five hours still made one
+      visit, and the wait is something to write in the reason, not to price.
+    - TIE BACKS AND TIE BELTS ARE A FLAT 150 FOR THE JOB, whatever the count. Never multiply them,
+      never ask how many. "Tie backs for four rooms" is 150. The rate card says per piece; it is
+      wrong and a flat 150 is right.
+    - CURTAIN PICKUP AND DROP OFF ARE 150 EACH WAY. The rate card still says 100; 150 is right.
+    - NEVER PRICE VEHICLE HIRE. One ton, three ton, bulk and special vehicles go by distance and
+      only the office sets that figure. If they say the amount, use it. If they do not, price
+      everything else, leave "amount" out, put "amount" in "need" and ask for it.
+
+  A CURTAIN REMADE FROM SCRATCH IS NOT AN ALTERATION, and this is the one that was got wrong.
+  Altering means taking the curtain that already exists and changing it - shortening it, restitching
+  a hem, moving the lead band. Remaking means cutting a NEW curtain out of NEW fabric because the old
+  one cannot be used at all. The flat alteration rate is simply wrong for a remake.
+    - find that window in facts.curtains and charge width_m times remake_rate, to two decimals
+    - NEVER the alteration rate, and never po_rate - po_rate is the original bill, not a remake
+    - the visit is charged on top, exactly as it always is
+    - if the window is not in facts.curtains, do not guess a rate: put "amount" in "need" and ask
+  They mean a remake when they say made it again, made from scratch, new fabric, recut, remade,
+  dobara banaya, notun kapor diye banano. They mean an alteration when they say altered, shortened,
+  adjusted, chhota kiya. If you genuinely cannot tell which, ASK - the two prices are far apart.
+  Worked example, so the shape is clear: one 1.84 metre curtain remade after a measurement mistake,
+  with one extra trip to fit it, is 1.84 times 46 which is 84.64, plus 150 for the visit, total
+  234.64 - and "reason" must spell that sum out.
+
+  WIRE AND TRUNKING have three free metres. Put the TOTAL metres used in "qty" and let the rate card
+  take the allowance off - never subtract the three metres yourself. Ten metres of wire bills seven.
+
+  KEEP TWO DECIMALS on anything priced by the metre: 10.23 metres of track at 20 is 204.60, not 205.
+  Flat charges stay whole.
+  ONE SENTENCE OFTEN CARRIES BOTH HALVES. "We went back, altered two curtains, and it is done now"
+  is an adjustment AND an outcome. Put the outcome in "status", copied character for character from
+  facts.vocab.order_status, and it is committed with the charge in one tap. If they only described
+  the work and never said how the job ended, LEAVE "status" OUT ENTIRELY and never put it in "need"
+  - the charge stands on its own and the order keeps the status it already had. Do not infer that a
+  job finished because work was done on it.
 * order_edit changes the order's own fields rather than recording an event: whether it is an
   alteration job at all, how many curtains are being removed, the alteration detail.
 * log_note is for "just write this down", and for anything about an order number that is not in
@@ -523,9 +590,13 @@ function validate(p: Record<string, unknown>, facts: Record<string, unknown>) {
       const qty = Number(f.qty);
       out.qty = Number.isFinite(qty) && qty > 0 ? qty : 1;
 
-      /* The amount is OPTIONAL on purpose. Left out, the browser asks fn_ops_rate_for for the
-       * banded rate and shows it - which is the number that must win, because the rate card is the
-       * one place rates live. A number the model produced is only ever a starting point. */
+      /* The amount is OPTIONAL. Left out, the browser fills the box from fn_ops_rate_for and shows
+       * the banded rate beside it. Supplied, it SURVIVES: wireRate in mod-chotu.js starts with
+       * touched = true whenever the model sent an amount, so the rate card becomes the label next
+       * to the box rather than an overwrite. That is deliberate - a real adjustment is a SUM of
+       * parts (two visits plus four alterations) and no single banded rate can express it, so the
+       * model's total stands and fn_ops_rate_for is shown alongside as the cross-check. The
+       * arithmetic behind the total goes in reason, which is why reason is mandatory below. */
       const amt = Number(f.amount);
       if (Number.isFinite(amt) && amt >= 0) out.amount = amt;
 
@@ -537,7 +608,16 @@ function validate(p: Record<string, unknown>, facts: Record<string, unknown>) {
       const vn = Number(f.visit_no);
       if (Number.isFinite(vn) && vn >= 1 && vn <= 10) out.visit_no = vn;
 
-      out.chargeable = f.chargeable === false ? false : true;
+      /* The outcome, when they gave one, so the charge and the status commit together. OPTIONAL and
+       * never added to need[]: an adjustment with no outcome is a complete capture, and the card
+       * leaves the order status alone unless this comes back set. A near-miss is dropped rather
+       * than passed on - order_status_status_check is case-sensitive.
+       *
+       * There is no 'chargeable' field any more. Capture is always a charge; whether it is billed
+       * is decided afterwards on the row itself, by Confirm or Do not charge in the Installation
+       * module, which is the one place that decision now lives. */
+      const ast = inVocab("order_status", f.status);
+      if (ast) out.status = ast;
       break;
     }
 

@@ -76,6 +76,12 @@ whole filtered set rather than a page.
 
 **2. Order status** (`#/status`) — ready, team assigned, order status, **multiple visits** each with
 their own outcome and team, internal + Slack comments, and chargeable extras.
+Above the list sits an **outcome filter**: one dropdown, *Any* plus the ten statuses, narrowing the
+board to the orders sitting on one of them. It rides outside the shared bar on its own `status`
+param — the **same key the dashboard uses**, so a link filtered on one screen opens filtered on the
+other — and it filters the moment it is picked rather than waiting for Apply, because it is one
+control with one value. Apply on the shared bar carries it along; without that the bar would rebuild
+the query string from the filter fields alone and drop it.
 
 **3. Management dashboard** (`#/dashboard`, `#/eod`) — date-bucket tiles, every order-status field as
 a filter, billing totals, and an end-of-day report at team **and** overall level.
@@ -153,6 +159,48 @@ over 450 cm with no scaffolding, pull cord, a duplicate line that carries money,
 with no supplier type. The duplicate rule counts only paid lines — matching on window plus product
 alone flagged 416, topped by "Tie Back FOC" nine times on one window, which is correct data and free
 anyway.
+
+### Where an adjustment's money came from, and what finance does with it after
+
+**Propose amount** writes the rate card's figure onto adjustments that already exist. The arithmetic
+is not in the browser: `fn_finance_propose_adjustment_amount` looks every row up through
+`fn_ops_rate_for`, the same function the Installation capture sheet and Chotu call, so three screens
+can never quote different money for the same work. The grid's `card_amount_aed` comes through that
+same function inside `v_ops_finance_adjustments`, which is why the preview and the write cannot
+disagree — and it is the **banded total** (rate × quantity, less the free-metre allowance), not
+`card_rate_aed`, which is the per-unit rate.
+
+**It shows before it writes.** The button opens the list of what would change, old → new, because
+this restates money on rows somebody else captured, in bulk. An amount a person set is skipped by
+default and only replaced behind an explicit tick — an agreed figure is a decision, not a
+calculation — and the RPC reports what it left alone (`skipped_manual`, `skipped_no_rate`) rather
+than silently doing less than the button implied.
+
+**`amount_source` exists because the amounts cannot answer the question.** `fn_ops_add_adjustment`
+stores `agreed_amount_aed = coalesce(typed, card rate)`, so the agreed column is *always* set — a
+row where agreed equals suggested is either somebody accepting the card rate or somebody typing the
+same number, and those are not the same thing when a client queries the invoice. The column records
+which; the grid shows `∑ System calculated` when it is the card's. Typing over the amount flips it
+to `manual`, and **clearing the box hands the row back to the rate card** rather than storing zero,
+which is the only way to undo an override without knowing what the figure used to be.
+
+**Three tick boxes per adjustment** — Updated on 3D sheet, Invoice created, Paid — each with an
+`_at` / `_by` pair, on hover. They are deliberately independent rather than one three-step status:
+an adjustment can be invoiced without ever reaching the 3D sheet, and paid work still has to be
+reconciled onto it afterwards. Un-ticking clears the stamp; a timestamp left standing beside a
+`false` is a record of something that is no longer true. Toggling does **not** repaint the grid —
+redrawing under somebody working down a column moves the next box out from under their finger.
+
+Migrations: `adjustment_amount_source_and_finance_flags`,
+`finance_adjustment_amount_and_flag_rpcs`,
+`expose_adjustment_amount_source_and_finance_flags_in_views` (22 Aug 2026).
+
+**One thing to know before trusting a proposed figure.** The rate card and the written policy
+disagree in two places, and Propose amount follows the **card**, like every other screen: `tieback`
+is stored as 150 *per piece*, so four tie backs propose 600 where the policy is a flat 150 for the
+job; and `pickup` is stored at 100 where the policy says 150 each way. Chotu is told to correct both
+in its prompt, which is why its totals can differ from this button's. Fixing that belongs in
+`adjustment_rate_card`, not in a third opinion in the browser.
 
 ## The offline write queue
 
@@ -272,6 +320,13 @@ no outcome is a row nobody can act on, and assuming it went well is the one assu
 make. The visit number comes from `fn_chotu_context`, never from the model, because
 `order_visits.visit_no` is capped at ten.
 
+**An adjustment can carry the outcome with it.** "We went back, altered two curtains, and it is done
+now" is one sentence with two writes in it, and the adjustment card has an **Order status** dropdown
+so both commit on one tap. The field is **optional in a way the visit's outcome is not**: the model
+is told to leave it out when they only described the work, it is never added to `need[]`, and blank
+means the order keeps the status it had. Silence is not an outcome — a job being worked on is not a
+job that finished.
+
 **Charge types are DERIVED from `adjustment_rate_card`, not hardcoded.** They were a literal list of
 ten; when two more were added to the CHECK and the app, Chotu silently could not propose either and
 said only that it needed a charge type. Deriving them means a new charge reaches Chotu the moment it
@@ -384,6 +439,21 @@ It lands on `accounting_alerts` — the table the ingestion agent already feeds 
   adjustments.
 - A reason is mandatory, enforced in the UI, because `invoice_lines.adjustment_needs_comment` will
   reject a blank one at invoicing time.
+- **Capture is always a charge.** There is no "charge the client" choice on the way in — the old
+  dropdown asked at capture time a question the row already answers afterwards with **Confirm** and
+  **Do not charge**, and two controls for one decision is how they end up disagreeing. Everything
+  arrives `chargeable`, status `new`; dropping one sets `chargeable = false` and status `dropped` in
+  the one place that decision lives.
+- **The charge and the outcome commit together.** Both the Installation module's Add Adjustment sheet
+  and Chotu's adjustment card carry an **Order status** dropdown, blank by default, meaning *leave it
+  alone*. Pick one and the same button writes `fn_ops_add_adjustment` and then `fn_ops_save_visit`,
+  queued in that order so a phone that lost signal replays both. This exists because an adjustment is
+  almost always somebody reporting back from site with two things in their head at once — what
+  happened and what it cost — and the second save was the one that got forgotten.
+  The status write always sets `skip_visit_charge` (the charge is the one just captured, not a second
+  auto-proposed revisit) and points at the **last recorded** visit, never the number typed against
+  the charge: `fn_ops_save_visit` upserts an `order_visits` row, so aiming it at a visit that has not
+  happened yet would invent one.
 - `fn_ops_build_invoice(order_id)` produces a **draft** invoice: `as_per_po` lines from
   `v_invoice_po_lines` plus `adjustment` lines. Re-running rebuilds in place — it never creates a
   second invoice or doubles the lines — and it refuses to touch an invoice that is no longer `draft`.
