@@ -17,6 +17,7 @@ import {
 } from "./config.js";
 import {
   $, esc, el, chip, aed, num, fmtDate, toast, loading, modal, selectHtml, orderLabel, copyText,
+  today,
 } from "./ui.js";
 import { renderFilterBar, toQuery, deriveOptions, activeCount, writeHash } from "./filters.js";
 import { micField, wireMics } from "./voice.js";
@@ -470,14 +471,22 @@ async function openWorkSheet(r, v, reload, opts = {}) {
    * a rate arriving late would mean a total that changes under somebody's hand. */
   loading(true, tr("t.loading"));
   const q = encodeURIComponent(r.order_id);
-  let curtains = [], remakeRates = [], visitRate = 0, altRate = 0, adjAlt = null;
+  let curtains = [], remakeRates = [], visitRate = 0, altRate = 0, adjAlt = null, card = [];
   try {
-    const [cur, rates, vr, ar, stat] = await Promise.all([
+    const d = today();
+    const [cur, rates, vr, ar, stat, cardRows] = await Promise.all([
       api(`/rest/v1/v_ops_order_windows?select=window_name,first_line_no,line_no,description,style,layers,width_m,po_rate,remake_rate_per_layer,curtain_lines,priceable&order_id=eq.${q}&order=first_line_no`),
       api("/rest/v1/remake_rate_card?select=style,rate_aed_per_layer,label&order=style"),
       rpc("fn_ops_rate_for", { p_charge_type: "additional_visit", p_qty: 1 }),
       rpc("fn_ops_rate_for", { p_charge_type: "alteration", p_qty: 1 }),
       api(`/rest/v1/order_status?select=alteration_adj_1l,alteration_adj_2l&order_id=eq.${q}`),
+      /* The card is read once for LABELS, UNITS and the figure shown beside an unticked box. The
+       * money that reaches the total still comes from fn_ops_rate_for - see chargeAmount below.
+       * Same split Finance's Propose amount uses: the card previews, the function decides. */
+      api(`/rest/v1/adjustment_rate_card?select=charge_type,min_qty,max_qty,rate_aed,free_qty,unit,label`
+        + `&active=is.true&effective_from=lte.${d}`
+        + `&or=${encodeURIComponent(`(effective_to.is.null,effective_to.gte.${d})`)}`
+        + `&order=charge_type,min_qty`),
     ]);
     curtains = cur || [];
     remakeRates = rates || [];
@@ -487,6 +496,7 @@ async function openWorkSheet(r, v, reload, opts = {}) {
     visitRate = Number(((Array.isArray(vr) ? vr[0] : vr) || {}).rate_aed || 0);
     altRate = Number(((Array.isArray(ar) ? ar[0] : ar) || {}).rate_aed || 0);
     adjAlt = (stat || [])[0] || null;
+    card = cardRows || [];
   } catch (e) {
     loading(false);
     toast(e.message, "bad");
@@ -517,6 +527,64 @@ async function openWorkSheet(r, v, reload, opts = {}) {
     curtainLines: Number(c.curtain_lines || 0),
     on: false,
   }));
+
+  /* THE TEN CHARGE TYPES AS TICK BOXES, and their shape derived from the card rather than from a
+   * list somebody has to keep in step with it.
+   *
+   * additional_visit and alteration are deliberately absent: both already have a richer line above,
+   * and a tick box cannot express a visit count or the 1-layer/2-layer split that does the doubling.
+   * Two ways to add the same charge is two answers to one question.
+   *
+   * THREE SHAPES, because six of the ten cannot price from a bare tick:
+   *   flat   - one band, per order/visit, rate above zero. Pickup, drop-off, scaffolding, tie backs.
+   *   qty    - banded or per-metre. Removal prices 0 for 1-2 curtains and 300 for 8+; wire and
+   *            trunking have three free metres. Ticking without a number would bill nothing, or
+   *            bill ten metres as one.
+   *   amount - the card carries rate 0 (furniture moving, other chargeable work), so there is no
+   *            rate to apply and the figure has to be typed.
+   */
+  const CARD_BY_TYPE = {};
+  card.forEach((c) => { (CARD_BY_TYPE[c.charge_type] = CARD_BY_TYPE[c.charge_type] || []).push(c); });
+
+  const shapeOf = (type) => {
+    const bands = CARD_BY_TYPE[type] || [];
+    if (!bands.length) return { kind: "amount" };
+    const maxRate = Math.max(...bands.map((b) => Number(b.rate_aed || 0)));
+    if (maxRate === 0) return { kind: "amount", unit: bands[0].unit };
+    // one band on a per-order/per-visit unit is the only genuinely flat case; removal has four
+    // bands on 'per order' and is not flat at all
+    if (bands.length === 1 && ["per order", "per visit"].includes(bands[0].unit)) {
+      return { kind: "flat", rate: Number(bands[0].rate_aed), unit: bands[0].unit };
+    }
+    /* A BANDED type carries its rates as a RANGE, not as bands[0]. Removal's first band is 1-2
+     * curtains at zero, and printing that beside the box reads as "removal is free" when it runs
+     * to 300 at eight. The range says what it actually is: it depends on the number. */
+    const rates = bands.map((b) => Number(b.rate_aed || 0));
+    return { kind: "qty", unit: bands[0].unit, rate: Number(bands[0].rate_aed),
+             banded: bands.length > 1, lo: Math.min(...rates), hi: Math.max(...rates),
+             free: Number(bands[0].free_qty || 0) };
+  };
+
+  const charges = CHARGE_TYPES
+    .filter((c) => c.value !== "additional_visit" && c.value !== "alteration")
+    .map((c) => ({ type: c.value, key: c.key, shape: shapeOf(c.value), on: false, qty: 1, amount: 0 }));
+
+  /* The amount a ticked row contributes. Asked of fn_ops_rate_for, never worked out here, so the
+   * banding and the free-metre allowance stay in the one place that owns them. Cached per
+   * (type, quantity) because ticking and re-ticking the same row should not re-ask. */
+  const RATE_CACHE = {};
+  async function chargeAmount(row) {
+    if (row.shape.kind === "amount") return r2(row.qty);   // qty IS the typed amount here
+    const k = `${row.type}|${row.qty}`;
+    if (RATE_CACHE[k] === undefined) {
+      try {
+        const res = await rpc("fn_ops_rate_for", { p_charge_type: row.type, p_qty: row.qty || 1 });
+        const got = Array.isArray(res) ? res[0] : res;
+        RATE_CACHE[k] = got ? Number(got.amount_aed || 0) : 0;
+      } catch (e) { RATE_CACHE[k] = 0; }
+    }
+    return RATE_CACHE[k];
+  }
 
   const perLayer = (row) => (row.style === "other"
     ? row.po_rate
@@ -580,6 +648,30 @@ async function openWorkSheet(r, v, reload, opts = {}) {
         <b data-sub="alts"></b>
       </div>
 
+      <!-- Below the alteration line, as asked. Each tick adds its own figure to the total; the
+           ones that need a number reveal a box when ticked rather than carrying one all the time. -->
+      <div class="calcsec">
+        <div class="calcsech">${esc(tr("calc.extras"))}
+          <b data-sub="charges">${esc(aed(0))}</b></div>
+        ${charges.map((c, i) => `
+          <div class="chrow" data-ch="${i}">
+            <label class="chname"><input type="checkbox" data-chon="${i}">
+              <span>${esc(tr(c.key))}</span></label>
+            <span class="muted chhint">${
+              c.shape.kind === "flat" ? esc(aed(c.shape.rate))
+              : c.shape.kind === "qty"
+                ? (c.shape.banded
+                    ? esc(`${aed(c.shape.lo)} – ${aed(c.shape.hi)}`)
+                    : esc(`${aed(c.shape.rate)} ${c.shape.unit}`))
+                  + (c.shape.free ? esc(` · ${tr("calc.freeQty", { n: c.shape.free })}`) : "")
+              : esc(tr("calc.typeAmount"))}</span>
+            <input type="number" data-chqty="${i}" class="hidden" min="0" step="0.01"
+                   inputmode="decimal" value="${c.shape.kind === "amount" ? "" : 1}"
+                   aria-label="${esc(tr(c.key))}">
+            <b data-chamt="${i}">${esc(aed(0))}</b>
+          </div>`).join("")}
+      </div>
+
       <div class="calcsec">
         <div class="calcsech">${esc(tr("calc.rework"))}
           <b data-sub="rework">${esc(aed(0))}</b></div>
@@ -614,11 +706,15 @@ async function openWorkSheet(r, v, reload, opts = {}) {
         <span></span><b data-sub="trans">${esc(aed(0))}</b>
       </div>
 
+      <!-- THE TOTAL IS THE CHARGE. There is no separate "Add a charge" form any more: it asked
+           for the amount, the charge type and the visit all over again, in a different shape, next
+           to a calculator that had already worked them out. Anything above zero is written as one
+           adjustment on Save; zero writes none. -->
       <div class="calctotal">
         <label class="f">${esc(tr("calc.total"))}</label>
         <input type="number" name="ctotal" step="0.01" inputmode="decimal" value="0">
         <span class="muted hidden" data-edited>${esc(tr("calc.totalEdited"))}</span>
-        <button type="button" class="btn sm accent" data-usetotal>${esc(tr("calc.useTotal"))}</button>
+        <span class="muted" data-willcharge></span>
       </div>
 
     </div>
@@ -641,33 +737,18 @@ async function openWorkSheet(r, v, reload, opts = {}) {
       <div class="muted" style="margin-top:4px">${esc(tr("st.slackHint"))}</div>
     </div>
 
-    <label class="cbrow wtoggle">
-      <input type="checkbox" name="docharge">
-      <b>${esc(tr("st.addCharge"))}</b>
-      <span class="muted">${esc(tr("adj.title"))}</span>
-    </label>
-
-    <div data-block="charge" class="hidden">
-      <div class="grid2" style="margin-top:12px">
-        <div><label class="f">${esc(tr("adj.type"))}</label>
-          ${selectHtml("atype", CHARGE_TYPES.map((c) => ({ value: c.value, label: tr(c.key) })),
-                       "additional_visit")}</div>
-        <div><label class="f">${esc(tr("st.visit", { n: "" })).trim()}</label>
-          <input type="number" name="avisit" min="1" max="10" step="1"
-                 value="${esc(chargeVisitNo)}"></div>
+    <!-- WHY, several at once. One charge rarely has one cause - the client changed their mind AND
+         the site was not ready - and picking the one that felt biggest lost the rest. What is
+         ticked here is written to the charge AND spelled out in the comment below. -->
+    <div class="rsnbox">
+      <label class="f">${esc(tr("adj.reasonCode"))}</label>
+      <div class="rsngrid">
+        ${ADJ_REASONS.map((x) => `
+          <label class="cbrow rsnpick"><input type="checkbox" data-rsn="${esc(x.value)}">
+            <span>${esc(tr(x.key))}</span></label>`).join("")}
       </div>
-      <div style="margin-top:10px">
-        <label class="f">${esc(tr("adj.amount"))}</label>
-        <input type="number" name="aamt" step="0.01" inputmode="decimal">
-      </div>
-      <div style="margin-top:10px">
-        <label class="f">${esc(tr("adj.reasonCode"))}</label>
-        ${selectHtml("arsn", ADJ_REASONS.map((x) => ({ value: x.value, label: tr(x.key) })),
-                     "", tr("adj.pickReason"))}
-        <div class="banner warn hidden" data-absorb style="margin-top:6px">${
-          esc(tr("adj.absorbed"))}</div>
-      </div>
-      <div class="muted" style="margin-top:10px">${esc(tr("adj.reasonFromComment"))}</div>
+      <div class="banner warn hidden" data-absorb style="margin-top:6px">${
+        esc(tr("adj.absorbed"))}</div>
     </div>
 
     <!-- Where the ORDER now stands, which is not the same question as what this trip cost. -->
@@ -688,7 +769,6 @@ async function openWorkSheet(r, v, reload, opts = {}) {
   const block = (n) => m.sheet.querySelector(`[data-block="${n}"]`);
   const errBox = m.sheet.querySelector("#werr");
   const doVisit = qs("dovisit");
-  const doCharge = qs("docharge");
   const visitOn = () => editing || (!!doVisit && doVisit.checked && !visitFull);
 
   let method = "typed";
@@ -700,13 +780,10 @@ async function openWorkSheet(r, v, reload, opts = {}) {
     context_label: tr("st.visit", { n: v.visit_no }),
   }));
 
+  // a charge follows the visit it arose on, and there is no such visit if none is being recorded
+  const chargeVisit = () => (visitOn() ? v.visit_no : (r.last_visit_no || 1)) || chargeVisitNo;
   if (doVisit) doVisit.addEventListener("change", () => {
     block("visit").classList.toggle("hidden", !doVisit.checked);
-    // a charge follows the visit it arose on, and there is no such visit if none is being recorded
-    qs("avisit").value = visitOn() ? v.visit_no : (r.last_visit_no || 1);
-  });
-  doCharge.addEventListener("change", () => {
-    block("charge").classList.toggle("hidden", !doCharge.checked);
   });
 
   /* ---- the arithmetic, in one place, recomputed from the controls on every change */
@@ -715,11 +792,6 @@ async function openWorkSheet(r, v, reload, opts = {}) {
    * it being rebuilt underneath them. The Rebuild button is how they ask for it back, so nothing
    * they wrote is ever silently replaced and nothing is ever stuck stale without a way out. */
   let commentEdited = false;
-  /* The charge follows the calculator until somebody types in the charge itself. Without this the
-   * amount captured at the moment Charge this total was pressed would stay put while the total
-   * moved on, and the sheet would show two different figures for the same job - the summary saying
-   * one thing and the adjustment writing another. */
-  let amtEdited = false;
   // the alteration counts belong to the ORDER; they are only written back if somebody moved them
   let altTouched = false;
 
@@ -731,12 +803,17 @@ async function openWorkSheet(r, v, reload, opts = {}) {
     const alts = r2(altCurtains() * altRate);
     const rw = rework.filter((x) => x.on).map((x) => ({ row: x, amount: rowAmount(x) }));
     const reworkTotal = r2(rw.reduce((a, x) => a + x.amount, 0));
-    return { visits, alts, rw, reworkTotal, mat: r2(numOf("cmat")), trans: r2(numOf("ctrans")) };
+    const ch = charges.filter((x) => x.on);
+    const chargeTotal = r2(ch.reduce((a, x) => a + Number(x.amount || 0), 0));
+    return { visits, alts, rw, reworkTotal, ch, chargeTotal,
+             mat: r2(numOf("cmat")), trans: r2(numOf("ctrans")) };
   };
   const computed = () => {
     const p = parts();
-    return r2(p.visits + p.alts + p.reworkTotal + p.mat + p.trans);
+    return r2(p.visits + p.alts + p.chargeTotal + p.reworkTotal + p.mat + p.trans);
   };
+  const pickedReasons = () =>
+    Array.from(m.sheet.querySelectorAll("[data-rsn]:checked")).map((c) => c.dataset.rsn);
 
   /* The whole sum in words, in the order it was worked out, so a coordinator can read it back to a
    * client and an accountant can check it later. This is the text that goes to Slack AND becomes
@@ -746,6 +823,15 @@ async function openWorkSheet(r, v, reload, opts = {}) {
     const out = [`${orderLabel(r)}`];
     if (p.visits) out.push(`${tr("calc.visits")}: ${num(numOf("cvisits"))} × ${aed(visitRate)} = ${aed(p.visits)}`);
     if (p.alts) out.push(`${tr("st.altAdjustment")}: ${num(altCurtains())} × ${aed(altRate)} = ${aed(p.alts)}`);
+    p.ch.forEach((c) => {
+      /* The quantity is only worth printing when it means something - a flat charge has none - and
+       * the card's UNIT is not the quantity's unit: removal is priced "per order" but counted in
+       * curtains, so "(6 per order)" reads as nonsense. Metres get an m; everything else is just
+       * the number, which the charge name already qualifies. */
+      const qtyPart = c.shape.kind === "qty"
+        ? ` (${num(c.qty)}${c.shape.unit === "per metre" ? " m" : ""})` : "";
+      out.push(`${tr(c.key)}${qtyPart}: ${aed(c.amount)}`);
+    });
     p.rw.forEach(({ row, amount }) => {
       const label = (RATE_BY_STYLE[row.style] || {}).label || tr("calc.fromOrder");
       /* The rate printed here is the per-layer rate TIMES THE LAYERS, not the per-layer rate on its
@@ -760,6 +846,12 @@ async function openWorkSheet(r, v, reload, opts = {}) {
     if (p.mat) out.push(`${tr("calc.materials")}: ${aed(p.mat)}`);
     if (p.trans) out.push(`${tr("calc.transport")}: ${aed(p.trans)}`);
     out.push(`${tr("calc.total")}: ${aed(totalEdited ? numOf("ctotal") : computed())}`);
+    const why = pickedReasons();
+    if (why.length) {
+      out.push(`${tr("adj.reasonCode")}: ${why
+        .map((x) => tr((ADJ_REASONS.find((y) => y.value === x) || {}).key || "rsn.other"))
+        .join(", ")}`);
+    }
     return out.join("\n");
   };
 
@@ -767,7 +859,10 @@ async function openWorkSheet(r, v, reload, opts = {}) {
     const p = parts();
     const set = (k, val) => { m.sheet.querySelector(`[data-sub="${k}"]`).textContent = aed(val); };
     set("visits", p.visits); set("alts", p.alts); set("rework", p.reworkTotal);
-    set("mat", p.mat); set("trans", p.trans);
+    set("mat", p.mat); set("trans", p.trans); set("charges", p.chargeTotal);
+    charges.forEach((c, i) => {
+      m.sheet.querySelector(`[data-chamt="${i}"]`).textContent = aed(c.on ? c.amount : 0);
+    });
     m.sheet.querySelector("[data-altc]").textContent =
       `${tr("st.altCurtains", { n: altCurtains() })} × ${aed(altRate)}`;
     rework.forEach((row, i) => {
@@ -777,8 +872,10 @@ async function openWorkSheet(r, v, reload, opts = {}) {
     m.sheet.querySelector("[data-edited]").classList.toggle("hidden", !totalEdited);
     if (!commentEdited) qs("wcomment").value = buildSummary();
     m.sheet.querySelector("[data-regen]").classList.toggle("hidden", !commentEdited);
-    // the amount the adjustment will actually carry, kept equal to the total on screen
-    if (!amtEdited) qs("aamt").value = Number(qs("ctotal").value || 0).toFixed(2);
+    // said out loud, because a total above zero now writes a charge with no further tick
+    const t = Number(qs("ctotal").value || 0);
+    m.sheet.querySelector("[data-willcharge]").textContent =
+      t > 0 ? tr("calc.willCharge", { n: aed(t) }) : tr("calc.noCharge");
   };
 
   ["cvisits", "calt1", "calt2", "cmat", "ctrans"].forEach((n) =>
@@ -789,12 +886,35 @@ async function openWorkSheet(r, v, reload, opts = {}) {
     commentEdited = true;
     m.sheet.querySelector("[data-regen]").classList.remove("hidden");
   });
-  qs("aamt").addEventListener("input", () => { amtEdited = true; });
   /* Three of the eleven causes mean the work is ours to put right and is normally absorbed at zero.
-   * Said, not enforced: a coordinator who has agreed a figure with a client outranks a rule. */
-  qs("arsn").addEventListener("change", (e) => {
-    const rs = ADJ_REASONS.find((x) => x.value === e.target.value);
-    m.sheet.querySelector("[data-absorb]").classList.toggle("hidden", !rs || rs.charged !== false);
+   * The banner shows if ANY ticked cause is one of them. Said, not enforced: a coordinator who has
+   * agreed a figure with a client outranks a rule of thumb. */
+  m.sheet.querySelectorAll("[data-rsn]").forEach((cb) => cb.addEventListener("change", () => {
+    const ours = pickedReasons()
+      .some((x) => (ADJ_REASONS.find((y) => y.value === x) || {}).charged === false);
+    m.sheet.querySelector("[data-absorb]").classList.toggle("hidden", !ours);
+    paintCalc();          // the causes are part of the sentence the comment is built from
+  }));
+
+  /* Ticking asks the rate card what it costs; the quantity box only appears for the rows that
+   * need one, and for a rate-0 type the box IS the amount. */
+  charges.forEach((c, i) => {
+    const box = m.sheet.querySelector(`[data-ch="${i}"]`);
+    const qty = m.sheet.querySelector(`[data-chqty="${i}"]`);
+    const refresh = async () => {
+      c.amount = c.on ? await chargeAmount(c) : 0;
+      paintCalc();
+    };
+    m.sheet.querySelector(`[data-chon="${i}"]`).addEventListener("change", async (e) => {
+      c.on = e.target.checked;
+      box.classList.toggle("on", c.on);
+      qty.classList.toggle("hidden", !c.on || c.shape.kind === "flat");
+      await refresh();
+    });
+    qty.addEventListener("change", async () => {
+      c.qty = Number(qty.value || 0);
+      await refresh();
+    });
   });
   m.sheet.querySelector("[data-regen]").addEventListener("click", () => {
     commentEdited = false;
@@ -823,25 +943,20 @@ async function openWorkSheet(r, v, reload, opts = {}) {
     toast(tr("calc.copied"), "ok");
   });
 
-  /* One button that turns the calculation into the charge: the total in the amount, the working in
-   * the reason, and the charge type set to whichever part was biggest - the same rule Chotu is
-   * given for an adjustment made of several parts. */
-  m.sheet.querySelector("[data-usetotal]").addEventListener("click", () => {
+  /* Which charge type the single adjustment carries: whichever part was biggest - the same rule
+   * Chotu is given for an adjustment made of several parts. Now that the ten types are tick boxes
+   * this can name the actual one rather than falling back to 'other' for everything that was not a
+   * visit or an alteration. */
+  const biggestType = () => {
     const p = parts();
-    const biggest = [
+    const cands = [
       { t: "additional_visit", v: p.visits },
       { t: "alteration", v: p.alts },
       { t: "other", v: p.reworkTotal + p.mat + p.trans },
+      ...p.ch.map((c) => ({ t: c.type, v: Number(c.amount || 0) })),
     ].sort((a, b) => b.v - a.v)[0];
-    doCharge.checked = true;
-    block("charge").classList.remove("hidden");
-    qs("atype").value = biggest.v > 0 ? biggest.t : "other";
-    // pressing this is saying "take the calculator's word" about the MONEY. It deliberately does
-    // not touch the comment: that may be a sentence somebody wrote, and Rebuild is how they ask
-    // for the breakdown back.
-    amtEdited = false;
-    qs("aamt").value = Number(qs("ctotal").value || 0).toFixed(2);
-  });
+    return cands && cands.v > 0 ? cands.t : "other";
+  };
 
   paintCalc();
 
@@ -850,7 +965,8 @@ async function openWorkSheet(r, v, reload, opts = {}) {
   m.sheet.querySelector("[data-no]").onclick = m.close;
   m.sheet.querySelector("[data-yes]").onclick = async () => {
     const wantVisit = visitOn();
-    const wantCharge = doCharge.checked;
+    // the calculator IS the charge - anything above zero is written, nothing below it
+    const wantCharge = Number(qs("ctotal").value || 0) > 0;
     const newStatus = wStatus.value || null;
     const comment = qs("wcomment").value.trim() || null;
     const fail = (msg) => {
@@ -880,22 +996,23 @@ async function openWorkSheet(r, v, reload, opts = {}) {
      * type already exists for the visit. Writing an explicit revisit charge first is what stops a
      * hand-entered one and an auto-proposed one both landing on the same visit. */
     if (wantCharge) {
-      const amt = qs("aamt").value;
+      const why = pickedReasons();
       await submit("fn_ops_add_adjustment", {
         p_order_id: r.order_id,
-        p_charge_type: qs("atype").value,
+        p_charge_type: biggestType(),
         p_reason: comment,
         p_quantity: 1,
-        p_visit_no: Number(qs("avisit").value) || null,
+        p_visit_no: chargeVisit(),
         // Every adjustment captured here is a charge. Whether it is actually billed is decided
         // afterwards, on the row itself, by Confirm or Do not charge.
         p_chargeable: true,
-        p_amount: amt === "" ? null : Number(amt),
+        p_amount: Number(qs("ctotal").value || 0),
         p_actor: currentActor(),
         p_window_name: null,
         p_notes: null,
         p_status: "new",
-        p_reason_code: qs("arsn").value || null,
+        // an empty pick is nobody having said, which fn_ops_add_adjustment stores as null
+        p_reason_codes: why.length ? why : null,
       });
     }
 

@@ -126,9 +126,26 @@ In their place, a calculator that **never invents a rate**:
 |---|---|
 | Extra visits | `adjustment_rate_card` via `fn_ops_rate_for`, the **unit** rate × the count |
 | Adjustment alteration | same rate, entered here as 1-layer and 2-layer window counts and written back to `order_status` |
+| **Other charges** | the remaining ten charge types as **tick boxes** — see below |
 | Curtains remade | `remake_rate_card` through `v_ops_order_windows` — one tick-box per **window**, style, layers and width pre-filled and all three overridable |
 | Additional materials | typed — there is no rate for it |
 | Transport | typed — vehicle hire goes by distance and only the office sets that figure |
+
+**The charge types are tick boxes, and their shape is derived from the card** rather than from a list
+somebody has to keep in step with it. `additional_visit` and `alteration` are deliberately absent —
+both already have a richer line above, and a tick box cannot express a visit count or the
+1-layer/2-layer split that does the doubling.
+
+| Shape | Rule | Types |
+|---|---|---|
+| Flat | one band, `per order`/`per visit`, rate above 0 | pickup · drop_off · scaffolding · tieback |
+| Quantity | banded, or priced per metre | removal · extra_track · extra_wire · extra_trunking |
+| Amount | the card carries rate 0, so there is nothing to apply | moving · other |
+
+Six of the ten cannot price from a bare tick, so **ticking reveals a number box** for those. Without
+it, Removal would add AED 0 (its first band is 1–2 curtains at nothing) and 10 m of wire would bill
+as 1 m. A banded type shows its **range** beside the box — `AED 0.00 – AED 300.00` — because printing
+`bands[0]` reads as "removal is free" when it runs to 300 at eight curtains.
 
 `fn_ops_rate_for` returns the **flat** rate for a `per visit` unit whatever quantity it is asked
 about, so the multiplication happens against `rate_aed` in the browser — asking it for three visits
@@ -171,11 +188,21 @@ where this business loses the most money. The list lives in `ADJ_REASONS` in `js
 guarded by `check_values.py` against `accounting_alerts_reason_code_check`, like every other
 vocabulary. It reaches Finance through `v_ops_finance_adjustments`.
 
-**Charge this total** turns the calculation into one adjustment: the total in the amount, the
-working in the reason, and the charge type set to whichever part was biggest — the same rule Chotu
-is given for an adjustment made of several parts. The amount then **tracks the total** until
-somebody types in the amount box itself; without that the figure captured when the button was
-pressed would sit frozen while the total moved on, and the sheet would show two numbers for one job.
+**The total IS the charge.** There is no *Add a charge* form any more: it asked for the amount, the
+charge type and the visit all over again, in a different shape, right below a calculator that had
+already worked all three out. Save writes one adjustment whenever the total is above zero and none
+when it is not — the amount is the total, the reason is the comment, and the charge type is whichever
+part was biggest, the same rule Chotu is given for an adjustment made of several parts. Now that the
+ten types are tick boxes that rule can name the actual one instead of falling back to `other` for
+everything that was not a visit or an alteration. A line under the total says which way it will go.
+
+**Why is several causes, not one.** One charge rarely has a single cause — the client changed their
+mind *and* the site was not ready — and a single-value field forced whoever captured it to pick the
+one that felt biggest and lose the rest. `accounting_alerts.reason_codes` is a `text[]` whose CHECK
+guards every element; the picks are written to the charge and spelled out in the comment. In Finance
+the cell shows them as chips and opens a sheet of checkboxes to change them, because a
+`<select multiple>` is unusable at that row height. Tick every box off and it stores `NULL` — nobody
+has said, which is a real third state and not a cause called *other*.
 
 Above the list sits an **outcome filter**: one dropdown, *Any* plus the ten statuses, narrowing the
 board to the orders sitting on one of them. It rides outside the shared bar on its own `status`

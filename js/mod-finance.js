@@ -560,8 +560,8 @@ const adjExportRow = (r) => ({
   "Amount": r.amount_aed ?? "",
   "Reason": r.reason || "",
   // APPENDED, never inserted - the six above are pasted into the sheet positionally
-  "Why": r.reason_code
-    ? tr((ADJ_REASONS.find((x) => x.value === r.reason_code) || {}).key || "rsn.other") : "",
+  "Why": (r.reason_codes || [])
+    .map((c) => tr((ADJ_REASONS.find((x) => x.value === c) || {}).key || "rsn.other")).join("; "),
 });
 
 /* Tab-separated, which is what a spreadsheet expects off the clipboard - a comma-separated paste
@@ -649,7 +649,7 @@ function paintAdjustments(mount, state) {
           ${sortableTh(tr("col.customer"), "customer_name", "adj")}
           ${sortableTh(tr("adj.amount"), "amount_aed", "adj")}
           ${sortableTh(tr("adj.reason"), "reason", "adj")}
-          ${sortableTh(tr("adj.reasonCode"), "reason_code", "adj")}
+          ${sortableTh(tr("adj.reasonCode"), "reason_codes", "adj")}
           ${ADJ_FLAGS.map((f) => sortableTh(tr(f.key), f.col, "adj")).join("")}
           ${sortableTh(tr("fin.invoiceStatus"), "invoice_status", "adj")}
           ${sortableTh(tr("fin.adjStatus"), "adjustment_status", "adj")}
@@ -687,13 +687,22 @@ function paintAdjustments(mount, state) {
                    team is the one who later has to explain the bill. A supplier fault filed as our
                    own production issue is the expensive direction to get it wrong, and it was
                    write-once until now. Blank is a real state - nobody has said - not 'other'. -->
+              <!-- Several causes now, so the cell shows what is picked and opens a sheet to change
+                   it. A <select multiple> is unusable at this row height, and a dropdown could only
+                   ever hold one answer. Editable because the cause is chosen on site in the moment
+                   and the accounts team is the one who later has to explain the bill - a supplier
+                   fault filed as our own production issue is the expensive direction to get wrong. -->
               <td class="rsn">
-                <select class="fincell" data-id="${esc(r.id)}" data-rsn${ro ? " disabled" : ""}>
-                  <option value="">—</option>
-                  ${ADJ_REASONS.map((x) => `<option value="${esc(x.value)}"${
-                    r.reason_code === x.value ? " selected" : ""}>${esc(tr(x.key))}</option>`).join("")}
-                </select>
-                ${r.reason_code && (ADJ_REASONS.find((x) => x.value === r.reason_code) || {}).charged === false
+                <button type="button" class="rsnbtn" data-id="${esc(r.id)}" data-rsn${
+                  ro ? " disabled" : ""}>${
+                  (r.reason_codes || []).length
+                    ? (r.reason_codes || []).map((c) => chip(
+                        tr((ADJ_REASONS.find((x) => x.value === c) || {}).key || "rsn.other"),
+                        (ADJ_REASONS.find((x) => x.value === c) || {}).charged === false
+                          ? "warn" : "info")).join(" ")
+                    : `<span class="muted">—</span>`}</button>
+                ${(r.reason_codes || []).some((c) =>
+                    (ADJ_REASONS.find((x) => x.value === c) || {}).charged === false)
                     && Number(r.amount_aed || 0) > 0
                   ? chip(tr("fin.absorbedCharged"), "bad", "!") : ""}
               </td>
@@ -732,8 +741,8 @@ function paintAdjustments(mount, state) {
   table.querySelectorAll("[data-amt]").forEach((inp) =>
     inp.addEventListener("change", () => saveAdjAmount(inp, rows, repaint)));
 
-  table.querySelectorAll("[data-rsn]").forEach((sel) =>
-    sel.addEventListener("change", () => saveAdjReason(sel, rows, repaint)));
+  table.querySelectorAll("[data-rsn]").forEach((btn) =>
+    btn.addEventListener("click", () => openReasonSheet(btn, rows, repaint)));
 
   /* The three tick boxes. No repaint on toggle: redrawing the grid under somebody working down a
    * column of checkboxes moves the next box out from under their finger. The row object is updated
@@ -775,24 +784,50 @@ async function saveAdjAmount(inp, rows, repaint) {
   }
 }
 
-/* The cause, corrected in place. repaint() afterwards because picking one of the three causes that
- * mean the work is OURS lights a warning beside it when the row still carries money - the same
+/* The causes, corrected in place. repaint() afterwards because ticking one of the three that mean
+ * the work is OURS lights a warning beside it when the row still carries money - the same
  * distinction the capture sheet draws, drawn again where the invoice actually gets raised. */
-async function saveAdjReason(sel, rows, repaint) {
-  const id = Number(sel.dataset.id);
+function openReasonSheet(btn, rows, repaint) {
+  const id = Number(btn.dataset.id);
   const row = rows.find((r) => Number(r.id) === id);
-  try {
-    await rpc("fn_finance_set_adjustment_reason", {
-      p_id: id, p_reason_code: sel.value || null, p_actor: currentActor(),
-    });
-    if (row) row.reason_code = sel.value || null;
-    sel.classList.add("saved");
-    toast(tr("t.saved"), "ok");
-    repaint();
-  } catch (e) {
-    sel.classList.add("bad");
-    toast(e.message, "bad");
-  }
+  const picked = new Set((row && row.reason_codes) || []);
+
+  const m = modal(`
+    <h3>${esc(tr("adj.reasonCode"))} — ${esc((row && (row.order_name || row.order_id)) || "")}</h3>
+    <div class="rsngrid" style="margin-top:10px">
+      ${ADJ_REASONS.map((x) => `
+        <label class="cbrow rsnpick"><input type="checkbox" value="${esc(x.value)}"${
+          picked.has(x.value) ? " checked" : ""}> <span>${esc(tr(x.key))}</span></label>`).join("")}
+    </div>
+    <div class="banner warn hidden" data-absorb style="margin-top:10px">${esc(tr("adj.absorbed"))}</div>
+    <div class="row" style="justify-content:flex-end;margin-top:14px">
+      <button class="btn ghost" data-no>${esc(tr("act.cancel"))}</button>
+      <button class="btn primary" data-yes>${esc(tr("act.save"))}</button>
+    </div>`);
+
+  const chosen = () => Array.from(m.sheet.querySelectorAll("input:checked")).map((c) => c.value);
+  const paintAbsorb = () => {
+    const ours = chosen().some((c) =>
+      (ADJ_REASONS.find((x) => x.value === c) || {}).charged === false);
+    m.sheet.querySelector("[data-absorb]").classList.toggle("hidden", !ours);
+  };
+  m.sheet.querySelectorAll("input").forEach((c) => c.addEventListener("change", paintAbsorb));
+  paintAbsorb();
+
+  m.sheet.querySelector("[data-no]").onclick = m.close;
+  m.sheet.querySelector("[data-yes]").onclick = async () => {
+    const codes = chosen();
+    m.close();
+    try {
+      await rpc("fn_finance_set_adjustment_reason", {
+        // ticking every box off is nobody having said, which the function stores as null
+        p_id: id, p_reason_codes: codes.length ? codes : null, p_actor: currentActor(),
+      });
+      if (row) row.reason_codes = codes.length ? codes : null;
+      toast(tr("t.saved"), "ok");
+      repaint();
+    } catch (e) { toast(e.message, "bad"); }
+  };
 }
 
 /* Updated on 3D sheet / Invoice created / Paid. submit() rather than rpc() because unlike the
