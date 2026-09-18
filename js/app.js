@@ -59,9 +59,9 @@ const ROUTES = {
   finance:    { key: "nav.finance",    render: (m, s) => finance.render(m, s) },
 };
 
-/* Eight, in the order the day runs. Seven was the limit that kept a phone from scrolling the strip
- * sideways; Planning went in as the eighth on 18 Sep 2026 (user), so on a narrow phone the strip
- * scrolls a little - the CSS trims the tab padding to keep that to a minimum.
+/* Six, in the order the day runs, and six is deliberate: seven was the most a phone showed without
+ * scrolling the strip sideways, and the two that left on 18 Sep 2026 (user) - Preparation and
+ * Inventory - are one tap away on Home and on the launcher. Planning took Preparation's place.
  *
  * An entry is a route name, or an object for a screen that lives INSIDE a route: Planning is the
  * Reports page `?rep=production`, so it carries its own hash, label and an `is` test that decides
@@ -70,7 +70,7 @@ const PLANNING_TAB = {
   hash: "#/reports?rep=production", key: "nav.planning", icon: "🗂️",
   is: (name, params) => name === "reports" && params.get("rep") === "production",
 };
-const RIBBON = ["home", "production", PLANNING_TAB, "prep", "status", "inventory", "po", "chotu"];
+const RIBBON = ["home", "production", PLANNING_TAB, "status", "po", "chotu"];
 
 /* Roles that see less than all of it. A role absent from here gets everything.
  *

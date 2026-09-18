@@ -48,15 +48,15 @@ update.
 
 ## The ribbon, and everything off it
 
-Eight tabs, in the order the day runs: **Home · Production · Planning · Preparation · Installation ·
-Inventory · PO · Chotu**. Seven was the count that kept a phone from scrolling the strip sideways;
-Planning went in as the eighth on 18 Sep 2026 at the user's request, with the tab padding trimmed
-so a phone scrolls as little as possible. Planning is not a route of its own — it is the Reports
-page `?rep=production`, so its ribbon entry carries its own hash and its own "am I active" test
-(`PLANNING_TAB` in `js/app.js`).
+Six tabs, in the order the day runs: **Home · Production · Planning · Installation · PO · Chotu**.
+Seven is the most a phone shows without scrolling the strip sideways, which is how the last tabs
+stop being used at all; on 18 Sep 2026 Planning took Preparation's place and Inventory moved off
+the strip (both are one tap away on Home and on the launcher). Planning is not a route of its own —
+it is the Reports page `?rep=production`, so its ribbon entry carries its own hash and its own "am I
+active" test (`PLANNING_TAB` in `js/app.js`).
 
-Everything else is a real route reached from **Home**, which is the full index: Finance, Schedule,
-Transfers, Dashboard, Reports, End of day, Photo audit and Roles. The old `Insights` container is gone — it
+Everything else is a real route reached from **Home**, which is the full index: Preparation,
+Inventory, Finance, Schedule, Transfers, Dashboard, Reports, End of day, Photo audit and Roles. The old `Insights` container is gone — it
 bundled five unrelated read-only screens behind one tab and buried the line-by-line PO review, the
 one screen coordinators work *through*, three clicks deep. That review is the **PO** tab now.
 

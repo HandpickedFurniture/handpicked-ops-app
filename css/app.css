@@ -53,7 +53,7 @@ button.qbadge.fail:hover{filter:brightness(1.15);}
 
 nav.tabs{display:flex;gap:2px;background:var(--brand-dark);position:sticky;top:56px;z-index:55;
   overflow-x:auto;}
-nav.tabs a{flex:1;min-width:96px;text-align:center;padding:11px 6px;color:#cfe0e6;
+nav.tabs a{flex:1;min-width:110px;text-align:center;padding:11px 8px;color:#cfe0e6;
   text-decoration:none;font-size:14px;font-weight:600;white-space:nowrap;
   border-bottom:3px solid transparent;}
 nav.tabs a.active{color:#fff;border-bottom-color:var(--accent);background:rgba(255,255,255,.06);}
