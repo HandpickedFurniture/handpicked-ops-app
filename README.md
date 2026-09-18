@@ -266,6 +266,11 @@ window ref, customer, commercial name, city, 3D-sheet status, and the four-value
 which is why every report view carries the bar's columns (`report_views_filter_columns`). Numeric
 columns are heat-shaded against the column's own maximum in the filtered set — one hue for
 quantities, a second for money — and status-like columns are chips with a word, never colour alone.
+Every table downloads as CSV or as **PDF**: the PDF is the table as drawn (chips, shading, totals,
+the active filters in the header), printed through the browser's own engine (`printSheet` in
+`js/ui.js`) — landscape A4, "Save as PDF" in the dialog — because that engine already lays out
+Arabic, Hindi and Bengali text, which a client-side PDF library would not without a megabyte of
+embedded fonts the app has no build step to bundle.
 
 The **issue flag** is `fn_issue_flag(sheet status, HH:MM)` and has exactly four values, used by every
 report, the dashboard and the 07:00 management alerts: **Order** (Material ordered / Order placed /

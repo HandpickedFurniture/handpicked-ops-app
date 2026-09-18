@@ -206,7 +206,8 @@ export const I18N = {
     "dash.visited": "Orders visited", "dash.first": "First visits", "dash.revisits": "Revisits",
     "dash.completed": "Completed", "dash.issues": "Issues", "dash.adjAed": "Extra charges",
     "dash.successPct": "First-visit success", "dash.copy": "Copy for WhatsApp",
-    "dash.csv": "Download CSV", "dash.copied": "Copied.", "dash.noData": "Nothing logged for this date.",
+    "dash.csv": "Download CSV", "dash.pdf": "Download PDF", "dash.copied": "Copied.", "dash.noData": "Nothing logged for this date.",
+    "rep.rows": "rows", "rep.pdfBlocked": "The browser blocked the PDF window - allow pop-ups for this site and try again.",
     "dash.billable": "Total billable", "dash.poValue": "PO value",
 
     "t.loading": "Loading…", "t.saved": "Saved", "t.queued": "Saved – will sync when back online",
@@ -774,7 +775,8 @@ export const I18N = {
     "dash.visited": "विज़िट किए ऑर्डर", "dash.first": "पहली विज़िट", "dash.revisits": "पुनः विज़िट",
     "dash.completed": "पूर्ण", "dash.issues": "समस्याएँ", "dash.adjAed": "अतिरिक्त शुल्क",
     "dash.successPct": "पहली विज़िट सफलता", "dash.copy": "WhatsApp के लिए कॉपी करें",
-    "dash.csv": "CSV डाउनलोड करें", "dash.copied": "कॉपी हो गया।",
+    "dash.csv": "CSV डाउनलोड करें", "dash.pdf": "PDF डाउनलोड करें", "dash.copied": "कॉपी हो गया।",
+    "rep.rows": "पंक्तियाँ", "rep.pdfBlocked": "ब्राउज़र ने PDF विंडो रोक दी - इस साइट के लिए पॉप-अप की अनुमति दें और फिर कोशिश करें।",
     "dash.noData": "इस तिथि के लिए कुछ दर्ज नहीं।",
     "dash.billable": "कुल बिल योग्य", "dash.poValue": "PO मूल्य",
 
@@ -1341,7 +1343,8 @@ export const I18N = {
     "dash.visited": "ভিজিট করা অর্ডার", "dash.first": "প্রথম ভিজিট", "dash.revisits": "পুনঃভিজিট",
     "dash.completed": "সম্পন্ন", "dash.issues": "সমস্যা", "dash.adjAed": "অতিরিক্ত চার্জ",
     "dash.successPct": "প্রথম ভিজিটে সাফল্য", "dash.copy": "WhatsApp-এর জন্য কপি করুন",
-    "dash.csv": "CSV ডাউনলোড", "dash.copied": "কপি হয়েছে।",
+    "dash.csv": "CSV ডাউনলোড", "dash.pdf": "PDF ডাউনলোড", "dash.copied": "কপি হয়েছে।",
+    "rep.rows": "সারি", "rep.pdfBlocked": "ব্রাউজার PDF উইন্ডো আটকে দিয়েছে - এই সাইটের জন্য পপ-আপ অনুমতি দিয়ে আবার চেষ্টা করুন।",
     "dash.noData": "এই তারিখে কিছু রেকর্ড নেই।",
     "dash.billable": "মোট বিলযোগ্য", "dash.poValue": "PO মূল্য",
 

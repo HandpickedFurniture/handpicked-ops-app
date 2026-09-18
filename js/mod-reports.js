@@ -27,9 +27,9 @@ import { apiAll, rpc, isSignedIn } from "./api.js";
 import { tr, tv } from "./i18n.js";
 import { PREP_STAGES, ISSUE_FLAGS, flagOf } from "./config.js";
 import {
-  $, esc, el, num, aed, aed0, fmtDate, today, loading, chip, downloadCsv,
+  $, esc, el, num, aed, aed0, fmtDate, fmtDateTime, today, loading, chip, downloadCsv, printSheet, toast,
 } from "./ui.js";
-import { renderFilterBar, toQuery, deriveOptions } from "./filters.js";
+import { renderFilterBar, toQuery, deriveOptions, vals, TEXT_FIELDS, MULTI_FIELDS } from "./filters.js";
 import { syncBar } from "./sync.js";
 
 /* The issue flag as a chip: tone from ISSUE_FLAGS, wording translated. */
@@ -195,6 +195,29 @@ export const REPORT_PAGES = [
    * the PO tab now. Old ?rep=comments links redirect there; see app.js. */
 ];
 
+/* What the filter bar is narrowing to, as one line for the PDF header - so a printed sheet says
+ * what it is a sheet OF, which a screen with the bar above it never had to. */
+function filterSummary(f) {
+  const parts = [];
+  TEXT_FIELDS.forEach((k) => { if (f[k]) parts.push(`${k}: ${f[k]}`); });
+  MULTI_FIELDS.forEach((k) => { const v = vals(f, k); if (v.length) parts.push(`${k}: ${v.join(", ")}`); });
+  return parts.length ? parts.join(" · ") : tr("f.none", { m: "" }).replace(/\s*·.*$/, "");
+}
+
+/* The CSV and PDF buttons under a table. The PDF is the table as drawn - chips, heat shading, totals
+ * - printed through the browser (see printSheet in ui.js), so it needs the table's HTML, not the rows. */
+function downloadRow(pageId, title, rows, csvRows, tableHtml, f) {
+  const row = el(`<div class="row" style="justify-content:flex-end;margin-top:8px;gap:8px">
+    <button class="btn sm" data-csv>${esc(tr("dash.csv"))}</button>
+    <button class="btn sm" data-pdf>${esc(tr("dash.pdf"))}</button></div>`);
+  row.querySelector("[data-csv]").addEventListener("click", () => downloadCsv(`${pageId}_${today()}.csv`, csvRows()));
+  row.querySelector("[data-pdf]").addEventListener("click", () => {
+    const sub = `${filterSummary(f)} · ${rows} ${tr("rep.rows")} · ${fmtDateTime(new Date().toISOString())}`;
+    if (!printSheet(title, sub, tableHtml())) toast(tr("rep.pdfBlocked"), "bad");
+  });
+  return row;
+}
+
 /* Heat map. Five light steps of the app's single hue for quantities (the light end of
  * ORDINAL_RAMP, extended down), a warm ramp for money so the two never read as one scale. Every
  * step keeps black text above 7:1, which is the whole reason these stop where they do. */
@@ -333,15 +356,14 @@ export async function render(mount, state, setFilters) {
     </table>`));
   box.appendChild(wrap);
 
-  const dl = el(`<div class="row" style="justify-content:flex-end;margin-top:8px">
-    <button class="btn sm">${esc(tr("dash.csv"))}</button></div>`);
-  dl.querySelector("button").addEventListener("click", () =>
-    downloadCsv(`${page.id}_${today()}.csv`, rows.map((r) => {
+  box.appendChild(downloadRow(page.id, tr(page.key), rows.length,
+    () => rows.map((r) => {
       const o = {};
       page.cols.forEach((c) => { if (!c.k.startsWith("_")) o[tr(c.key)] = r[c.k]; });
       return o;
-    })));
-  box.appendChild(dl);
+    }),
+    () => wrap.querySelector("table").outerHTML,
+    state.filters));
 }
 
 /* ---------------------------------------------------------------- Management dashboard
@@ -447,6 +469,9 @@ async function renderMgmt(box, state, paintBar) {
       { date: d, city: "ALL", ...v.all },
       ...Array.from(v.cities.entries()).map(([c, b]) => ({ date: d, city: c, ...b })),
     ])));
+  // both tables on one sheet: the second is appended once it exists, further down
+  const pdfBtn = el(`<button class="btn sm" data-pdf>${esc(tr("dash.pdf"))}</button>`);
+  t1.querySelector("[data-csv1]").after(pdfBtn);
   box.appendChild(t1);
 
   /* ---- Table 2: order value */
@@ -478,6 +503,15 @@ async function renderMgmt(box, state, paintBar) {
       </div>`);
     box.appendChild(t2);
   }
+  pdfBtn.addEventListener("click", () => {
+    const sub = `${filterSummary(state.filters)} · ${fmtDateTime(new Date().toISOString())}`;
+    const html = Array.from(box.querySelectorAll(".card")).slice(0, 2).map((c) =>
+      `<h2 style="font-size:14px;margin:12px 0 2px">${esc(c.querySelector("h3")?.textContent ?? "")}</h2>` +
+      `<p class="muted" style="font-size:10px;margin:0 0 6px">${esc(c.querySelector(".cardhead .muted")?.textContent ?? "")}</p>` +
+      (c.querySelector(".statrow")?.outerHTML ?? "").replace(/class="statrow"/, 'class="statrow" style="display:flex;gap:18px;margin:4px 0 8px"') +
+      (c.querySelector("table")?.outerHTML ?? "")).join("");
+    if (!printSheet(tr("rep.mgmt"), sub, html)) toast(tr("rep.pdfBlocked"), "bad");
+  });
 
   /* ---- the four 07:00 messages, as they would read right now */
   const pv = el(`<div class="card"><details><summary><b>${esc(tr("rep.waPreview"))}</b>

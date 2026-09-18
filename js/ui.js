@@ -121,6 +121,60 @@ export function downloadCsv(filename, rows) {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
+/* A PDF of a table, without a PDF library.
+ *
+ * The browser's own print engine is the PDF writer: it already lays out every script this business
+ * types - Arabic customer names, Hindi and Bengali labels - which the embedded-font route (jsPDF and
+ * friends) does not without shipping a megabyte of fonts, and the app has no build step to bundle
+ * them. So the button opens a print-only page holding just the report - title, filter summary, the
+ * table with its heat shading and totals - and calls print(); the person picks "Save as PDF", which
+ * every phone and desktop browser offers. Landscape A4, colours forced on, header row repeated on
+ * every page. A blocked pop-up is reported rather than silently doing nothing. */
+export function printSheet(title, subtitle, innerHtml) {
+  const w = window.open("", "_blank");
+  if (!w) return false;
+  const css = getComputedStyle(document.documentElement);
+  const v = (name, fallback) => (css.getPropertyValue(name) || fallback).trim();
+  w.document.open();
+  w.document.write(`<!doctype html><html lang="${esc(document.documentElement.lang || "en")}"><head>
+    <meta charset="utf-8"><title>${esc(title)}</title>
+    <style>
+      @page{size:A4 landscape;margin:10mm;}
+      *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+      body{font:12px/1.35 -apple-system,"Segoe UI",Roboto,"Noto Sans","Noto Sans Devanagari","Noto Sans Bengali",Arial,sans-serif;
+           color:${v("--ink", "#16232a")};margin:0;padding:12px;}
+      h1{font-size:18px;margin:0 0 2px;}
+      .sub{color:${v("--muted", "#5f7480")};font-size:11px;margin:0 0 10px;}
+      table{width:100%;border-collapse:collapse;font-size:11px;}
+      thead{display:table-header-group;}
+      th{background:${v("--info-bg", "#e8f0f3")};color:${v("--brand", "#0f4c5c")};text-align:left;padding:5px 6px;
+         font-size:10px;text-transform:uppercase;letter-spacing:.03em;border-bottom:2px solid ${v("--line", "#d7dfe3")};}
+      td{padding:4px 6px;border-bottom:1px solid ${v("--line", "#d7dfe3")};vertical-align:top;}
+      th.num,td.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;}
+      tfoot th{background:${v("--mute-bg", "#f2f5f7")};color:inherit;text-transform:none;font-size:11px;border-top:2px solid ${v("--line", "#d7dfe3")};}
+      tr{page-break-inside:avoid;}
+      tr.sub td{font-size:10px;border-bottom:1px dashed ${v("--line", "#d7dfe3")};}
+      tr.grp td{background:${v("--info-bg", "#e8f0f3")};font-weight:700;font-size:10px;text-transform:uppercase;}
+      .muted{color:${v("--muted", "#5f7480")};}
+      .chip{display:inline-block;border-radius:999px;padding:1px 7px;font-size:10px;font-weight:700;border:1px solid transparent;white-space:nowrap;}
+      .chip.ok{background:${v("--ok-bg", "#eef7ef")};color:${v("--ok", "#1a7f37")};border-color:#bfe0c8;}
+      .chip.warn{background:${v("--warn-bg", "#fff4e0")};color:${v("--warn", "#9a5b00")};border-color:#f0d9ac;}
+      .chip.bad{background:${v("--bad-bg", "#fdecea")};color:${v("--danger", "#c0392b")};border-color:#f2c3bd;}
+      .chip.info{background:${v("--info-bg", "#e8f0f3")};color:${v("--brand", "#0f4c5c")};border-color:#c5d8de;}
+      .chip.mute,.chip.wait{background:${v("--mute-bg", "#f2f5f7")};color:${v("--muted", "#5f7480")};border-color:${v("--line", "#d7dfe3")};}
+      .foot{margin-top:10px;font-size:10px;color:${v("--muted", "#5f7480")};}
+    </style></head><body>
+    <h1>${esc(title)}</h1>
+    <p class="sub">${esc(subtitle)}</p>
+    ${innerHtml}
+    <p class="foot">Handpicked Operations Management</p>
+    </body></html>`);
+  w.document.close();
+  // give the new document a moment to lay out before the print engine snapshots it
+  w.setTimeout(() => { w.focus(); w.print(); }, 250);
+  return true;
+}
+
 export async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text);
