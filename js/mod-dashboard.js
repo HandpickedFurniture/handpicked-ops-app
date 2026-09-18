@@ -48,8 +48,6 @@ export async function render(mount, state, setFilters) {
   const bar = $("#fbar", mount);
   const extra = $("#extra", mount);
   const box = $("#dash", mount);
-  const paintBar = () => renderFilterBar(bar, state, OPTIONS, setFilters);
-  paintBar();
 
   // the order-status-specific filters, which sit outside the shared bar
   const p = state.params;
@@ -57,6 +55,14 @@ export async function render(mount, state, setFilters) {
   const fTeam = p.get("team") || "";
   const fReady = p.get("ready") || "";
   const fAdj = p.get("adj") || "";
+
+  /* Apply on the shared bar rebuilds the hash from the bar's own fields, and these four are not
+   * among them - so the router's plain setFilters dropped a status, team, ready or adjustments
+   * pick every time a shared filter was applied (user, 18 Sep 2026; the same fault Reports had
+   * with its page id). They ride along as extras, exactly as the dropdowns below already send them. */
+  const setF = (f) => writeHash("dashboard", f, { status: fStatus, team: fTeam, ready: fReady, adj: fAdj });
+  const paintBar = () => renderFilterBar(bar, state, OPTIONS, setF);
+  paintBar();
 
   extra.innerHTML = "";
   const ex = el(`
@@ -119,7 +125,7 @@ export async function render(mount, state, setFilters) {
     const t = el(`<button class="tile b-${b.value} ${has(state.filters, "bucket", b.value) ? "on" : ""}">
         <div class="tn">${counts[b.value]}</div>
         <div class="tl">${esc(b.glyph)} ${esc(tr(b.key))}</div></button>`);
-    t.addEventListener("click", () => setFilters(toggle(state.filters, "bucket", b.value)));
+    t.addEventListener("click", () => setF(toggle(state.filters, "bucket", b.value)));   // the tiles too
     tiles.appendChild(t);
   });
   box.appendChild(tiles);
