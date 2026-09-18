@@ -16,8 +16,12 @@ export const LINK_GROUPS = [
     key: "grp.daily",
     icon: "📋",
     links: [
-      { label: "3D Sheet — Dubai", url: "https://docs.google.com/spreadsheets/d/15hooqd0VNLtR4aEmifthbMEGmxtrrTbMxRjz00_iRkY/edit?gid=0#gid=0" },
-      { label: "3D Sheet — Abu Dhabi + Order Form", url: "https://docs.google.com/spreadsheets/d/1rSQcWbA2wAHe0hLh9YQ4jBp7AKQK4cGEGSfrr23o-9E/edit?gid=884148743#gid=884148743" },
+      /* The Kurtains-owned workbooks since 18 Sep 2026 - the same two the schedule sync, the
+       * 18:00 schedule picture and the management alerts read. The retired Makan Home sheets
+       * (15hooqd0V..., 1rSQcWbA2...) are deliberately gone from here: a link to a sheet nobody
+       * syncs any more is how two schedules start to exist. */
+      { label: "3D Sheet — Dubai (Handpicked<>Kurtains)", url: "https://docs.google.com/spreadsheets/d/1RW1bjFqAr_W-mNtIRVlxSg5kSdLBDvCaqf8kl59tlJ4/edit?gid=0#gid=0" },
+      { label: "3D Sheet — Abu Dhabi (Handpicked<>Kurtains)", url: "https://docs.google.com/spreadsheets/d/15Nb3DCzqqi91hnBPCLUUekxSabwnPtyrzt_OJrSJroE/edit?gid=0#gid=0" },
       { label: "Order Tracking — Dubai", url: "https://docs.google.com/spreadsheets/d/1YMsNRzzb8bsHIIYexsyrm5_SmrpDnk9Qp0siy36qZ5E/edit?usp=sharing" },
       { label: "Order Tracking — Abu Dhabi", url: "https://docs.google.com/spreadsheets/d/1qahUmS6JKSDYD659kgZefXTMsiduzUxsDBPsmU7waAc/edit?usp=sharing" },
       { label: "Looker report", url: "https://lookerstudio.google.com/u/0/reporting/8c08ec1d-9f0d-49b4-904c-b27829ab6611/page/p_ccj4ziy71d" },

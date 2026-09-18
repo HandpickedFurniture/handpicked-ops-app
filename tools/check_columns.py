@@ -10,10 +10,14 @@ list is missing. The only symptom was a red box reading
 
 That class of break is invisible until somebody opens the tab. This closes it.
 
-HOW IT WORKS, and why it needs no credentials: PostgREST resolves the select list before RLS is
-applied, so an UNAUTHENTICATED request carrying the publishable key already shipped in js/config.js
-returns 400 for a bad column and 200 with [] for a good one. The check therefore exercises the same
-code path the browser does, rather than a re-implementation of it that could drift.
+HOW IT WORKS, and why it needs no credentials: Postgres resolves the select list at parse time,
+before it checks privileges at execution time, so an UNAUTHENTICATED request carrying the publishable
+key already shipped in js/config.js returns 400 (42703, "column ... does not exist") for a bad column
+and - since 18 Sep 2026, when every grant to `anon` was revoked (see the
+revoke_anon_from_public_schema migration) - 401 (42501, "permission denied for ...") for a good one.
+Before that revoke a good list returned 200 with []. Both answers mean the same thing here: every
+column named was found. The check therefore exercises the same code path the browser does, rather
+than a re-implementation of it that could drift.
 
 Usage:
     python tools/check_columns.py             # from the repo root
@@ -168,6 +172,10 @@ def probe(base, key, table, select):
             body = json.loads(body).get("message", body)
         except ValueError:
             pass
+        # 42501 arrives only AFTER the select list parsed cleanly - a missing column fails first
+        # with 42703 - so "permission denied" is the anon role's way of saying every column exists.
+        if e.code in (401, 403) and body.startswith("permission denied for"):
+            return 200, ""
         return e.code, body
     except Exception as e:                                 # network, DNS, TLS
         return 0, str(e)

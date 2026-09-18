@@ -5,7 +5,7 @@
  * TRANSLATED. Reverse that and writes start failing their CHECK.
  */
 
-export const BUILD = "2026-08-22.7";
+export const BUILD = "2026-09-18.1";
 
 /* Supabase project "handpicked-curtains". The publishable key is safe to ship: every table is
  * RLS-locked to the `authenticated` role and `anon` has no policy at all. The bearer token on each
@@ -292,6 +292,23 @@ export const ADJ_STATUSES = [
   { value: "invoiced", key: "adj.invoiced", tone: "mute" },
   { value: "dropped",  key: "adj.dropped",  tone: "mute" },
 ];
+
+/* ---------------------------------------------------------------- issue flag
+ * v_ops_order_roster.issue_flag / v_mgmt_schedule_rows.issue_flag, computed by fn_issue_flag from
+ * the 3D sheet's Installation status and the HH:MM install time (user, 18 Sep 2026):
+ *   Order    - Material ordered / Order placed / Endorsement done, scheduled inside 09:00-19:00
+ *   ISR      - Issue resolution scheduled
+ *   Odd Time - an order status but outside 09:00-19:00 (the sheet's "not really scheduled" times)
+ *   Others   - anything else, including an order the sheet does not carry
+ * The Management Dashboard and the 07:00 management alerts count ONLY 'Order'. */
+export const ISSUE_FLAGS = [
+  { value: "Order",    key: "flag.order",  tone: "ok" },
+  { value: "ISR",      key: "flag.isr",    tone: "warn" },
+  { value: "Odd Time", key: "flag.odd",    tone: "mute" },
+  { value: "Others",   key: "flag.others", tone: "bad" },
+];
+export const flagOf = (v) =>
+  ISSUE_FLAGS.find((f) => f.value === v) || { value: v || "", key: "", tone: "mute" };
 
 /* ---------------------------------------------------------------- date buckets
  * Computed server-side in v_ops_order_roster against Asia/Dubai, so a laptop on the wrong timezone

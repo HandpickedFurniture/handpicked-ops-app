@@ -19,7 +19,7 @@
 import { tr } from "./i18n.js";
 import {
   DATE_BUCKETS, FABRIC_RECV_STATES, DISPATCH_STATES, PRODUCTION_STATES,
-  PROCUREMENT_REQS, LINE_REVIEW_STATUSES,
+  PROCUREMENT_REQS, LINE_REVIEW_STATUSES, ISSUE_FLAGS,
 } from "./config.js";
 import { esc, el } from "./ui.js";
 
@@ -30,7 +30,7 @@ export const TEXT_FIELDS = ["order", "from", "to", "customer", "q"];
 /* Everything picked from a list - any number of values each. */
 export const MULTI_FIELDS = [
   "bucket", "sheet", "city", "stitch", "commercial", "wref", "fab1", "fab2",
-  "alt", "fabstatus", "tailor", "prodstate", "procurement", "review", "poversion",
+  "alt", "fabstatus", "tailor", "prodstate", "procurement", "review", "poversion", "flag",
 ];
 export const FIELDS = [...TEXT_FIELDS, ...MULTI_FIELDS];
 
@@ -40,7 +40,7 @@ export const FIELDS = [...TEXT_FIELDS, ...MULTI_FIELDS];
  *
  * fabstatus and tailor are roster-only; prodstate is on the roster AND the status board;
  * procurement, review and poversion exist only on v_ops_line_review, which the Comments page reads. */
-const OPTIONAL = ["fabstatus", "tailor", "prodstate", "procurement", "review", "poversion"];
+const OPTIONAL = ["fabstatus", "tailor", "prodstate", "procurement", "review", "poversion", "flag"];
 
 /* The selected values of one multi-field, always as a list.
  *
@@ -113,6 +113,8 @@ export function toQuery(f, caps) {
   if (m("fabstatus").length && caps && caps.fabstatus) q.push(inList("fabric_recv_state", m("fabstatus")));
   if (m("tailor").length    && caps && caps.tailor)    q.push(inList("dispatch_state", m("tailor")));
   if (m("prodstate").length && caps && caps.prodstate) q.push(inList("production_state", m("prodstate")));
+  // Order / ISR / Odd Time / Others - on the roster and every report view since 18 Sep 2026
+  if (m("flag").length && caps && caps.flag) q.push(inList("issue_flag", m("flag")));
   if (m("procurement").length && caps && caps.procurement) {
     q.push(overlaps("procurement_req", m("procurement")));
   }
@@ -254,6 +256,7 @@ export function renderFilterBar(mount, state, opts, onChange, caps) {
     // "Revised" leads for the same reason: it is the question being asked, the numbers are the detail
     poversion: [{ value: "__revised__", label: tr("f.poRevised") },
                 ...(opts.versions || []).map((v) => ({ value: String(v), label: `v${v}` }))],
+    flag: ISSUE_FLAGS.map(fromCfg),
   };
 
   /* Staged selections. The bar has always committed on Apply rather than on every keystroke, and
@@ -325,6 +328,7 @@ export function renderFilterBar(mount, state, opts, onChange, caps) {
           ${caps && caps.procurement ? cbField("procurement", tr("proc.title")) : ""}
           ${caps && caps.review ? cbField("review", tr("rev.marks")) : ""}
           ${caps && caps.poversion ? cbField("poversion", tr("col.version")) : ""}
+          ${caps && caps.flag ? cbField("flag", tr("f.issueFlag")) : ""}
         </div>
         <div class="row" style="justify-content:flex-end">
           <button class="btn ghost" data-clear>${esc(tr("f.clear"))}</button>

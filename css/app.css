@@ -871,3 +871,22 @@ table.dense tfoot th{position:sticky;bottom:0;background:var(--info-bg);border-t
   cursor:pointer;text-align:left;font:inherit;display:flex;gap:3px;flex-wrap:wrap;width:100%;}
 .rsnbtn:hover:not(:disabled){border-color:var(--line);}
 .rsnbtn:disabled{cursor:default;}
+
+/* ---------------------------------------------------------------- reports (18 Sep 2026)
+   Numeric columns right-align so the heat-shaded figures line up; the shading itself is inline
+   (see heatStyle in mod-reports.js) because it depends on the column's maximum in the filtered set.
+   Sub-rows are the per-city split under a date; the group rows in the order-value table are
+   headings, not data. */
+table.dense.report th.num,table.dense.report td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
+table.dense.report tfoot th{position:static;background:var(--mute-bg);color:var(--ink);text-transform:none;
+  font-size:12px;border-top:2px solid var(--line);}
+table.dense.report tr.sub td{padding-top:3px;padding-bottom:3px;font-size:12px;border-bottom:1px dashed var(--line);}
+table.dense.report tr.grp td{background:var(--info-bg);color:var(--brand);font-size:11px;text-transform:uppercase;
+  letter-spacing:.03em;font-weight:700;padding:5px 9px;}
+table.dense.report tr.today td{background:var(--warn-bg);}
+.cardhead{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;padding:12px 12px 8px;border-bottom:1px solid var(--line);}
+.cardhead h3{margin:0;}
+.cardhead .muted{font-size:12px;}
+.wapreview{display:grid;gap:10px;margin-top:10px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));}
+pre.wa{white-space:pre-wrap;font:13px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif;background:#e7f6ec;
+  border-radius:12px;padding:10px 12px;margin:0;overflow-wrap:anywhere;}

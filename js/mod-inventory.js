@@ -29,12 +29,20 @@ export async function render(mount, state) {
 
   const q = state.params.get("q") || "";
   const onlyReorder = state.params.get("reorder") === "1";
+  /* Category (user, 18 Sep 2026): Fixer tools / Fixer materials / Tailors / Consumables / Others,
+   * the same closed list an item is created with, so the filter can never name a category no item
+   * carries. "__none__" is the two items filed under nothing - shown rather than lost. */
+  const cat = state.params.get("cat") || "";
 
   mount.innerHTML = `
     <div class="card spread">
       <div class="row">
         <input type="text" name="isearch" value="${esc(q)}" placeholder="${esc(tr("f.search"))}"
                style="width:auto;min-width:180px">
+        ${selectHtml("icatf", [
+            ...ITEM_CATEGORIES.map((c) => ({ value: c.value, label: tr(c.key) })),
+            { value: "__none__", label: tr("inv.catNone") },
+          ], cat, tr("inv.catAll"))}
         <button class="btn sm ${onlyReorder ? "primary" : ""}" id="ireorder">${esc(tr("inv.needsReorder"))}</button>
       </div>
       <div class="row">
@@ -56,6 +64,7 @@ export async function render(mount, state) {
     if (e.key === "Enter") setP("q", e.target.value.trim());
   });
   $("#ireorder", mount).addEventListener("click", () => setP("reorder", onlyReorder ? "" : "1"));
+  $('[name="icatf"]', mount).addEventListener("change", (e) => setP("cat", e.target.value));
 
   const box = $("#ibody", mount);
   loading(true, tr("t.loading"));
@@ -64,6 +73,8 @@ export async function render(mount, state) {
     let url = "/rest/v1/v_ops_inventory_stock?select=*&order=item_code";
     if (q) url += `&or=(item_code.ilike.*${encodeURIComponent(q)}*,name.ilike.*${encodeURIComponent(q)}*)`;
     if (onlyReorder) url += "&needs_reorder=is.true";
+    if (cat === "__none__") url += "&category=is.null";
+    else if (cat) url += `&category=eq.${encodeURIComponent(cat)}`;
     rows = await api(url);
   } catch (e) {
     loading(false);

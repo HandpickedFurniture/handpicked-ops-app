@@ -231,7 +231,9 @@ different claims and stock should follow the second one.
 
 **5. Inventory** (`#/inventory`) — items, stock on hand, movements, reorder alerts, location codes
 and photos. Stock is the **sum of the movement ledger**, never a stored number, so no figure can
-drift out of step with its own history.
+drift out of step with its own history. A **category** dropdown (Fixer Tools / Fixer Materials /
+Tailors / Consumables / Others, plus *No category* for the items filed under nothing) rides in the
+hash as `cat` beside the search box.
 
 **6. Photo audit** (`#/audit`) — every photo ever taken, filterable by order, what it was attached
 to, date range, uploader and location. Shows the checksum, which store holds the bytes, and the view
@@ -257,6 +259,29 @@ version** — a revised PO is the one worth re-reading, so
 *Revised* is a filter value of its own beside the version numbers.
 
 **9. Chotu** (`#/chotu`) — see below.
+
+**Reports** (`#/reports`, 18 Sep 2026) — the Looker pages on live data, and the **Management
+dashboard** that now leads them. Every page mounts the shared filter bar (installation date, order,
+window ref, customer, commercial name, city, 3D-sheet status, and the four-valued **issue flag**),
+which is why every report view carries the bar's columns (`report_views_filter_columns`). Numeric
+columns are heat-shaded against the column's own maximum in the filtered set — one hue for
+quantities, a second for money — and status-like columns are chips with a word, never colour alone.
+
+The **issue flag** is `fn_issue_flag(sheet status, HH:MM)` and has exactly four values, used by every
+report, the dashboard and the 07:00 management alerts: **Order** (Material ordered / Order placed /
+Endorsement done, inside 09:00–19:00), **ISR** (Issue resolution scheduled), **Odd Time** (an order
+status outside 09:00–19:00 or with no time — the sheet's "not really scheduled" convention) and
+**Others**. `ISSUE_FLAGS` in `js/config.js` is the vocabulary; `schedule_sync.issue_flag()` in the
+ingestion agent is the Python twin.
+
+The Management dashboard's first table is the 3D sheets **row by row** (`v_mgmt_schedule_rows` —
+an order can be on a sheet twice, and only the row knows whether it is the installation or the
+issue resolution), **Order-flagged rows from today onwards**, rolled up by date with a city split.
+ISR and Odd Time rows are never counted. The second is order value by installation date — year to
+date, month to date, the run rate, the last three days, today, the next five — from
+`fn_mgmt_order_value`, the same function the 07:00 WhatsApp message is built from, so the page and
+the message cannot disagree; it is one row per order and is not narrowed by the bar. Under both,
+the four 07:00 messages exactly as they would read now (`fn_mgmt_body_*`).
 
 **10. Finance** (`#/finance`) — where the accounts team takes the figures for an invoice. Two grids
 behind one route. **Orders** is one row per billable PO line: order number, the billing SKU beside
@@ -689,6 +714,10 @@ Run all three checkers after touching strings, vocabularies, a module or a view:
 python check_i18n.py && python check_values.py && python tools/check_columns.py
 ```
 
+`supabase/sql/` keeps the SQL applied outside the app's own migrations (issue flag, management
+views and alerts, the anon lock-down), one dated file per change, so the database's business logic
+is readable here even though it lives in unversioned `fn_*` functions.
+
 `check_columns.py` runs automatically on a Stop hook and blocks on failure. It exists because a
 migration dropped two columns from `v_ops_order_roster` and nothing failed until the next morning,
 for the staff, on four screens at once — PostgREST refuses the WHOLE request when one column in the
@@ -698,10 +727,14 @@ one, which is the same code path the browser takes.
 
 ## Traps worth knowing
 
-- **A wrong bearer token returns HTTP 200 with `[]`, never 401.** Every table is RLS-locked to
-  `authenticated` and `anon` has no policy at all, so an unauthenticated read looks exactly like an
-  empty result. `api()` refuses to run without an access token, and the roster reports "no rows with
-  no filters" as an auth error rather than an empty list. This already burned `tools/validate.py`.
+- **`anon` has no privileges in `public` at all — and must never get them back.** Until 18 Sep 2026
+  it held SELECT on every view, and the ten SECURITY DEFINER views (roster, reports, status board,
+  finance) bypass RLS, so a request carrying nothing but the publishable key returned real orders.
+  Every anon grant and the default privileges were revoked (`revoke_anon_from_public_schema`).
+  An unauthenticated read now returns **401 `permission denied`**; a read with a *wrong* bearer is
+  rejected by the gateway. `api()` refuses to run without an access token, and `check_columns.py`
+  reads that 401 as "every column exists", because Postgres resolves the select list (42703)
+  before it checks privileges (42501). Do not fix a red hook by granting anon.
 - **Translate the label, keep the value English.** `data-*` attributes and select `value`s carry
   canonical snake_case. Translate one and its CHECK constraint rejects the write. `check_values.py`
   guards this.
