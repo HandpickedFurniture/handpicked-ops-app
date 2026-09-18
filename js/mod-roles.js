@@ -100,14 +100,14 @@ export async function render(mount, state) {
 const WA_CAPS = [
   ["can_track", "wa.capTrack"], ["can_receive_fabric", "wa.capFabric"],
   ["can_receive_material", "wa.capMaterial"], ["can_order_status", "wa.capStatus"],
-  ["can_adjustment", "wa.capAdjust"],
+  ["can_adjustment", "wa.capAdjust"], ["can_tailor_log", "wa.capTailor"],
 ];
 
 async function waSendersCard() {
   let rows = [];
   try {
     // the select list is spelled out so tools/check_columns.py can verify it against the table
-    rows = await api("/rest/v1/whatsapp_sender?select=id,phone,display_name,active,revoked_at,note,can_track,can_receive_fabric,can_receive_material,can_order_status,can_adjustment&order=revoked_at.nullsfirst,display_name");
+    rows = await api("/rest/v1/whatsapp_sender?select=id,phone,display_name,active,revoked_at,note,can_track,can_receive_fabric,can_receive_material,can_order_status,can_adjustment,can_tailor_log&order=revoked_at.nullsfirst,display_name");
   } catch (e) {
     return el(`<div class="card"><span class="err">${esc(e.message)}</span></div>`);
   }

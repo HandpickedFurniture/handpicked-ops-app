@@ -326,6 +326,9 @@ export const I18N = {
     "wa.active": "Active", "wa.revoked": "Revoked",
     "wa.capTrack": "Ask about orders", "wa.capFabric": "Fabric received", "wa.capMaterial": "Materials received",
     "wa.capStatus": "Order status / visits", "wa.capAdjust": "Adjustments (bills the client)",
+    "wa.capTailor": "Tailor log (order + window)",
+    "rep.tailorWork": "Tailor work", "rep.when": "When", "rep.work": "Work", "rep.said": "As said",
+    "rep.tieBelts": "Tie belts", "rep.leadBand": "Lead band",
 
     "nav.finance": "Finance", "home.dFinance": "Invoice figures and adjustments",
     "fin.orders": "Orders", "fin.adjustments": "Adjustments",
@@ -906,6 +909,9 @@ export const I18N = {
     "wa.active": "सक्रिय", "wa.revoked": "रद्द",
     "wa.capTrack": "ऑर्डर के बारे में पूछना", "wa.capFabric": "कपड़ा प्राप्त", "wa.capMaterial": "सामग्री प्राप्त",
     "wa.capStatus": "ऑर्डर स्थिति / विज़िट", "wa.capAdjust": "एडजस्टमेंट (ग्राहक को बिल)",
+    "wa.capTailor": "दर्ज़ी लॉग (ऑर्डर + खिड़की)",
+    "rep.tailorWork": "दर्ज़ी का काम", "rep.when": "कब", "rep.work": "काम", "rep.said": "जैसा कहा",
+    "rep.tieBelts": "टाई बेल्ट", "rep.leadBand": "लेड बैंड",
 
     "nav.finance": "फ़ाइनेंस", "home.dFinance": "बिल के आंकड़े और एडजस्टमेंट",
     "fin.orders": "ऑर्डर", "fin.adjustments": "एडजस्टमेंट",
@@ -1486,6 +1492,9 @@ export const I18N = {
     "wa.active": "সক্রিয়", "wa.revoked": "বাতিল",
     "wa.capTrack": "অর্ডার সম্পর্কে জিজ্ঞাসা", "wa.capFabric": "কাপড় পাওয়া", "wa.capMaterial": "উপকরণ পাওয়া",
     "wa.capStatus": "অর্ডার অবস্থা / ভিজিট", "wa.capAdjust": "অ্যাডজাস্টমেন্ট (গ্রাহককে বিল)",
+    "wa.capTailor": "দর্জি লগ (অর্ডার + জানালা)",
+    "rep.tailorWork": "দর্জির কাজ", "rep.when": "কখন", "rep.work": "কাজ", "rep.said": "যেমন বলা হয়েছে",
+    "rep.tieBelts": "টাই বেল্ট", "rep.leadBand": "লেড ব্যান্ড",
 
     "nav.finance": "ফাইন্যান্স", "home.dFinance": "বিলের হিসাব ও অ্যাডজাস্টমেন্ট",
     "fin.orders": "অর্ডার", "fin.adjustments": "অ্যাডজাস্টমেন্ট",

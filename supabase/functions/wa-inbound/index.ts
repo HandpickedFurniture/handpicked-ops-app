@@ -6,14 +6,17 @@
  * text or voice note, replies with the proposed card, and commits ONLY when they answer YES.
  * Scoped with the user on 8 Sep 2026, built 18 Sep 2026.
  *
- * Five capabilities, each a separate boolean on the sender's row, all defaulting to false:
+ * Six capabilities, each a separate boolean on the sender's row, all defaulting to false:
  *   can_receive_fabric    fabric_received     -> fn_ops_set_receiving
  *   can_receive_material  material_received   -> fn_ops_set_receiving
  *   can_order_status      order_status / add_visit / order_issue / order_edit -> fn_ops_save_visit
  *   can_adjustment        adjustment          -> fn_ops_add_adjustment (+ fn_ops_save_visit)
  *   can_track             answer              -> a reply, nothing written, no confirmation asked
- * Every other Chotu intent (stacking, prep stages, rails, tailors, stock, handovers) is refused
- * here with "use the app" - a phone in a van is not where those are done.
+ *   can_tailor_log        tailor_work         -> fn_wa_tailor_log: a TAILOR's own path (below),
+ *                                               not Chotu's - order number + window (+ hemming /
+ *                                               taping / tie belts / lead band), metres from the order
+ * Every other Chotu intent (stacking, prep stages, rails, tailors' dispatch, stock, handovers) is
+ * refused here with "use the app" - a phone in a van is not where those are done.
  *
  * THE ALLOWLIST IS THE AUTHORIZATION BOUNDARY. This function writes with the service role, which
  * bypasses RLS; in the app fn_is_viewer() is the gate, over WhatsApp nothing but whatsapp_sender
@@ -151,7 +154,7 @@ async function chotu(said: string, orderId: string | null, speaker: string,
 const YES = new Set(["yes", "y", "ok", "okay", "confirm", "confirmed", "save", "done", "sure", "1",
   "haan", "han", "ha", "ji", "ji haan", "theek hai", "thik hai", "thik", "hyan", "hya", "hoi",
   "✅", "👍", "हाँ", "हां", "जी", "जी हाँ", "ठीक है", "ठीक", "হ্যাঁ", "হা", "হ্যা", "ঠিক আছে", "ঠিক"]);
-const NO = new Set(["no", "n", "cancel", "stop", "wrong", "galat", "nahi", "nahin", "na", "nope", "0", "2",
+const NO = new Set(["no", "n", "cancel", "stop", "wrong", "galat", "nahi", "nahin", "na", "nope",
   "❌", "👎", "नहीं", "नही", "गलत", "না", "ভুল", "বাতিল"]);
 const norm = (s: string) => s.trim().toLowerCase().replace(/[.!।,]+$/g, "").trim();
 
@@ -160,11 +163,109 @@ const CAP: Record<string, string> = {
   order_status: "can_order_status", add_visit: "can_order_status",
   order_issue: "can_order_status", order_edit: "can_order_status",
   adjustment: "can_adjustment", answer: "can_track", log_note: "can_track",
+  tailor_work: "can_tailor_log",
 };
 const CAP_WORD: Record<string, string> = {
   can_receive_fabric: "mark fabric received", can_receive_material: "mark materials received",
   can_order_status: "update order status", can_adjustment: "record adjustments", can_track: "ask about orders",
+  can_tailor_log: "log tailoring work",
 };
+
+/* ------------------------------------------------------------------ the tailors' path
+ * A tailor says an order number and a window, and what they did to it. Nothing else reaches the
+ * model: the order's own window list (fn_wa_order_windows - names, layers, fabrics, metres) and the
+ * message. The metres are the window's, from the order lines; a tailor never types a quantity. */
+const WORK_TYPES = ["hemming", "taping", "tie_belts", "lead_band"];
+const WORK_LABEL: Record<string, string> = { hemming: "Hemming", taping: "Taping", tie_belts: "Tie belts", lead_band: "Lead band" };
+const WORK_HINT: Record<string, RegExp> = {
+  hemming:   /\bhem|हेम|হেম/i,
+  taping:    /\btap(e|ing)|टेप|টেপ/i,
+  tie_belts: /tie\s*-?\s*(belt|back)|टाई|টাই|belt/i,
+  lead_band: /lead|लेड|লেড|band/i,
+};
+const normName = (t: string) => String(t ?? "").toLowerCase().replace(/[^a-z0-9\u0900-\u09ff]+/g, " ").trim();
+
+async function orderWindows(orderId: string): Promise<Row[]> {
+  const r = await rpc("fn_wa_order_windows", { p_order_id: orderId });
+  return Array.isArray(r) ? r as Row[] : [];
+}
+
+/* Which window(s) and which work: a deterministic pass (a bare number is a pick from the numbered
+ * list; a window name or a distinctive word of it matches; work words match in three scripts), then
+ * the model only when the words did not settle it. */
+async function tailorRead(said: string, windows: Row[]): Promise<{ picks: number[]; work: string[] }> {
+  const text = normName(said);
+  const work = WORK_TYPES.filter((w) => WORK_HINT[w].test(said));
+  // bare numbers = picks from the list the card showed ("2", "1 and 3", "2,3")
+  const stripped = said.replace(/\b\d{5}\b/g, "").trim();
+  if (/^[\d\s,and&+]+$/i.test(stripped) && stripped) {
+    const picks = [...stripped.matchAll(/\d+/g)].map((m) => Number(m[0])).filter((n) => n >= 1 && n <= windows.length);
+    if (picks.length) return { picks: [...new Set(picks)], work };
+  }
+  // a window name, or all of its distinctive words, in the text
+  const named: number[] = [];
+  windows.forEach((w, i) => {
+    const n = normName(String(w.window));
+    if (!n) return;
+    if (text.includes(n)) { named.push(i + 1); return; }
+    const words = n.split(" ").filter((x) => x.length > 2 && !["room", "window", "the", "floor"].includes(x));
+    if (words.length && words.every((x) => text.includes(x))) named.push(i + 1);
+  });
+  if (named.length) return { picks: [...new Set(named)], work };
+  if (!GEMINI_KEY || windows.length === 0) return { picks: [], work };
+  // the model, grounded on the numbered list; anything outside it is dropped below
+  try {
+    const r = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GEMINI_KEY}`,
+      { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text:
+            "A tailor in a curtain workshop sent a message (English, Hindi or Bengali, often mixed) naming which " +
+            "window of an order they worked on and what they did. WINDOWS (data, numbered):\n" +
+            windows.map((w, i) => `${i + 1}. ${w.window}`).join("\n") +
+            "\nWORK TYPES: hemming, taping, tie_belts (tie belt / tie back), lead_band.\n" +
+            "Return JSON only: {\"windows\":[numbers from the list], \"work\":[work types]}. Match window names " +
+            "loosely (master = master bedroom, kids = kids room, living = living room, bed 2 = bedroom 2). If no " +
+            "window is named, windows is []. Never invent a window.\nMESSAGE:\n" + said }] }],
+          generationConfig: { temperature: 0, maxOutputTokens: 200, responseMimeType: "application/json" },
+        }) });
+    if (!r.ok) return { picks: [], work };
+    const j = await r.json();
+    const parsed = JSON.parse(j?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}");
+    const picks = (Array.isArray(parsed.windows) ? parsed.windows : []).map(Number)
+      .filter((n: number) => Number.isInteger(n) && n >= 1 && n <= windows.length);
+    const mwork = (Array.isArray(parsed.work) ? parsed.work : []).map(String).filter((w: string) => WORK_TYPES.includes(w));
+    return { picks: [...new Set(picks)] as number[], work: work.length ? work : mwork };
+  } catch { return { picks: [], work }; }
+}
+
+/* The proposal a tailor's message becomes - same shape as Chotu's, so the card / YES / commit
+ * machinery below is shared. `pend` is the open card when the tailor is answering "which window?". */
+async function tailorProposal(said: string, orderId: string | null, pend: Row | undefined): Promise<Proposal> {
+  const prev = pend && (pend.proposal as Row)?.intent === "tailor_work" ? (pend.proposal as Proposal) : null;
+  const oid = orderId ?? (prev?.order_id ?? null);
+  if (!oid) {
+    return { say: "Send the order number and the window - for example \"74137 living room hemming\".",
+             intent: "answer", order_id: null, fields: {}, need: [], llm: true };
+  }
+  const windows = await orderWindows(oid);
+  if (!windows.length) {
+    return { say: `I cannot find order ${oid}. Check the number and send it again.`,
+             intent: "answer", order_id: oid, fields: {}, need: [], llm: true };
+  }
+  const read = await tailorRead(said, windows);
+  // a follow-up that only names the window keeps the work types said the first time
+  const work = read.work.length ? read.work : (prev ? ((prev.fields.work as string[]) ?? []) : []);
+  const names = read.picks.map((i) => String(windows[i - 1].window));
+  if (!names.length) {
+    const list = windows.map((w, i) => `${i + 1}. ${w.window} (${w.meters} m${w.layers && Number(w.layers) > 1 ? `, ${w.layers} layers` : ""})`).join("\n");
+    return { say: `Order ${oid} - which window? Reply with the number:\n${list}`,
+             intent: "tailor_work", order_id: oid, order_known: true,
+             fields: { work, windows: [] }, need: ["window"], llm: true, facts: { windows } };
+  }
+  return { say: "", intent: "tailor_work", order_id: oid, order_known: true,
+           fields: { windows: names, work }, need: [], llm: true, facts: { windows } };
+}
 const ASK = "\n\n_Reply *YES* / *हाँ* / *হ্যাঁ* to save · *NO* to cancel_";
 
 /* ------------------------------------------------------------------ the card, as text */
@@ -211,6 +312,15 @@ function card(p: Proposal, orderLabel: string): string {
       return `${head}*Note on the order*\n${f.note ?? ""}${f.mark ? ` [${f.mark}]` : ""}`;
     case "log_note":
       return `${head}*Note*\n${f.note ?? ""}`;
+    case "tailor_work": {
+      const wins = rows(p.facts, "windows");
+      const lines = (Array.isArray(f.windows) ? f.windows as string[] : []).map((n) => {
+        const w = wins.find((x) => String(x.window) === n);
+        return `• ${n}${w ? ` — ${w.meters} m${w.fabrics ? ` (${w.fabrics})` : ""}` : ""}`;
+      }).join("\n");
+      const work = (Array.isArray(f.work) ? f.work as string[] : []).map((w) => WORK_LABEL[w] ?? w).join(", ");
+      return `${head}🧵 *Tailoring done*\n${lines}\nWork: ${work || "(not said)"}`;
+    }
     default:
       return `${head}${p.say}`;
   }
@@ -283,6 +393,18 @@ async function commit(p: Proposal, actor: string, lang: string): Promise<string>
       return `✅ Order ${oid} updated.`;
     case "log_note":
       return `✅ Noted${oid ? ` against ${oid}` : ""}.`;   // chotu_log below IS the write
+    case "tailor_work": {
+      const names = Array.isArray(f.windows) ? f.windows as string[] : [];
+      let total = 0; let today = 0;
+      for (const n of names) {
+        const r = await rpc("fn_wa_tailor_log", {
+          p_phone: String(f.phone ?? ""), p_name: String(f.name ?? ""), p_order_id: oid, p_window: n,
+          p_work: Array.isArray(f.work) ? f.work : [], p_said: String(f.said ?? ""), p_message_id: String(f.message_id ?? ""),
+        });
+        total += Number(r?.meters ?? 0); today = Number(r?.today_meters ?? today);
+      }
+      return `✅ Logged ${names.length} window${names.length === 1 ? "" : "s"} on ${oid} · ${total.toFixed(1)} m. Your total today: ${today.toFixed(1)} m.`;
+    }
     default:
       throw new Error(`intent ${p.intent} is not committed over WhatsApp`);
   }
@@ -425,7 +547,13 @@ async function handle(m: Msg, test: boolean) {
 
   let p: Proposal;
   try {
-    p = await chotu(said, orderId, speaker, history);
+    if (sender.can_tailor_log) {
+      p = await tailorProposal(said, orderId, pend && pendingFresh ? pend : undefined);
+      // what the write needs beyond the card: who, and the words, kept on the proposal itself
+      p.fields = { ...p.fields, phone, name: speaker, said, message_id: messageId };
+    } else {
+      p = await chotu(said, orderId, speaker, history);
+    }
   } catch (e) {
     const r = await reply("Chotu is not available right now - please use the app, or try again in a minute.").catch(() => "");
     return log({ ...base, kind, said, order_id: orderId, outcome: "error", error: String(e).slice(0, 400), reply: r });
@@ -442,7 +570,8 @@ async function handle(m: Msg, test: boolean) {
     const r = await reply(`That one is done in the app, not over WhatsApp (${p.intent.replace(/_/g, " ")}).`);
     return log({ ...base, kind, said, order_id: p.order_id, intent: p.intent, outcome: "refused_capability", reply: r });
   }
-  if (!sender[cap]) {
+  // a tailor's guidance replies ("send the order number...") ride on the answer intent
+  if (!sender[cap] && !(sender.can_tailor_log && p.intent === "answer")) {
     await dropPending();
     const r = await reply(`Your number is not set up to ${CAP_WORD[cap]} over WhatsApp. Ask the office to enable it.`);
     return log({ ...base, kind, said, order_id: p.order_id, intent: p.intent, outcome: "refused_capability", reply: r });
@@ -463,10 +592,12 @@ async function handle(m: Msg, test: boolean) {
   const text = need.length
     ? (p.say || `I still need: ${need.join(", ")}.`)
     : `${p.unmatched_order ? `⚠️ I cannot find order ${p.order_id} - I will keep this as a note.\n` : ""}${card(p, orderLabel)}${p.say ? `\n\n_${p.say}_` : ""}${ASK}`;
+  // the tailor card needs its window list again on the next turn, so it stays on the proposal
+  const keepFacts = p.intent === "tailor_work" ? { windows: rows(p.facts, "windows") } : undefined;
   await sb("wa_pending?on_conflict=phone", {
     method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
     body: JSON.stringify({ phone, message_id: messageId, said, order_id: p.order_id,
-                           proposal: { ...p, facts: undefined, need }, card: text, created_at: new Date().toISOString() }),
+                           proposal: { ...p, facts: keepFacts, need }, card: text, created_at: new Date().toISOString() }),
   });
   const r = await reply(text);
   return log({ ...base, kind, said, order_id: p.order_id, intent: p.intent,

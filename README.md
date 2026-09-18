@@ -816,6 +816,17 @@ one, which is the same code path the browser takes.
 
 ## Chotu over WhatsApp (18 Sep 2026)
 
+**Tailors have their own door** (18 Sep 2026, `can_tailor_log`): a tailor sends the order number
+and the window — "73806 master bedroom hemming and lead band", by text or voice, in English, Hindi or
+Bengali — and wa-inbound's **tailor path** (not Chotu) matches the window against the order's own
+window list (`fn_wa_order_windows`: names, layers, fabrics, metres), reads the work types (hemming,
+taping, tie belts, lead band; three scripts, the model only when the words did not settle it), and
+asks "which window?" with a numbered list when none was named — a reply of "2" or "2 and 3" picks.
+YES writes `tailor_work` through `fn_wa_tailor_log`, with the **window's metres from the order
+lines** (fabric sent per layer, else the PO figure) — a tailor never types a quantity — and replies
+with the day's running total. Reports → **Tailor work** lists it, summed per tailor above the table,
+which is how "who stitched how much" is answered.
+
 `supabase/functions/wa-inbound` is a second door into the same brain. Whapi posts every message the
 business number receives to it; for a sender on **the allowlist** (`whatsapp_sender`, edited on the
 Roles screen) it runs the `chotu` function over their text or **voice note** (transcribed by Gemini),

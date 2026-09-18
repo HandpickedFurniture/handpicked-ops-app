@@ -210,6 +210,28 @@ export const REPORT_PAGES = [
       { k: "items_count", key: "disp.items", n: 1, total: 1, heat: 1 },
     ],
   },
+  {
+    /* Tailors' own reports over WhatsApp (wa-inbound, the tailor path): one row per window a tailor
+     * said they finished, with the metres the order's lines carry for that window - which is how
+     * "who stitched how much" is answered. Summed per tailor above the table. */
+    id: "tailors", key: "rep.tailorWork", view: "v_tailor_work",
+    order: "created_at.desc",
+    summaryBy: { k: "tailor_name", sum: "meters", unit: "m" },
+    cols: [
+      { k: "created_at", key: "rep.when", fmt: (v) => esc(fmtDateTime(v)) },
+      { k: "tailor_name", key: "rep.dmTailor", bold: true },
+      { k: "order_id", key: "col.order", bold: true },
+      { k: "customer_name", key: "col.customer" },
+      { k: "window_name", key: "f.windowRef" },
+      { k: "work", key: "rep.work", fmt: (v) => v ? String(v).split(", ").map((w) => chip(tr(WORK_KEY[w] || "rep.work"), "info")).join(" ") : `<span class="muted">—</span>` },
+      { k: "meters", key: "col.meters", n: 1, total: 1, heat: 1 },
+      { k: "fabrics", key: "f.fabric1" },
+      { k: "layers", key: "rep.layers", n: 1 },
+      { k: "installation_date", key: "col.install", date: 1 },
+      { k: "city", key: "col.city" },
+      { k: "said", key: "rep.said", wide: 1 },
+    ],
+  },
   /* Comments used to be a ninth entry here, handed off to mod-comments.js. It was never a table like
    * the eight above it - it is the per-line review screen, with its own marking, its own filter bar
    * and its own paging - and it is the screen coordinators work THROUGH rather than glance at.
@@ -297,6 +319,8 @@ function sortRows(page, rows) {
 }
 const sortState = (page, k) => (SORT[page.id]?.col === k ? (SORT[page.id].dir === "desc" ? "descending" : "ascending") : "none");
 const sortGlyph = (page, k) => (SORT[page.id]?.col === k ? (SORT[page.id].dir === "desc" ? "▼" : "▲") : "↕");
+
+const WORK_KEY = { hemming: "rep.stHem", taping: "rep.stTape", tie_belts: "rep.tieBelts", lead_band: "rep.leadBand" };
 
 /* Heat map. Five light steps of the app's single hue for quantities (the light end of
  * ORDINAL_RAMP, extended down), a warm ramp for money so the two never read as one scale. Every
@@ -567,6 +591,17 @@ export async function render(mount, state, setFilters) {
     const cls = [c.wide ? "wide" : "", c.n || c.money ? "num" : "", c.tick ? "tickcol" : "", c.wrap ? "wrap" : ""].filter(Boolean).join(" ");
     return `${cls ? ` class="${cls}"` : ""}${c.heat ? heatStyle(r[c.k], maxes[c.k], c.heat) : ""}`;
   };
+
+  if (page.summaryBy) {
+    const by = new Map();
+    rows.forEach((r) => {
+      const k = r[page.summaryBy.k] || "—";
+      by.set(k, (by.get(k) || 0) + (Number(r[page.summaryBy.sum]) || 0));
+    });
+    const parts = Array.from(by.entries()).sort((a, b) => b[1] - a[1]);
+    box.appendChild(el(`<div class="card statrow" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr))">${parts.map(([k, v]) =>
+      `<div class="stat"><span class="sn">${esc(num(v))} ${esc(page.summaryBy.unit || "")}</span><span class="sl">${esc(String(k))}</span></div>`).join("")}</div>`));
+  }
 
   const wrap = el(`<div class="card scrollx" style="padding:0"></div>`);
   const table = el(`
