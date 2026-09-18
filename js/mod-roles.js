@@ -158,7 +158,8 @@ async function waSendersCard() {
       // arrives with every capability OFF: ticking is the deliberate step
       await api("/rest/v1/whatsapp_sender", {
         method: "POST",
-        body: JSON.stringify({ phone, display_name: name || null, active: true, granted_by: currentActor() }),
+        // display_name is NOT NULL on the table: an unnamed number is shown as its number
+        body: JSON.stringify({ phone, display_name: name || ("+" + phone), active: true, granted_by: currentActor() }),
       });
       toast(tr("wa.saved"), "ok");
       window.dispatchEvent(new CustomEvent("ops:rerender"));
