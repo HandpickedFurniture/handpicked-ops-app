@@ -907,3 +907,11 @@ table.dense th.tickcol,table.dense td.tickcol{text-align:center;padding-left:3px
 /* Planning: fixed column widths (style="width" on the header) with wrapping in the cells that give
    room to the stage boxes - the dense table otherwise sizes every column to its longest value. */
 table.dense.report th.wrap,table.dense.report td.wrap{white-space:normal;overflow-wrap:anywhere;}
+
+/* Planning, live: a tick is a button; one the app's records set is locked (padlock tint, no hand
+   cursor); the comment box is a plain input that fits the cell. */
+button.tick{cursor:pointer;padding:0;background:var(--card);}
+button.tick:hover{border-color:var(--brand);}
+.tick.sys{background:var(--info-bg);border-color:#c5d8de;color:var(--brand);cursor:default;}
+input.plancmt{width:100%;min-width:110px;font-size:12px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:#fff;}
+input.plancmt:focus{border-color:var(--brand);outline:none;}

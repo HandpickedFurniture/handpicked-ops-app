@@ -278,15 +278,22 @@ Every column title sorts — ascending, descending, then back to the page's defa
 browser over the whole filtered set, as Production does; Planning opens sorted by type (Order
 first), city, order. The CSV and the PDF follow the sort on screen.
 
-**Planning is the workshop's printed sheet.** Its columns are the Looker page's: date, time, city,
-type, order, customer, fabric in, materials in, then seven stage **tick boxes** — Receive, Cut,
-Hemming, Iron, Marking, Taping, Fold — then curtains, metres, metres received. A box is pre-ticked
-where the database already knows (Receive = every fabric received, Cut = preparation started,
-Fold = packed); the four stages in between were retired from the Preparation screen in Aug 2026,
-so they are always empty on screen and get ticked by hand on paper. Its PDF is **portrait A4 and one
-page** (`print: { portrait, onePage }` on the page; `printSheet` scales the sheet down to fit, never
-below half size). `tools/planning_onepager.py` in the project root produces the same sheet from the
-command line for any date. Every table downloads as CSV or as **PDF**: the PDF is the table as drawn (chips, shading, totals,
+**Planning is the workshop's sheet, and it is live.** Its columns are the Looker page's: date, time,
+city, type, order, customer, fabric in, materials in, then seven stage **tick boxes** — Receive, Cut,
+Hemming, Iron, Marking, Taping, Fold — a **comment**, then curtains, metres, metres received. The
+production team ticks the boxes here, per order: every tick asks first and the same box ticks again
+to undo; the write is `fn_ops_planning_set` into `planning_status` through the offline queue, and
+`v_ops_order_roster.production_state` reads those ticks alongside the unit-level data, so the
+**Dashboard's "by production status" follows the sheet** (Fold → packed, Cut…Taping →
+in production, Receive → fabric in; a tick moves an order forward, never back). A box the app's own
+records already set — Receive when every fabric is received, Cut when preparation started, Fold when
+packed — shows ticked and **locked**: what the Production and Preparation screens recorded per
+window is not undone from a sheet at order grain. **Ad hoc orders** — a rework, a job the 3D sheet
+does not carry — are added at the foot of the list for a date from the picker under the table
+(`planning_extra`; number or customer name) and can be taken off again. Its PDF is **portrait A4 and
+one page** (`print: { portrait, onePage }`; `printSheet` scales the sheet to fit, never below half
+size), comments and ticks included. `tools/planning_onepager.py` in the project root produces the
+paper sheet from the command line for any date. SQL: `supabase/sql/20260918_planning_live.sql`. Every table downloads as CSV or as **PDF**: the PDF is the table as drawn (chips, shading, totals,
 the active filters in the header), printed through the browser's own engine (`printSheet` in
 `js/ui.js`) — landscape A4, "Save as PDF" in the dialog — because that engine already lays out
 Arabic, Hindi and Bengali text, which a client-side PDF library would not without a megabyte of

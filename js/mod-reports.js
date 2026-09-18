@@ -23,11 +23,12 @@
  * quantities, a second for money, both light enough that the figure stays black on top. Status-like
  * columns are chips with a tone AND a word, never colour alone.
  */
-import { apiAll, rpc, isSignedIn } from "./api.js";
+import { apiAll, rpc, submit, isSignedIn, isViewer, currentActor } from "./api.js";
 import { tr, tv } from "./i18n.js";
 import { PREP_STAGES, ISSUE_FLAGS, flagOf } from "./config.js";
 import {
   $, esc, el, num, aed, aed0, fmtDate, fmtDateTime, today, loading, chip, downloadCsv, printSheet, toast,
+  confirmSheet,
 } from "./ui.js";
 import { renderFilterBar, toQuery, deriveOptions, writeHash, vals, TEXT_FIELDS, MULTI_FIELDS } from "./filters.js";
 import { syncBar } from "./sync.js";
@@ -91,18 +92,22 @@ export const REPORT_PAGES = [
   },
   {
     /* The Looker "Production Tracking" page - called PLANNING since 18 Sep 2026 (user), and on the
-     * launcher, Home and the ribbon as its own target. It is the workshop's PRINTED sheet: portrait
-     * A4, one page, the seven Looker stage columns - Receive, Cut, Hemming, Iron, Marking, Taping,
-     * Fold - as tick boxes to mark by hand, with the ones the database already knows pre-ticked
-     * (Receive = every fabric received, Cut = preparation started, Fold = packed). The four stages
-     * between Cut and Fold were retired from the Preparation screen in Aug 2026, so on screen they
-     * are always empty boxes; on paper they are what the sheet is for. Windows, Started, Packed
-     * and Furthest stage left on the same day (user). Opens sorted by type (Order first), city,
-     * order id; any header re-sorts it. */
+     * launcher, Home and the ribbon as its own target. It is the workshop's sheet, and since the
+     * same day it is LIVE: the seven Looker stage columns - Receive, Cut, Hemming, Iron, Marking,
+     * Taping, Fold - are tick boxes the production team ticks here, per order, plus a comment. A
+     * tick writes planning_status (fn_ops_planning_set, through the offline queue like every other
+     * write), and the roster's production_state reads it, so the Dashboard's "by production status"
+     * moves with the sheet. A box the app already knows from its own records - Receive when every
+     * fabric is received, Cut when preparation started, Fold when packed - is shown ticked and
+     * LOCKED: what the Preparation and Production screens recorded per window is not undone from a
+     * sheet at order grain. Ad hoc orders are added at the foot of the list for a date
+     * (planning_extra). Printed portrait, one page, it is still the paper sheet. Opens sorted by
+     * type (Order first), city, order id; any header re-sorts it. */
     id: "production", key: "rep.production", view: "v_ops_report_orders",
     order: "installation_date.asc.nullslast",
     defaultSort: ["issue_flag", "city", "order_id"],
     print: { portrait: true, onePage: true },
+    live: true,
     /* `w` is a width in px, applied to the header cell. On screen it fixes the column; on the
      * portrait sheet the table is laid out fixed at 100%, so these act as PROPORTIONS. The stage
      * boxes are the point of the sheet and get the room; customer and time give it up (user, 18 Sep). */
@@ -115,13 +120,14 @@ export const REPORT_PAGES = [
       { k: "customer_name", key: "col.customer", w: 90, wrap: 1 },
       { k: "_recv", key: "rep.receive", fmt: (_v, r) => bar(r.recv_fab_done, r.recv_fab_total), w: 66, wrap: 1 },
       { k: "_mat", key: "rep.materials", fmt: (_v, r) => bar(r.recv_mat_done, r.recv_mat_total), w: 70, wrap: 1 },
-      { k: "_st_receive", key: "rep.stReceive", tick: 1, w: 62, fmt: (_v, r) => tick(r.recv_fab_total > 0 && r.recv_fab_done >= r.recv_fab_total) },
-      { k: "_st_cut",     key: "rep.stCut",     tick: 1, w: 62, fmt: (_v, r) => tick(Number(r.prep_started) > 0) },
-      { k: "_st_hem",     key: "rep.stHem",     tick: 1, w: 62, fmt: () => tick(false) },
-      { k: "_st_iron",    key: "rep.stIron",    tick: 1, w: 62, fmt: () => tick(false) },
-      { k: "_st_mark",    key: "rep.stMark",    tick: 1, w: 62, fmt: () => tick(false) },
-      { k: "_st_tape",    key: "rep.stTape",    tick: 1, w: 62, fmt: () => tick(false) },
-      { k: "_st_fold",    key: "rep.stFold",    tick: 1, w: 62, fmt: (_v, r) => tick(Number(r.prep_done) > 0) },
+      { k: "_st_receive", key: "rep.stReceive", tick: 1, w: 62, fmt: (_v, r) => tickCell(r, "receive") },
+      { k: "_st_cut",     key: "rep.stCut",     tick: 1, w: 62, fmt: (_v, r) => tickCell(r, "cut") },
+      { k: "_st_hem",     key: "rep.stHem",     tick: 1, w: 62, fmt: (_v, r) => tickCell(r, "hemming") },
+      { k: "_st_iron",    key: "rep.stIron",    tick: 1, w: 62, fmt: (_v, r) => tickCell(r, "iron") },
+      { k: "_st_mark",    key: "rep.stMark",    tick: 1, w: 62, fmt: (_v, r) => tickCell(r, "marking") },
+      { k: "_st_tape",    key: "rep.stTape",    tick: 1, w: 62, fmt: (_v, r) => tickCell(r, "taping") },
+      { k: "_st_fold",    key: "rep.stFold",    tick: 1, w: 62, fmt: (_v, r) => tickCell(r, "fold") },
+      { k: "plan_comment", key: "rep.comment", w: 120, wrap: 1, fmt: (v, r) => commentCell(r) },
       { k: "owl_curtains", key: "rep.curtains", n: 1, total: 1, heat: 1, w: 52 },
       { k: "report_meters", key: "col.meters", n: 1, total: 1, heat: 1, w: 62 },
       { k: "received_meters", key: "rep.recMeter", n: 1, total: 1, heat: 1, w: 62 },
@@ -251,10 +257,13 @@ const SORT_KEYS = {
   _started:   (r) => frac(r.prep_started, r.prep_total),
   _packed:    (r) => frac(r.prep_done, r.prep_total),
   _stage:     (r) => Number(r.prep_max_rank || 0) + Math.max(0, frac(r.prep_done, r.prep_total)),
-  _st_receive: (r) => (r.recv_fab_total > 0 && r.recv_fab_done >= r.recv_fab_total ? 1 : 0),
-  _st_cut:     (r) => (Number(r.prep_started) > 0 ? 1 : 0),
-  _st_fold:    (r) => (Number(r.prep_done) > 0 ? 1 : 0),
-  _st_hem: () => 0, _st_iron: () => 0, _st_mark: () => 0, _st_tape: () => 0,
+  _st_receive: (r) => (stageOn(r, "receive") ? 1 : 0),
+  _st_cut:     (r) => (stageOn(r, "cut") ? 1 : 0),
+  _st_hem:     (r) => (stageOn(r, "hemming") ? 1 : 0),
+  _st_iron:    (r) => (stageOn(r, "iron") ? 1 : 0),
+  _st_mark:    (r) => (stageOn(r, "marking") ? 1 : 0),
+  _st_tape:    (r) => (stageOn(r, "taping") ? 1 : 0),
+  _st_fold:    (r) => (stageOn(r, "fold") ? 1 : 0),
 };
 const blank = (v) => v === null || v === undefined || v === "";
 // a numeric column compares as a number, but an EMPTY cell stays empty so it sorts last (below)
@@ -302,9 +311,135 @@ function heatStyle(v, max, kind) {
   return ` style="background:${ramp[step]}"`;
 }
 
-/* A tick box: ticked when the database already knows the stage happened, empty to be marked by hand
- * on the printed sheet. Never colour alone - the glyph is the state. */
-const tick = (on) => `<span class="tick${on ? " on" : ""}" aria-label="${on ? "done" : ""}">${on ? "✓" : ""}</span>`;
+/* ---------------------------------------------------------------- the live Planning sheet
+ * What the app's own records already say about a stage. These are the ticks that come locked: a
+ * fabric the Production tab marked received, a window the Preparation screen started or packed. */
+const SYS_TICK = {
+  receive: (r) => Number(r.recv_fab_total) > 0 && Number(r.recv_fab_done) >= Number(r.recv_fab_total),
+  cut:     (r) => Number(r.prep_started) > 0,
+  fold:    (r) => Number(r.prep_done) > 0,
+};
+const stageOn = (r, stage) => !!(r["plan_" + stage] || (SYS_TICK[stage] && SYS_TICK[stage](r)));
+const STAGE_KEY = { receive: "rep.stReceive", cut: "rep.stCut", hemming: "rep.stHem", iron: "rep.stIron",
+                    marking: "rep.stMark", taping: "rep.stTape", fold: "rep.stFold" };
+
+/* A tick box. Ticked by the team here, or ticked-and-locked by the app's records; a viewer sees the
+ * state and cannot change it. Never colour alone - the glyph is the state, the padlock the lock. */
+function tickCell(r, stage) {
+  const sys = !!(SYS_TICK[stage] && SYS_TICK[stage](r));
+  const on = stageOn(r, stage);
+  const cls = `tick${on ? " on" : ""}${sys ? " sys" : ""}`;
+  if (isViewer() || sys) {
+    return `<span class="${cls}" title="${sys ? esc(tr("rep.planLocked")) : ""}">${on ? "✓" : ""}</span>`;
+  }
+  return `<button type="button" class="${cls}" data-tick="${esc(stage)}" data-order="${esc(r.order_id)}"
+            aria-pressed="${on}" title="${esc(tr("rep.planTick"))}">${on ? "✓" : ""}</button>`;
+}
+const tick = (on) => `<span class="tick${on ? " on" : ""}">${on ? "✓" : ""}</span>`;
+
+function commentCell(r) {
+  const v = r.plan_comment || "";
+  if (isViewer()) return esc(v) || `<span class="muted">—</span>`;
+  return `<input class="plancmt" data-cmt="${esc(r.order_id)}" value="${esc(v)}" placeholder="…"
+            aria-label="${esc(tr("rep.comment"))} ${esc(r.order_id)}">`;
+}
+
+/* Ticks and comments, delegated on the table so a re-sort (which rebuilds the body) keeps them.
+ * Every tick asks first (user, 18 Sep 2026) - a stage marked done reaches the Dashboard the same
+ * second, and a thumb on a phone in a workshop lands on the wrong row often enough - and ticking
+ * again undoes it, through the same question. Then optimistic: the box flips at once, the write
+ * goes through the offline queue, and a refusal flips it back with the server's reason. The row
+ * object is updated too, so a later sort or the CSV sees what was ticked without a re-fetch. */
+function wireLive(table, rows) {
+  const byId = new Map(rows.map((r) => [String(r.order_id), r]));
+  table.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-tick]");
+    if (!b) return;
+    const r = byId.get(b.dataset.order);
+    const stage = b.dataset.tick;
+    if (!r) return;
+    const next = !r["plan_" + stage];
+    const who = `${r.order_id}${r.customer_name ? " · " + r.customer_name : ""}`;
+    const ok = await confirmSheet(
+      tr(next ? "rep.confirmTick" : "rep.confirmUntick", { stage: tr(STAGE_KEY[stage]), id: who }),
+      tr(next ? "rep.confirmTickBody" : "rep.confirmUntickBody"));
+    if (!ok) return;
+    r["plan_" + stage] = next;
+    b.classList.toggle("on", next); b.textContent = next ? "✓" : ""; b.setAttribute("aria-pressed", String(next));
+    try {
+      await submit("fn_ops_planning_set", { p_order_id: r.order_id, p_stage: stage, p_on: next, p_actor: currentActor() });
+    } catch (err) {
+      r["plan_" + stage] = !next;
+      b.classList.toggle("on", !next); b.textContent = !next ? "✓" : ""; b.setAttribute("aria-pressed", String(!next));
+      toast(err.message || String(err), "bad");
+    }
+  });
+  table.addEventListener("change", async (e) => {
+    const i = e.target.closest("[data-cmt]");
+    if (!i) return;
+    const r = byId.get(i.dataset.cmt);
+    if (!r) return;
+    const prev = r.plan_comment || "";
+    r.plan_comment = i.value.trim();
+    try {
+      await submit("fn_ops_planning_comment", { p_order_id: r.order_id, p_comment: r.plan_comment, p_actor: currentActor() });
+    } catch (err) {
+      r.plan_comment = prev; i.value = prev;
+      toast(err.message || String(err), "bad");
+    }
+  });
+}
+
+/* Ad hoc orders for a date, appended after the sheet's own rows: a rework, a job the 3D sheet does
+ * not carry. Kept in planning_extra and shown when the date being viewed matches (the bar's date
+ * range, else today and the fortnight ahead). */
+function planDateRange(f) {
+  const from = f.from || today();
+  const to = f.to || (f.from ? f.from : new Date(Date.now() + 4 * 3600 * 1000 + 13 * 86400000).toISOString().slice(0, 10));
+  return { from, to };
+}
+async function extraRows(page, f, have) {
+  const { from, to } = planDateRange(f);
+  let extras = [];
+  try {
+    extras = await apiAll(`/rest/v1/planning_extra?select=order_id,plan_date&plan_date=gte.${from}&plan_date=lte.${to}&order=plan_date.asc,order_id.asc`);
+  } catch (e) { return []; }
+  const want = extras.filter((x) => !have.has(String(x.order_id)));
+  if (!want.length) return [];
+  const ids = want.map((x) => `"${String(x.order_id).replace(/"/g, "")}"`).join(",");
+  let rows = [];
+  try {
+    rows = await apiAll(`/rest/v1/${page.view}?select=*&order_id=in.(${encodeURIComponent(ids)})`);
+  } catch (e) { return []; }
+  return rows.map((r) => ({ ...r, _adhoc: (want.find((x) => String(x.order_id) === String(r.order_id)) || {}).plan_date }));
+}
+
+/* The bar under the sheet: pick an order by number or by name and add it to the date. */
+function addBar(page, f, orders, reload) {
+  const { from } = planDateRange(f);
+  const bar = el(`<div class="card row" style="flex-wrap:wrap;gap:8px;align-items:flex-end">
+    <div><label class="f">${esc(tr("rep.addOrder"))}</label>
+      <input list="planorders" name="adhoc" placeholder="${esc(tr("rep.addOrderHint"))}" style="min-width:260px" autocomplete="off">
+      <datalist id="planorders">${orders.map((o) =>
+        `<option value="${esc(o.order_id)}">${esc(o.customer_name || "")}${o.city ? " · " + esc(o.city) : ""}</option>`).join("")}</datalist></div>
+    <div><label class="f">${esc(tr("col.install"))}</label>
+      <input type="date" name="adhocdate" value="${esc(from)}"></div>
+    <button class="btn sm accent" data-add>+ ${esc(tr("rep.addOrderBtn"))}</button>
+    <span class="muted" style="flex-basis:100%">${esc(tr("rep.addOrderNote"))}</span></div>`);
+  bar.querySelector("[data-add]").addEventListener("click", async () => {
+    const raw = bar.querySelector('[name="adhoc"]').value.trim();
+    const id = (raw.match(/\b\d{5}\b/) || [""])[0];
+    const date = bar.querySelector('[name="adhocdate"]').value;
+    if (!id || !date) { toast(tr("rep.addOrderBad"), "bad"); return; }
+    if (!orders.some((o) => String(o.order_id) === id)) { toast(tr("rep.addOrderUnknown", { id }), "bad"); return; }
+    try {
+      await submit("fn_ops_planning_add", { p_order_id: id, p_date: date, p_actor: currentActor() });
+      toast(tr("t.saved"), "ok");
+      reload();
+    } catch (err) { toast(err.message || String(err), "bad"); }
+  });
+  return bar;
+}
 
 function bar(done, total) {
   if (!total) return `<span class="muted">—</span>`;
@@ -325,11 +460,14 @@ function stageCell(r) {
 
 /* Filter options come from the roster once per session, like the dashboard. */
 let OPTIONS = null;
+let ORDERS = [];      // every order, for the ad hoc picker: id, customer, city
 async function options() {
   if (OPTIONS) return OPTIONS;
   try {
-    const all = await apiAll("/rest/v1/v_ops_order_roster?select=city,sheet_status,stitching_types,commercial_names,window_refs,fabric_1_codes,fabric_2_codes");
+    const all = await apiAll("/rest/v1/v_ops_order_roster?select=order_id,customer_name,city,sheet_status,stitching_types,commercial_names,window_refs,fabric_1_codes,fabric_2_codes");
     OPTIONS = deriveOptions(all);
+    ORDERS = all.map((r) => ({ order_id: r.order_id, customer_name: r.customer_name, city: r.city }))
+      .sort((a, b) => String(b.order_id).localeCompare(String(a.order_id)));
   } catch (e) { OPTIONS = deriveOptions([]); }
   return OPTIONS;
 }
@@ -388,13 +526,20 @@ export async function render(mount, state, setFilters) {
     box.innerHTML = `<div class="card"><span class="err">${esc(e.message)}</span></div>`;
     return;
   }
+  // the live sheet: the ad hoc orders for the date being viewed come after the sheet's own rows
+  if (page.live) {
+    const have = new Set(rows.map((r) => String(r.order_id)));
+    rows = rows.concat(await extraRows(page, state.filters, have));
+  }
   loading(false);
 
   state.count = rows.length;
   paintBar();
 
+  const reload = () => render(mount, state, setFilters);
   if (!rows.length) {
     box.innerHTML = `<div class="card"><span class="muted">${esc(tr("t.empty"))}</span></div>`;
+    if (page.live && !isViewer()) box.appendChild(addBar(page, state.filters, ORDERS, reload));
     return;
   }
 
@@ -406,6 +551,11 @@ export async function render(mount, state, setFilters) {
 
   const cell = (c, r) => {
     const v = r[c.k];
+    // an ad hoc row says so on its order number, with a way to take it off the day again
+    if (c.k === "order_id" && r._adhoc) {
+      return `${esc(String(v))} ${chip(tr("rep.adhoc"), "info")}${isViewer() ? "" :
+        ` <button type="button" class="btn sm ghost" data-unadhoc="${esc(r.order_id)}" data-date="${esc(r._adhoc)}" title="${esc(tr("rep.removeAdhoc"))}">×</button>`}`;
+    }
     if (c.fmt) return c.fmt(v, r);
     if (v === null || v === undefined || v === "") return `<span class="muted">—</span>`;
     if (c.date) return esc(fmtDate(v));
@@ -456,6 +606,19 @@ export async function render(mount, state, setFilters) {
   wrap.appendChild(table);
   box.appendChild(wrap);
 
+  if (page.live) {
+    wireLive(table, rows);
+    table.addEventListener("click", async (e) => {
+      const b = e.target.closest("[data-unadhoc]");
+      if (!b) return;
+      try {
+        await submit("fn_ops_planning_remove", { p_order_id: b.dataset.unadhoc, p_date: b.dataset.date });
+        reload();
+      } catch (err) { toast(err.message || String(err), "bad"); }
+    });
+    if (!isViewer()) box.appendChild(addBar(page, state.filters, ORDERS, reload));
+  }
+
   box.appendChild(downloadRow(page.id, tr(page.key), rows.length,
     () => sortRows(page, rows).map((r) => {
       const o = {};
@@ -465,8 +628,22 @@ export async function render(mount, state, setFilters) {
       });
       return o;
     }),
-    () => wrap.querySelector("table").outerHTML,
+    () => printableTable(wrap.querySelector("table")),
     state.filters, page.print));
+}
+
+/* The sheet as it prints: a comment box becomes its text, a tick button a plain box, the ad hoc
+ * remove button disappears. The screen keeps its controls; the paper gets the state. */
+function printableTable(table) {
+  const t = table.cloneNode(true);
+  t.querySelectorAll("input.plancmt").forEach((i) => {
+    const span = document.createElement("span"); span.textContent = i.value; i.replaceWith(span);
+  });
+  t.querySelectorAll("button.tick").forEach((b) => {
+    const span = document.createElement("span"); span.className = b.className; span.textContent = b.textContent; b.replaceWith(span);
+  });
+  t.querySelectorAll("[data-unadhoc]").forEach((b) => b.remove());
+  return t.outerHTML;
 }
 
 /* ---------------------------------------------------------------- Management dashboard
