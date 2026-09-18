@@ -91,6 +91,7 @@ export const LINK_GROUPS = [
 export const APP_TILES = [
   { hash: "#/chotu",      key: "nav.chotu",      icon: "🗣️", desc: "home.dChotu" },
   { hash: "#/production", key: "nav.production", icon: "✂️",  desc: "home.dProduction" },
+  { hash: "#/reports?rep=production", key: "nav.planning", icon: "🗂️", desc: "home.dPlanning" },
   { hash: "#/prep",       key: "nav.prep",       icon: "🧵",  desc: "home.dPrep" },
   { hash: "#/status",     key: "nav.status",     icon: "🚚",  desc: "home.dInstall" },
   { hash: "#/schedule",   key: "nav.schedule",   icon: "🗓️", desc: "home.dSchedule" },

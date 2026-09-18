@@ -61,7 +61,10 @@ Old links still work. `#/insights…` and `#/production?sec=prep` redirect to wh
 moved to, carrying their filters (see `redirectFor` in `js/app.js`), because those links are sitting
 in people's WhatsApp.
 
-Signing in lands on a **launcher** (`#/menu`) — eight big targets, once per sign-in only. A reload or
+Signing in lands on a **launcher** (`#/menu`) — nine big targets, once per sign-in only (the
+ninth, since 18 Sep 2026, is **Planning**: the Reports page of that name, which is the Looker
+"Production tracking" table — one row per order with fabric in, materials in, started, packed,
+furthest stage, windows, curtains, metres — promoted to a target of its own and to a Home tile). A reload or
 a shared link goes straight to the screen it names.
 
 ## Modules
@@ -268,7 +271,9 @@ window ref, customer, commercial name, city, 3D-sheet status, and the four-value
 which is why every report view carries the bar's columns (`report_views_filter_columns`). Numeric
 columns are heat-shaded against the column's own maximum in the filtered set — one hue for
 quantities, a second for money — and status-like columns are chips with a word, never colour alone.
-Every table downloads as CSV or as **PDF**: the PDF is the table as drawn (chips, shading, totals,
+Every column title sorts — ascending, descending, then back to the page's default — in the
+browser over the whole filtered set, as Production does; Planning opens sorted by type (Order
+first), city, order. The CSV and the PDF follow the sort on screen. Every table downloads as CSV or as **PDF**: the PDF is the table as drawn (chips, shading, totals,
 the active filters in the header), printed through the browser's own engine (`printSheet` in
 `js/ui.js`) — landscape A4, "Save as PDF" in the dialog — because that engine already lays out
 Arabic, Hindi and Bengali text, which a client-side PDF library would not without a megabyte of

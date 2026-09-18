@@ -2,7 +2,8 @@
  *
  * Everyone who opens this app is one of a handful of people doing one of a handful of jobs, and the
  * ribbon does not say which of them is yours. This does: eight big targets, in the order the day
- * runs, sized for a thumb on a phone in a workshop rather than a mouse on a desk.
+ * runs, sized for a thumb on a phone in a workshop rather than a mouse on a desk. Nine since
+ * 18 Sep 2026: the Planning report earned a target of its own.
  *
  * It is shown ONCE, on sign-in (see afterSignIn in app.js). A reload or a shared link goes straight
  * to the screen it names - a launcher that stands between somebody and their work every time they
@@ -19,6 +20,8 @@ import { $, esc, el } from "./ui.js";
 const CHOICES = [
   { hash: "#/chotu",      key: "nav.chotu",      desc: "home.dChotu",      icon: "🗣️" },
   { hash: "#/production", key: "nav.production", desc: "home.dProduction", icon: "✂️" },
+  // the Planning report (Reports > Planning), promoted to a target of its own (user, 18 Sep 2026)
+  { hash: "#/reports?rep=production", key: "nav.planning", desc: "home.dPlanning", icon: "🗂️" },
   { hash: "#/prep",       key: "nav.prep",       desc: "home.dPrep",       icon: "🧵" },
   { hash: "#/status",     key: "nav.status",     desc: "home.dInstall",    icon: "🚚" },
   { hash: "#/inventory",  key: "nav.inventory",  desc: "home.dInventory",  icon: "🔩" },
@@ -48,7 +51,7 @@ export async function render(mount, state) {
         </a>`).join("")}
     </div>`;
 
-  /* Typing 1-8 picks a choice. The workshop tablet has a keyboard docked to it and this is the one
+  /* Typing 1-9 picks a choice. The workshop tablet has a keyboard docked to it and this is the one
    * screen where the options are numbered, so the number is worth honouring. */
   const onKey = (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;

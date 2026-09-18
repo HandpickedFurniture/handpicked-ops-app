@@ -90,10 +90,13 @@ export const REPORT_PAGES = [
     ],
   },
   {
-    /* The Looker "Production Tracking" page: Inst Dt, City, Issue Flag, Order ID, one column per
-     * stage, then # Windows, # Curtains, Meter, Rec Meter, with a grand total. */
+    /* The Looker "Production Tracking" page - called PLANNING since 18 Sep 2026 (user), and on the
+     * launcher and Home as its own target: Inst Dt, City, Issue Flag, Order ID, one column per
+     * stage, then # Windows, # Curtains, Meter, Rec Meter, with a grand total. Opens sorted by
+     * type (Order first), then city, then order id; any header re-sorts it. */
     id: "production", key: "rep.production", view: "v_ops_report_orders",
     order: "installation_date.asc.nullslast",
+    defaultSort: ["issue_flag", "city", "order_id"],
     cols: [
       { k: "installation_date", key: "col.install", date: 1 },
       { k: "city", key: "col.city" },
@@ -218,6 +221,57 @@ function downloadRow(pageId, title, rows, csvRows, tableHtml, f) {
   return row;
 }
 
+/* ---------------------------------------------------------------- sorting
+ * Every column title sorts, in the browser, over the whole filtered set - the same discipline as
+ * the Production module: the rows are already here, so a click costs no round trip, and the stage
+ * columns are built out of several fields each and could not be an `order=` anyway. A page may
+ * carry a defaultSort (several keys, applied in turn) that the first paint uses; clicking a header
+ * goes ascending, then descending, then back to that default. Sort state lives per page for the
+ * session, so switching tabs and back keeps what was chosen. */
+const SORT = {};                                  // page id -> { col, dir } | null
+const FLAG_RANK = Object.fromEntries(ISSUE_FLAGS.map((f, i) => [f.value, i]));
+const frac = (done, total) => (Number(total) ? Number(done) / Number(total) : -1);
+const SORT_KEYS = {
+  issue_flag: (r) => (r.issue_flag in FLAG_RANK ? FLAG_RANK[r.issue_flag] : ISSUE_FLAGS.length),
+  _recv:      (r) => frac(r.recv_fab_done, r.recv_fab_total),
+  _mat:       (r) => frac(r.recv_mat_done, r.recv_mat_total),
+  _started:   (r) => frac(r.prep_started, r.prep_total),
+  _packed:    (r) => frac(r.prep_done, r.prep_total),
+  _stage:     (r) => Number(r.prep_max_rank || 0) + Math.max(0, frac(r.prep_done, r.prep_total)),
+};
+const blank = (v) => v === null || v === undefined || v === "";
+// a numeric column compares as a number, but an EMPTY cell stays empty so it sorts last (below)
+const sortKey = (c) => SORT_KEYS[c.k]
+  || ((r) => (c.n || c.money ? (blank(r[c.k]) ? r[c.k] : Number(r[c.k]) || 0) : r[c.k]));
+const cmp = (a, b) => (typeof a === "number" && typeof b === "number"
+  ? a - b
+  : String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" }));
+/* A sorted COPY. The index tiebreak keeps equal rows in the order the server gave them. */
+function sortRows(page, rows) {
+  const st = SORT[page.id];
+  const keys = st
+    ? [{ key: sortKey(page.cols.find((c) => c.k === st.col) || { k: st.col }), dir: st.dir === "desc" ? -1 : 1 }]
+    : (page.defaultSort || []).map((k) => ({ key: sortKey(page.cols.find((c) => c.k === k) || { k }), dir: 1 }));
+  if (!keys.length) return rows.slice();
+  return rows
+    .map((r, i) => ({ r, i, ks: keys.map((k) => k.key(r)) }))
+    .sort((a, b) => {
+      for (let j = 0; j < keys.length; j++) {
+        const A = a.ks[j], B = b.ks[j];
+        // blanks last in BOTH directions: reversing a column must not fill the top with empties
+        if (blank(A) !== blank(B)) return blank(A) ? 1 : -1;
+        if (!blank(A)) {
+          const c = cmp(A, B);
+          if (c) return c * keys[j].dir;
+        }
+      }
+      return a.i - b.i;
+    })
+    .map((x) => x.r);
+}
+const sortState = (page, k) => (SORT[page.id]?.col === k ? (SORT[page.id].dir === "desc" ? "descending" : "ascending") : "none");
+const sortGlyph = (page, k) => (SORT[page.id]?.col === k ? (SORT[page.id].dir === "desc" ? "▼" : "▲") : "↕");
+
 /* Heat map. Five light steps of the app's single hue for quantities (the light end of
  * ORDINAL_RAMP, extended down), a warm ramp for money so the two never read as one scale. Every
  * step keeps black text above 7:1, which is the whole reason these stop where they do. */
@@ -339,25 +393,45 @@ export async function render(mount, state, setFilters) {
   };
 
   const wrap = el(`<div class="card scrollx" style="padding:0"></div>`);
-  wrap.appendChild(el(`
+  const table = el(`
     <table class="dense report">
       <thead><tr>${page.cols.map((c) =>
-        `<th class="${c.wide ? "wide" : ""}${c.n || c.money ? " num" : ""}">${esc(tr(c.key))}</th>`).join("")}</tr></thead>
-      <tbody>
-        ${rows.map((r) => `<tr>${page.cols.map((c) =>
-          `<td${tdAttrs(c, r)}>${c.bold ? "<b>" : ""}${cell(c, r)}${c.bold ? "</b>" : ""}</td>`
-        ).join("")}</tr>`).join("")}
-      </tbody>
+        `<th data-sort="${esc(c.k)}" tabindex="0" aria-sort="${sortState(page, c.k)}" class="${c.wide ? "wide" : ""}${c.n || c.money ? " num" : ""}">${esc(tr(c.key))}<span class="sarrow" aria-hidden="true">${sortGlyph(page, c.k)}</span></th>`).join("")}</tr></thead>
+      <tbody></tbody>
       <tfoot><tr>${page.cols.map((c, i) => {
         if (i === 0) return `<th>${esc(tr("rep.total"))} (${rows.length})</th>`;
         if (!c.total) return "<th></th>";
         return `<th class="num">${c.money ? esc(aed(totals[c.k])) : esc(num(totals[c.k]))}</th>`;
       }).join("")}</tr></tfoot>
-    </table>`));
+    </table>`);
+  const tb = table.querySelector("tbody");
+  const fill = () => {
+    tb.innerHTML = sortRows(page, rows).map((r) => `<tr>${page.cols.map((c) =>
+      `<td${tdAttrs(c, r)}>${c.bold ? "<b>" : ""}${cell(c, r)}${c.bold ? "</b>" : ""}</td>`
+    ).join("")}</tr>`).join("");
+    table.querySelectorAll("th[data-sort]").forEach((th) => {
+      th.setAttribute("aria-sort", sortState(page, th.dataset.sort));
+      th.querySelector(".sarrow").textContent = sortGlyph(page, th.dataset.sort);
+    });
+  };
+  fill();
+  // ascending, descending, then back to the page's default order
+  const onSort = (k) => {
+    const st = SORT[page.id];
+    SORT[page.id] = !st || st.col !== k ? { col: k, dir: "asc" } : st.dir === "asc" ? { col: k, dir: "desc" } : null;
+    fill();
+  };
+  table.querySelectorAll("th[data-sort]").forEach((th) => {
+    th.addEventListener("click", () => onSort(th.dataset.sort));
+    th.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSort(th.dataset.sort); }
+    });
+  });
+  wrap.appendChild(table);
   box.appendChild(wrap);
 
   box.appendChild(downloadRow(page.id, tr(page.key), rows.length,
-    () => rows.map((r) => {
+    () => sortRows(page, rows).map((r) => {
       const o = {};
       page.cols.forEach((c) => { if (!c.k.startsWith("_")) o[tr(c.key)] = r[c.k]; });
       return o;
