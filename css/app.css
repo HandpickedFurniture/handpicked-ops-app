@@ -890,3 +890,8 @@ table.dense.report tr.today td{background:var(--warn-bg);}
 .wapreview{display:grid;gap:10px;margin-top:10px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));}
 pre.wa{white-space:pre-wrap;font:13px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif;background:#e7f6ec;
   border-radius:12px;padding:10px 12px;margin:0;overflow-wrap:anywhere;}
+
+/* WhatsApp senders on the Roles screen */
+.waline.revoked > div:first-child{opacity:.55;}
+.wacaps{display:flex;flex-wrap:wrap;gap:4px 10px;}
+.wacap{display:inline-flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;}

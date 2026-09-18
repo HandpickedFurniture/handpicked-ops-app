@@ -83,4 +83,86 @@ export async function render(mount, state) {
   });
 
   box.appendChild(card);
+  box.appendChild(await waSendersCard());
+}
+
+/* ---------------------------------------------------------------- WhatsApp senders
+ *
+ * Who may talk to Chotu over WhatsApp, and what each may do. This table IS the authorization
+ * boundary for the inbound path: the wa-inbound function writes with the service role, which
+ * bypasses RLS, so nothing but a row here lets a number do anything - an unlisted number gets no
+ * reply at all. Five separate capabilities, all off by default, because a warehouse hand who marks
+ * fabric received must not be able to charge a client. Revoking keeps the row (revoked_at) so the
+ * history stays; the number can be re-enabled by ticking Active again.
+ *
+ * Phones are stored as bare digits, country code first, no '+' - exactly how Whapi reports a
+ * sender, which is the only form fn_wa_sender matches. */
+const WA_CAPS = [
+  ["can_track", "wa.capTrack"], ["can_receive_fabric", "wa.capFabric"],
+  ["can_receive_material", "wa.capMaterial"], ["can_order_status", "wa.capStatus"],
+  ["can_adjustment", "wa.capAdjust"],
+];
+
+async function waSendersCard() {
+  let rows = [];
+  try {
+    // the select list is spelled out so tools/check_columns.py can verify it against the table
+    rows = await api("/rest/v1/whatsapp_sender?select=id,phone,display_name,active,revoked_at,note,can_track,can_receive_fabric,can_receive_material,can_order_status,can_adjustment&order=revoked_at.nullsfirst,display_name");
+  } catch (e) {
+    return el(`<div class="card"><span class="err">${esc(e.message)}</span></div>`);
+  }
+  const card = el(`<div class="card">
+    <h3 style="margin:0 0 4px">${esc(tr("wa.title"))}</h3>
+    <div class="muted" style="margin-bottom:12px;font-size:12px">${esc(tr("wa.legend"))}</div>
+    <div class="walist"></div>
+    <div class="row" style="margin-top:12px;flex-wrap:wrap;gap:8px">
+      <input type="text" name="waphone" inputmode="numeric" placeholder="9715xxxxxxxx" style="width:150px">
+      <input type="text" name="waname" placeholder="${esc(tr("wa.name"))}" style="width:180px">
+      <button class="btn sm accent" data-add>+ ${esc(tr("wa.add"))}</button>
+    </div></div>`);
+  const list = card.querySelector(".walist");
+  const capsHtml = (r) => WA_CAPS.map(([k, key]) =>
+    `<label class="wacap"><input type="checkbox" data-cap="${k}"${r[k] ? " checked" : ""}> ${esc(tr(key))}</label>`).join("");
+
+  rows.forEach((r) => {
+    const line = el(`
+      <div class="tline waline ${r.revoked_at ? "revoked" : ""}">
+        <div><b>${esc(r.display_name || "—")}</b> <span class="muted">+${esc(r.phone)}</span>
+          ${r.revoked_at ? ` <span class="chip mute">${esc(tr("wa.revoked"))}</span>` : ""}
+          ${r.note ? `<div class="muted">${esc(r.note)}</div>` : ""}</div>
+        <div class="wacaps">${capsHtml(r)}
+          <label class="wacap"><input type="checkbox" data-active${r.active && !r.revoked_at ? " checked" : ""}> ${esc(tr("wa.active"))}</label></div>
+        <div></div>
+        <div><button class="btn sm primary" data-save>${esc(tr("act.save"))}</button></div>
+      </div>`);
+    line.querySelector("[data-save]").addEventListener("click", async () => {
+      const patch = { updated_at: new Date().toISOString(), granted_by: currentActor() };
+      WA_CAPS.forEach(([k]) => { patch[k] = line.querySelector(`[data-cap="${k}"]`).checked; });
+      const active = line.querySelector("[data-active]").checked;
+      patch.active = active;
+      patch.revoked_at = active ? null : (r.revoked_at || new Date().toISOString());
+      try {
+        await api(`/rest/v1/whatsapp_sender?id=eq.${r.id}`, { method: "PATCH", body: JSON.stringify(patch) });
+        toast(tr("wa.saved"), "ok");
+      } catch (e) { toast(e.message, "bad"); }
+    });
+    list.appendChild(line);
+  });
+  if (!rows.length) list.innerHTML = `<div class="muted">${esc(tr("wa.none"))}</div>`;
+
+  card.querySelector("[data-add]").addEventListener("click", async () => {
+    const phone = card.querySelector('[name="waphone"]').value.replace(/\D/g, "");
+    const name = card.querySelector('[name="waname"]').value.trim();
+    if (!/^[0-9]{8,15}$/.test(phone)) { toast(tr("wa.badPhone"), "bad"); return; }
+    try {
+      // arrives with every capability OFF: ticking is the deliberate step
+      await api("/rest/v1/whatsapp_sender", {
+        method: "POST",
+        body: JSON.stringify({ phone, display_name: name || null, active: true, granted_by: currentActor() }),
+      });
+      toast(tr("wa.saved"), "ok");
+      window.dispatchEvent(new CustomEvent("ops:rerender"));
+    } catch (e) { toast(e.message, "bad"); }
+  });
+  return card;
 }

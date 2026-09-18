@@ -450,7 +450,9 @@ raises 42501. Both mean nothing was written, but a bare 204 from PostgREST is **
 anything changed — ask for `Prefer: return=representation` before concluding it did.
 
 Adding a person: create the account in the Supabase dashboard (Authentication → Users), then set
-their role on the Roles screen. There is no signup screen by design.
+their role on the Roles screen. There is no signup screen by design. The Roles screen also holds
+the **WhatsApp senders** — who may talk to Chotu over WhatsApp, and which of the five capabilities
+each has (see *Chotu over WhatsApp*).
 
 ## Chotu, and why you can trust what it records
 
@@ -777,18 +779,50 @@ one, which is the same code path the browser takes.
    supabase secrets set GEMINI_API_KEY=<key>
    ```
 
+## Chotu over WhatsApp (18 Sep 2026)
+
+`supabase/functions/wa-inbound` is a second door into the same brain. Whapi posts every message the
+business number receives to it; for a sender on **the allowlist** (`whatsapp_sender`, edited on the
+Roles screen) it runs the `chotu` function over their text or **voice note** (transcribed by Gemini),
+replies with the proposed card, and commits **only when they answer YES** — the same
+`fn_ops_set_receiving` / `fn_ops_save_visit` / `fn_ops_add_adjustment` RPCs the app calls, then
+`fn_chotu_log`. Five capabilities, each its own tick box, all off until somebody ticks them: ask
+about orders, fabric received, materials received, order status / visits, adjustments. Everything
+else Chotu can do is refused with "use the app".
+
+**The allowlist is the boundary.** The function writes with the service role, which bypasses RLS;
+in the app `fn_is_viewer()` is the gate, over WhatsApp nothing but that table is. An unlisted
+number gets **no reply at all**. It listens in 1:1 chats with the business number, and in a group
+only when the message quotes an alert we sent (which names the order). `verify_jwt` is off — Whapi
+cannot sign a Supabase JWT — so the webhook URL carries a shared secret generated inside Vault
+(`wa_webhook_secret`) and compared in constant time; the Whapi token comes from the same Vault via
+`fn_wa_secret`, service role only. `wa_inbound_log` is every message and what became of it;
+`wa_pending` is the one open card per sender (30 minutes, then forgotten).
+
+Operate it from SQL, never by pasting the secret anywhere:
+
+```sql
+select public.fn_wa_inbound_admin('{"action":"show"}');       -- Whapi's current webhook settings
+select public.fn_wa_inbound_admin('{"action":"register"}');   -- (re)point Whapi at wa-inbound
+select public.fn_wa_inbound_test('{"messages":[...]}');        -- simulate a delivery; no reply is sent
+```
+(`wa-register` is the tiny sibling function that does the PATCH pg_net cannot.) Rotate the secret
+by updating `wa_webhook_secret` in Vault and running `register` again.
+
 ## Edge Functions
 
-The four functions in `supabase/functions/` live in **this** repo because all four exist only to
-serve this app — `js/voice.js` calls `transcribe`, `js/mod-chotu.js` calls `chotu`,
-`js/mod-schedule.js` calls `sched-ask`, `js/photos.js` calls `photo-signed-url`. Deploy from the repo
-root, which is where the `supabase/` directory sits:
+The functions in `supabase/functions/` live in **this** repo because they exist only to serve this
+app — `js/voice.js` calls `transcribe`, `js/mod-chotu.js` calls `chotu`, `js/mod-schedule.js` calls
+`sched-ask`, `js/photos.js` calls `photo-signed-url`, and `wa-inbound` / `wa-register` are Chotu's
+WhatsApp door (above). Deploy from the repo root, which is where the `supabase/` directory sits:
 
 ```bash
 supabase functions deploy chotu --project-ref jrevqijbzzwdcwxcnwfa
 ```
 
-Only `chotu` and `sched-ask` are currently deployed; the other two are 404 on the project.
+`chotu`, `sched-ask`, `wa-inbound` and `wa-register` are deployed; `transcribe` and
+`photo-signed-url` are 404 on the project. Without the CLI, deploy through the Supabase MCP
+(`deploy_edge_function`), which is how the two `wa-*` functions went live.
 
 They pass the caller's own bearer token through to PostgREST, so a function can never become a way
 around RLS — and each one checks for that token itself before doing any work, because `verify_jwt`
