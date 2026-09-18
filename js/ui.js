@@ -130,16 +130,17 @@ export function downloadCsv(filename, rows) {
  * table with its heat shading and totals - and calls print(); the person picks "Save as PDF", which
  * every phone and desktop browser offers. Landscape A4, colours forced on, header row repeated on
  * every page. A blocked pop-up is reported rather than silently doing nothing. */
-export function printSheet(title, subtitle, innerHtml) {
+export function printSheet(title, subtitle, innerHtml, opts = {}) {
   const w = window.open("", "_blank");
   if (!w) return false;
   const css = getComputedStyle(document.documentElement);
   const v = (name, fallback) => (css.getPropertyValue(name) || fallback).trim();
+  const portrait = !!opts.portrait;
   w.document.open();
   w.document.write(`<!doctype html><html lang="${esc(document.documentElement.lang || "en")}"><head>
     <meta charset="utf-8"><title>${esc(title)}</title>
     <style>
-      @page{size:A4 landscape;margin:10mm;}
+      @page{size:A4 ${portrait ? "portrait" : "landscape"};margin:10mm;}
       *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
       body{font:12px/1.35 -apple-system,"Segoe UI",Roboto,"Noto Sans","Noto Sans Devanagari","Noto Sans Bengali",Arial,sans-serif;
            color:${v("--ink", "#16232a")};margin:0;padding:12px;}
@@ -151,6 +152,7 @@ export function printSheet(title, subtitle, innerHtml) {
          font-size:10px;text-transform:uppercase;letter-spacing:.03em;border-bottom:2px solid ${v("--line", "#d7dfe3")};}
       td{padding:4px 6px;border-bottom:1px solid ${v("--line", "#d7dfe3")};vertical-align:top;}
       th.num,td.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;}
+      ${portrait ? "th{white-space:normal;padding:4px 4px;} td{padding:3px 4px;}" : ""}
       tfoot th{background:${v("--mute-bg", "#f2f5f7")};color:inherit;text-transform:none;font-size:11px;border-top:2px solid ${v("--line", "#d7dfe3")};}
       tr{page-break-inside:avoid;}
       tr.sub td{font-size:10px;border-bottom:1px dashed ${v("--line", "#d7dfe3")};}
@@ -178,6 +180,11 @@ export function printSheet(title, subtitle, innerHtml) {
       .chart .lbl{font-size:11px;fill:${v("--muted", "#5f7480")};}
       .chart .val{font-size:11px;font-weight:700;fill:${v("--ink", "#16232a")};}
       .dnone{color:${v("--muted", "#5f7480")};font-style:italic;}
+      /* tick boxes (Planning): a box to mark by hand, a tick where the system already knows */
+      th.tickcol,td.tickcol{text-align:center;padding-left:2px;padding-right:2px;}
+      .tick{display:inline-block;width:14px;height:14px;border:1px solid ${v("--muted", "#5f7480")};border-radius:3px;
+            font-size:11px;line-height:13px;text-align:center;color:${v("--ok", "#1a7f37")};font-weight:700;vertical-align:middle;}
+      .tick.on{border-color:${v("--ok", "#1a7f37")};background:${v("--ok-bg", "#eef7ef")};}
     </style></head><body>
     <h1>${esc(title)}</h1>
     <p class="sub">${esc(subtitle)}</p>
@@ -186,7 +193,21 @@ export function printSheet(title, subtitle, innerHtml) {
     </body></html>`);
   w.document.close();
   // give the new document a moment to lay out before the print engine snapshots it
-  w.setTimeout(() => { w.focus(); w.print(); }, 250);
+  w.setTimeout(() => {
+    /* One page, when asked: the sheet is shrunk to the printable height of the page rather than
+     * spilling a totals row onto a second sheet. The page is A4 with 10 mm margins; CSS pixels are
+     * 96 to the inch, so the printable height is (297 - 20) mm or (210 - 20) mm in landscape.
+     * `zoom` scales layout and text together and survives the print engine; a sheet that already
+     * fits is left alone, and nothing is shrunk below half size - past that it is not legible and a
+     * second page is the honest answer. */
+    if (opts.onePage) {
+      const usableH = ((portrait ? 297 : 210) - 20) / 25.4 * 96;
+      const usableW = ((portrait ? 210 : 297) - 20) / 25.4 * 96;
+      const z = Math.min(1, usableH / w.document.body.scrollHeight, usableW / w.document.body.scrollWidth);
+      if (z < 1) w.document.body.style.zoom = String(Math.max(0.5, z));
+    }
+    w.focus(); w.print();
+  }, 250);
   return true;
 }
 

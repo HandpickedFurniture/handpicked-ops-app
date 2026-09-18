@@ -91,24 +91,34 @@ export const REPORT_PAGES = [
   },
   {
     /* The Looker "Production Tracking" page - called PLANNING since 18 Sep 2026 (user), and on the
-     * launcher and Home as its own target: Inst Dt, City, Issue Flag, Order ID, one column per
-     * stage, then # Windows, # Curtains, Meter, Rec Meter, with a grand total. Opens sorted by
-     * type (Order first), then city, then order id; any header re-sorts it. */
+     * launcher, Home and the ribbon as its own target. It is the workshop's PRINTED sheet: portrait
+     * A4, one page, the seven Looker stage columns - Receive, Cut, Hemming, Iron, Marking, Taping,
+     * Fold - as tick boxes to mark by hand, with the ones the database already knows pre-ticked
+     * (Receive = every fabric received, Cut = preparation started, Fold = packed). The four stages
+     * between Cut and Fold were retired from the Preparation screen in Aug 2026, so on screen they
+     * are always empty boxes; on paper they are what the sheet is for. Windows, Started, Packed
+     * and Furthest stage left on the same day (user). Opens sorted by type (Order first), city,
+     * order id; any header re-sorts it. */
     id: "production", key: "rep.production", view: "v_ops_report_orders",
     order: "installation_date.asc.nullslast",
     defaultSort: ["issue_flag", "city", "order_id"],
+    print: { portrait: true, onePage: true },
     cols: [
       { k: "installation_date", key: "col.install", date: 1 },
+      { k: "installation_time", key: "rep.instTime" },
       { k: "city", key: "col.city" },
       { k: "issue_flag", key: "rep.issueFlag", fmt: flagChip },
       { k: "order_id", key: "col.order", bold: true },
       { k: "customer_name", key: "col.customer" },
       { k: "_recv", key: "rep.receive", fmt: (_v, r) => bar(r.recv_fab_done, r.recv_fab_total) },
       { k: "_mat", key: "rep.materials", fmt: (_v, r) => bar(r.recv_mat_done, r.recv_mat_total) },
-      { k: "_started", key: "rep.started", fmt: (_v, r) => bar(r.prep_started, r.prep_total) },
-      { k: "_packed", key: "rep.packed", fmt: (_v, r) => bar(r.prep_done, r.prep_total) },
-      { k: "_stage", key: "rep.stage", fmt: (_v, r) => stageCell(r) },
-      { k: "window_count", key: "col.windows", n: 1, total: 1, heat: 1 },
+      { k: "_st_receive", key: "rep.stReceive", tick: 1, fmt: (_v, r) => tick(r.recv_fab_total > 0 && r.recv_fab_done >= r.recv_fab_total) },
+      { k: "_st_cut",     key: "rep.stCut",     tick: 1, fmt: (_v, r) => tick(Number(r.prep_started) > 0) },
+      { k: "_st_hem",     key: "rep.stHem",     tick: 1, fmt: () => tick(false) },
+      { k: "_st_iron",    key: "rep.stIron",    tick: 1, fmt: () => tick(false) },
+      { k: "_st_mark",    key: "rep.stMark",    tick: 1, fmt: () => tick(false) },
+      { k: "_st_tape",    key: "rep.stTape",    tick: 1, fmt: () => tick(false) },
+      { k: "_st_fold",    key: "rep.stFold",    tick: 1, fmt: (_v, r) => tick(Number(r.prep_done) > 0) },
       { k: "owl_curtains", key: "rep.curtains", n: 1, total: 1, heat: 1 },
       { k: "report_meters", key: "col.meters", n: 1, total: 1, heat: 1 },
       { k: "received_meters", key: "rep.recMeter", n: 1, total: 1, heat: 1 },
@@ -209,14 +219,14 @@ function filterSummary(f) {
 
 /* The CSV and PDF buttons under a table. The PDF is the table as drawn - chips, heat shading, totals
  * - printed through the browser (see printSheet in ui.js), so it needs the table's HTML, not the rows. */
-function downloadRow(pageId, title, rows, csvRows, tableHtml, f) {
+function downloadRow(pageId, title, rows, csvRows, tableHtml, f, printOpts) {
   const row = el(`<div class="row" style="justify-content:flex-end;margin-top:8px;gap:8px">
     <button class="btn sm" data-csv>${esc(tr("dash.csv"))}</button>
     <button class="btn sm" data-pdf>${esc(tr("dash.pdf"))}</button></div>`);
   row.querySelector("[data-csv]").addEventListener("click", () => downloadCsv(`${pageId}_${today()}.csv`, csvRows()));
   row.querySelector("[data-pdf]").addEventListener("click", () => {
     const sub = `${filterSummary(f)} · ${rows} ${tr("rep.rows")} · ${fmtDateTime(new Date().toISOString())}`;
-    if (!printSheet(title, sub, tableHtml())) toast(tr("rep.pdfBlocked"), "bad");
+    if (!printSheet(title, sub, tableHtml(), printOpts)) toast(tr("rep.pdfBlocked"), "bad");
   });
   return row;
 }
@@ -238,6 +248,10 @@ const SORT_KEYS = {
   _started:   (r) => frac(r.prep_started, r.prep_total),
   _packed:    (r) => frac(r.prep_done, r.prep_total),
   _stage:     (r) => Number(r.prep_max_rank || 0) + Math.max(0, frac(r.prep_done, r.prep_total)),
+  _st_receive: (r) => (r.recv_fab_total > 0 && r.recv_fab_done >= r.recv_fab_total ? 1 : 0),
+  _st_cut:     (r) => (Number(r.prep_started) > 0 ? 1 : 0),
+  _st_fold:    (r) => (Number(r.prep_done) > 0 ? 1 : 0),
+  _st_hem: () => 0, _st_iron: () => 0, _st_mark: () => 0, _st_tape: () => 0,
 };
 const blank = (v) => v === null || v === undefined || v === "";
 // a numeric column compares as a number, but an EMPTY cell stays empty so it sorts last (below)
@@ -284,6 +298,10 @@ function heatStyle(v, max, kind) {
   const step = Math.min(ramp.length - 1, Math.max(1, Math.ceil((n / max) * (ramp.length - 1))));
   return ` style="background:${ramp[step]}"`;
 }
+
+/* A tick box: ticked when the database already knows the stage happened, empty to be marked by hand
+ * on the printed sheet. Never colour alone - the glyph is the state. */
+const tick = (on) => `<span class="tick${on ? " on" : ""}" aria-label="${on ? "done" : ""}">${on ? "✓" : ""}</span>`;
 
 function bar(done, total) {
   if (!total) return `<span class="muted">—</span>`;
@@ -388,7 +406,7 @@ export async function render(mount, state, setFilters) {
     return esc(String(v));
   };
   const tdAttrs = (c, r) => {
-    const cls = [c.wide ? "wide" : "", c.n || c.money ? "num" : ""].filter(Boolean).join(" ");
+    const cls = [c.wide ? "wide" : "", c.n || c.money ? "num" : "", c.tick ? "tickcol" : ""].filter(Boolean).join(" ");
     return `${cls ? ` class="${cls}"` : ""}${c.heat ? heatStyle(r[c.k], maxes[c.k], c.heat) : ""}`;
   };
 
@@ -396,7 +414,7 @@ export async function render(mount, state, setFilters) {
   const table = el(`
     <table class="dense report">
       <thead><tr>${page.cols.map((c) =>
-        `<th data-sort="${esc(c.k)}" tabindex="0" aria-sort="${sortState(page, c.k)}" class="${c.wide ? "wide" : ""}${c.n || c.money ? " num" : ""}">${esc(tr(c.key))}<span class="sarrow" aria-hidden="true">${sortGlyph(page, c.k)}</span></th>`).join("")}</tr></thead>
+        `<th data-sort="${esc(c.k)}" tabindex="0" aria-sort="${sortState(page, c.k)}" class="${c.wide ? "wide" : ""}${c.n || c.money ? " num" : ""}${c.tick ? " tickcol" : ""}">${esc(tr(c.key))}<span class="sarrow" aria-hidden="true">${sortGlyph(page, c.k)}</span></th>`).join("")}</tr></thead>
       <tbody></tbody>
       <tfoot><tr>${page.cols.map((c, i) => {
         if (i === 0) return `<th>${esc(tr("rep.total"))} (${rows.length})</th>`;
@@ -433,11 +451,14 @@ export async function render(mount, state, setFilters) {
   box.appendChild(downloadRow(page.id, tr(page.key), rows.length,
     () => sortRows(page, rows).map((r) => {
       const o = {};
-      page.cols.forEach((c) => { if (!c.k.startsWith("_")) o[tr(c.key)] = r[c.k]; });
+      page.cols.forEach((c) => {
+        if (c.tick) o[tr(c.key)] = c.fmt(null, r).includes("✓") ? "yes" : "";
+        else if (!c.k.startsWith("_")) o[tr(c.key)] = r[c.k];
+      });
       return o;
     }),
     () => wrap.querySelector("table").outerHTML,
-    state.filters));
+    state.filters, page.print));
 }
 
 /* ---------------------------------------------------------------- Management dashboard

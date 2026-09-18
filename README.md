@@ -276,7 +276,17 @@ columns are heat-shaded against the column's own maximum in the filtered set —
 quantities, a second for money — and status-like columns are chips with a word, never colour alone.
 Every column title sorts — ascending, descending, then back to the page's default — in the
 browser over the whole filtered set, as Production does; Planning opens sorted by type (Order
-first), city, order. The CSV and the PDF follow the sort on screen. Every table downloads as CSV or as **PDF**: the PDF is the table as drawn (chips, shading, totals,
+first), city, order. The CSV and the PDF follow the sort on screen.
+
+**Planning is the workshop's printed sheet.** Its columns are the Looker page's: date, time, city,
+type, order, customer, fabric in, materials in, then seven stage **tick boxes** — Receive, Cut,
+Hemming, Iron, Marking, Taping, Fold — then curtains, metres, metres received. A box is pre-ticked
+where the database already knows (Receive = every fabric received, Cut = preparation started,
+Fold = packed); the four stages in between were retired from the Preparation screen in Aug 2026,
+so they are always empty on screen and get ticked by hand on paper. Its PDF is **portrait A4 and one
+page** (`print: { portrait, onePage }` on the page; `printSheet` scales the sheet down to fit, never
+below half size). `tools/planning_onepager.py` in the project root produces the same sheet from the
+command line for any date. Every table downloads as CSV or as **PDF**: the PDF is the table as drawn (chips, shading, totals,
 the active filters in the header), printed through the browser's own engine (`printSheet` in
 `js/ui.js`) — landscape A4, "Save as PDF" in the dialog — because that engine already lays out
 Arabic, Hindi and Bengali text, which a client-side PDF library would not without a megabyte of

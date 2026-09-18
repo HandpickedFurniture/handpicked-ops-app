@@ -895,3 +895,11 @@ pre.wa{white-space:pre-wrap;font:13px/1.4 -apple-system,"Segoe UI",Roboto,sans-s
 .waline.revoked > div:first-child{opacity:.55;}
 .wacaps{display:flex;flex-wrap:wrap;gap:4px 10px;}
 .wacap{display:inline-flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;}
+
+/* Planning's stage tick boxes: empty = to be marked by hand on the printed sheet, ticked = the
+   database already knows (fabric all in, preparation started, packed). The glyph carries the state;
+   the green is a courtesy. */
+table.dense th.tickcol,table.dense td.tickcol{text-align:center;padding-left:3px;padding-right:3px;}
+.tick{display:inline-block;width:18px;height:18px;border:1.5px solid var(--muted);border-radius:4px;
+  font-size:13px;line-height:16px;text-align:center;color:var(--ok);font-weight:700;vertical-align:middle;}
+.tick.on{border-color:var(--ok);background:var(--ok-bg);}
