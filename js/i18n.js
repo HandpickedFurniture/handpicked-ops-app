@@ -254,6 +254,7 @@ export const I18N = {
     "photo.title": "Photos", "photo.none": "No photos yet",
     "photo.delete": "Remove photo", "photo.deleteReason": "Why is this being removed?",
     "photo.deleted": "Removed", "photo.deletedBy": "Removed by {who}",
+    "photo.deleteKept": "The photo is hidden, not destroyed: Photo audit keeps it with who removed it and why.",
     "photo.backend": "Stored in", "photo.hash": "Checksum", "photo.views": "{n} view(s)",
     "photo.showDeleted": "Include removed photos", "photo.context": "Attached to",
     "photo.uploader": "Uploaded by", "photo.evidenceNote":
@@ -823,6 +824,7 @@ export const I18N = {
     "photo.title": "फ़ोटो", "photo.none": "अभी कोई फ़ोटो नहीं",
     "photo.delete": "फ़ोटो हटाएँ", "photo.deleteReason": "इसे क्यों हटाया जा रहा है?",
     "photo.deleted": "हटाई गई", "photo.deletedBy": "{who} ने हटाई",
+    "photo.deleteKept": "फ़ोटो छिपाई जाती है, नष्ट नहीं: फ़ोटो ऑडिट में यह रहती है, किसने और क्यों हटाई सहित।",
     "photo.backend": "संग्रहित", "photo.hash": "चेकसम", "photo.views": "{n} बार देखी",
     "photo.showDeleted": "हटाई गई फ़ोटो भी दिखाएँ", "photo.context": "संलग्न",
     "photo.uploader": "अपलोड करने वाला",
@@ -1392,6 +1394,7 @@ export const I18N = {
     "photo.title": "ছবি", "photo.none": "এখনো কোনো ছবি নেই",
     "photo.delete": "ছবি সরান", "photo.deleteReason": "কেন সরানো হচ্ছে?",
     "photo.deleted": "সরানো হয়েছে", "photo.deletedBy": "{who} সরিয়েছেন",
+    "photo.deleteKept": "ছবিটি লুকানো হয়, নষ্ট নয়: ফটো অডিটে কে ও কেন সরিয়েছে তা সহ থেকে যায়।",
     "photo.backend": "সংরক্ষিত", "photo.hash": "চেকসাম", "photo.views": "{n} বার দেখা",
     "photo.showDeleted": "সরানো ছবিও দেখান", "photo.context": "সংযুক্ত",
     "photo.uploader": "আপলোডকারী",

@@ -237,7 +237,7 @@ function itemThumb(r, photo, url, reload) {
     // the little + always adds; the tile body opens the picture once there is one
     if (!photo || e.target.closest(".badge")) return;      // fall through to the file input
     e.preventDefault();
-    try { openLightbox(await viewUrl(photo), photo); }
+    try { openLightbox(await viewUrl(photo), photo, { onDeleted: reload }); }
     catch (err) { toast(err.message, "bad"); }
   });
   return tile;

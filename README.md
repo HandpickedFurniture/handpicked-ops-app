@@ -48,9 +48,12 @@ update.
 
 ## The ribbon, and everything off it
 
-Seven tabs, in the order the day runs: **Home · Production · Preparation · Installation · Inventory ·
-PO · Chotu**. More than seven and a phone scrolls the strip sideways, which is how the last tabs stop
-being used at all.
+Eight tabs, in the order the day runs: **Home · Production · Planning · Preparation · Installation ·
+Inventory · PO · Chotu**. Seven was the count that kept a phone from scrolling the strip sideways;
+Planning went in as the eighth on 18 Sep 2026 at the user's request, with the tab padding trimmed
+so a phone scrolls as little as possible. Planning is not a route of its own — it is the Reports
+page `?rep=production`, so its ribbon entry carries its own hash and its own "am I active" test
+(`PLANNING_TAB` in `js/app.js`).
 
 Everything else is a real route reached from **Home**, which is the full index: Finance, Schedule,
 Transfers, Dashboard, Reports, End of day, Photo audit and Roles. The old `Insights` container is gone — it
@@ -670,7 +673,10 @@ Setup commands for the Google Cloud path are in the header of
 ### What makes it auditable
 
 - **Nothing is ever hard-deleted.** `fn_ops_delete_photo` soft-deletes: the row, the stored object
-  and the stated reason all survive. `DELETE` is revoked from `authenticated` on `order_photos`, and
+  and the stated reason all survive. Since 18 Sep 2026 the lightbox itself carries the **Remove
+  photo** button (asked for on Production, present wherever the photo strip is — production,
+  preparation, installation, transfers, inventory), with the same required reason; Photo audit was
+  the only place before. `DELETE` is revoked from `authenticated` on `order_photos`, and
   the storage policies grant insert and select only — verified returning **403**. A photo that can be
   quietly erased proves nothing.
 - **A reason is required** to remove one, and is shown in the audit view alongside who removed it.

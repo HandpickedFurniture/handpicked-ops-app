@@ -59,9 +59,18 @@ const ROUTES = {
   finance:    { key: "nav.finance",    render: (m, s) => finance.render(m, s) },
 };
 
-/* Seven, in the order the day runs. More than this and a phone scrolls the strip sideways, which is
- * how the last two tabs stop being used at all. */
-const RIBBON = ["home", "production", "prep", "status", "inventory", "po", "chotu"];
+/* Eight, in the order the day runs. Seven was the limit that kept a phone from scrolling the strip
+ * sideways; Planning went in as the eighth on 18 Sep 2026 (user), so on a narrow phone the strip
+ * scrolls a little - the CSS trims the tab padding to keep that to a minimum.
+ *
+ * An entry is a route name, or an object for a screen that lives INSIDE a route: Planning is the
+ * Reports page `?rep=production`, so it carries its own hash, label and an `is` test that decides
+ * when it is the active tab - the plain `reports` route must not light it up for the other pages. */
+const PLANNING_TAB = {
+  hash: "#/reports?rep=production", key: "nav.planning", icon: "🗂️",
+  is: (name, params) => name === "reports" && params.get("rep") === "production",
+};
+const RIBBON = ["home", "production", PLANNING_TAB, "prep", "status", "inventory", "po", "chotu"];
 
 /* Roles that see less than all of it. A role absent from here gets everything.
  *
@@ -234,12 +243,15 @@ const TAB_ICON = { home: "🏠", production: "✂️", prep: "🧵", status: "�
                    dashboard: "📊", reports: "📈", eod: "🌙", audit: "📷", roles: "🔑" };
 
 function paintTabs() {
-  const { route: r } = readHash();
+  const { route: r, params } = readHash();
   /* A route that is not in the ribbon still highlights nothing rather than mis-highlighting Home,
    * so somebody who arrived on Reports from a link can see that they are off the strip. */
-  $("#tabs").innerHTML = ribbonFor().map((k) =>
-    `<a href="#/${k}" class="${k === r ? "active" : ""}">${TAB_ICON[k] || ""} ${esc(tr(ROUTES[k].key))}</a>`
-  ).join("");
+  $("#tabs").innerHTML = ribbonFor().map((k) => {
+    if (typeof k === "object") {
+      return `<a href="${k.hash}" class="${k.is(r, params) ? "active" : ""}">${k.icon} ${esc(tr(k.key))}</a>`;
+    }
+    return `<a href="#/${k}" class="${k === r ? "active" : ""}">${TAB_ICON[k] || ""} ${esc(tr(ROUTES[k].key))}</a>`;
+  }).join("");
 }
 
 /* One render at a time - but a navigation that arrives mid-render is REMEMBERED, not dropped.

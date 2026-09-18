@@ -419,6 +419,7 @@ export function photoStrip(meta, opts = {}) {
 
   async function refresh() {
     if (!meta.context_id && !meta.order_id) { countEl.textContent = ""; return; }
+    // (the strip's own refresh is handed to each thumbnail, so a removal repaints the strip)
     let q = `/rest/v1/order_photos?select=id,object_path,bucket,storage_backend,caption,location_code,uploaded_by,uploaded_at&deleted_at=is.null&order=uploaded_at.desc&limit=12`
       + `&context=eq.${encodeURIComponent(meta.context)}`;
     q += meta.context_id ? `&context_id=eq.${meta.context_id}`
@@ -429,7 +430,7 @@ export function photoStrip(meta, opts = {}) {
     thumbs.innerHTML = "";
     // one signing call for the whole strip, not one per thumbnail
     const urls = await signedUrlMap(rows);
-    rows.forEach((p) => thumbs.appendChild(thumb(p, urls.get(p.id))));
+    rows.forEach((p) => thumbs.appendChild(thumb(p, urls.get(p.id), refresh)));
   }
 
   inputs.forEach((inp) => inp.addEventListener("change", async () => {
@@ -457,7 +458,7 @@ export function photoStrip(meta, opts = {}) {
 /* Shows the picture itself. The emoji this used to render told you a photo existed but not what was
  * in it, so every check meant opening each one in turn. Falls back to the emoji when signing failed
  * or the image will not load. */
-function thumb(p, url) {
+function thumb(p, url, onDeleted) {
   const t = el(`<button class="thumb" title="${esc(p.caption || p.object_path)}">${
     url ? `<img src="${esc(url)}" alt="${esc(p.caption || "")}" loading="lazy">` : "🖼️"}</button>`);
   const img = t.querySelector("img");
@@ -465,13 +466,20 @@ function thumb(p, url) {
   // always re-sign on open rather than reusing the thumbnail's URL: that one expires in 10 minutes,
   // and opening a photo deliberately is the thing the access log is actually for
   t.addEventListener("click", async () => {
-    try { openLightbox(await viewUrl(p), p); }
+    try { openLightbox(await viewUrl(p), p, { onDeleted }); }
     catch (e) { toast(e.message, "bad"); }
   });
   return t;
 }
 
-export function openLightbox(url, p) {
+/* The picture, full size, with the one action a photo has: removal (user, 18 Sep 2026 - asked for
+ * on Production, delivered everywhere the strip is). It is the SAME soft delete the Photo audit
+ * screen does - fn_ops_delete_photo keeps the row, the bytes and the stated reason, and the audit
+ * view still lists the photo with who removed it and why - so nothing here can make evidence
+ * disappear. A reason is required; the RPC refuses a blank one. Viewers do not get the button, and
+ * the database would refuse them anyway. `opts.onDeleted` repaints whatever the photo was shown in. */
+export function openLightbox(url, p, opts = {}) {
+  const canDelete = !isViewer() && typeof opts.onDeleted === "function" && !p.deleted_at;
   const m = modal(`
     <div class="lightbox">
       <img src="${esc(url)}" alt="${esc(p.caption || "")}">
@@ -484,11 +492,40 @@ export function openLightbox(url, p) {
       </div>
       ${p.sha256 ? `<div class="muted mono" style="margin-top:4px;word-break:break-all">
         sha256 ${esc(p.sha256)}</div>` : ""}
-      <div class="row" style="justify-content:flex-end;margin-top:12px">
-        <a class="btn sm" href="${esc(url)}" target="_blank" rel="noopener">${esc(tr("photo.open"))}</a>
-        <button class="btn sm ghost" data-close>${esc(tr("d.close"))}</button>
+      <div class="row" style="justify-content:space-between;margin-top:12px;flex-wrap:wrap;gap:8px">
+        ${canDelete ? `<button class="btn sm ghost" data-del>🗑 ${esc(tr("photo.delete"))}</button>` : "<span></span>"}
+        <span class="row">
+          <a class="btn sm" href="${esc(url)}" target="_blank" rel="noopener">${esc(tr("photo.open"))}</a>
+          <button class="btn sm ghost" data-close>${esc(tr("d.close"))}</button>
+        </span>
       </div>
     </div>`);
   m.sheet.querySelector("[data-close]").onclick = m.close;
+
+  const del = m.sheet.querySelector("[data-del]");
+  if (del) del.addEventListener("click", () => {
+    const d = modal(`
+      <h3>${esc(tr("photo.delete"))}</h3>
+      <div style="margin:12px 0">
+        <label class="f">${esc(tr("photo.deleteReason"))}</label>
+        <input type="text" name="dreason" autofocus>
+        <div class="muted" style="margin-top:6px">${esc(tr("photo.deleteKept"))}</div>
+      </div>
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn ghost" data-no>${esc(tr("act.cancel"))}</button>
+        <button class="btn primary" data-yes>${esc(tr("photo.delete"))}</button>
+      </div>`);
+    d.sheet.querySelector("[data-no]").onclick = d.close;
+    d.sheet.querySelector("[data-yes]").onclick = async () => {
+      const reason = d.sheet.querySelector('[name="dreason"]').value.trim();
+      if (!reason) { toast(tr("photo.deleteReason"), "bad"); return; }
+      d.close(); m.close();
+      try {
+        await rpc("fn_ops_delete_photo", { p_id: p.id, p_reason: reason, p_actor: currentActor() });
+        toast(tr("photo.deleted"), "ok");
+        opts.onDeleted(p);
+      } catch (e) { toast(e.message, "bad"); }
+    };
+  });
   return m;
 }
