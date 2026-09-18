@@ -136,6 +136,17 @@ export function printSheet(title, subtitle, innerHtml, opts = {}) {
   const css = getComputedStyle(document.documentElement);
   const v = (name, fallback) => (css.getPropertyValue(name) || fallback).trim();
   const portrait = !!opts.portrait;
+  /* Portrait sheets lay the table out fixed at the page width, so the columns' pixel widths (set on
+   * the header cells for the screen) become PROPORTIONS: each is rewritten as its share of the
+   * total. Left as pixels, a fixed layout would simply grow the table past the page edge. */
+  if (portrait) {
+    const px = [...innerHtml.matchAll(/<th[^>]*style="width:(\d+)px"/g)].map((m) => Number(m[1]));
+    const sum = px.reduce((a, b) => a + b, 0);
+    if (sum > 0) {
+      innerHtml = innerHtml.replace(/(<th[^>]*style=")width:(\d+)px"/g,
+        (_m, pre, w) => `${pre}width:${(Number(w) / sum * 100).toFixed(2)}%"`);
+    }
+  }
   w.document.open();
   w.document.write(`<!doctype html><html lang="${esc(document.documentElement.lang || "en")}"><head>
     <meta charset="utf-8"><title>${esc(title)}</title>
@@ -152,7 +163,6 @@ export function printSheet(title, subtitle, innerHtml, opts = {}) {
          font-size:10px;text-transform:uppercase;letter-spacing:.03em;border-bottom:2px solid ${v("--line", "#d7dfe3")};}
       td{padding:4px 6px;border-bottom:1px solid ${v("--line", "#d7dfe3")};vertical-align:top;}
       th.num,td.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;}
-      ${portrait ? "th{white-space:normal;padding:4px 4px;} td{padding:3px 4px;}" : ""}
       tfoot th{background:${v("--mute-bg", "#f2f5f7")};color:inherit;text-transform:none;font-size:11px;border-top:2px solid ${v("--line", "#d7dfe3")};}
       tr{page-break-inside:avoid;}
       tr.sub td{font-size:10px;border-bottom:1px dashed ${v("--line", "#d7dfe3")};}
@@ -165,6 +175,13 @@ export function printSheet(title, subtitle, innerHtml, opts = {}) {
       .chip.info{background:${v("--info-bg", "#e8f0f3")};color:${v("--brand", "#0f4c5c")};border-color:#c5d8de;}
       .chip.mute,.chip.wait{background:${v("--mute-bg", "#f2f5f7")};color:${v("--muted", "#5f7480")};border-color:${v("--line", "#d7dfe3")};}
       .foot{margin-top:10px;font-size:10px;color:${v("--muted", "#5f7480")};}
+      /* portrait (Planning): fixed layout at the page width, smaller type, wrapping where the
+         column allows it and never inside a number, chips allowed to break onto two lines. These
+         come LAST so they win over the rules above. */
+      ${portrait ? `table{table-layout:fixed;font-size:9.5px;}
+      th,th.num{white-space:normal;padding:4px 3px;overflow-wrap:anywhere;font-size:8px;}
+      td{padding:3px 3px;} td.wrap{overflow-wrap:anywhere;white-space:normal;} td:not(.wrap),td.num,tfoot th{white-space:nowrap;overflow-wrap:normal;}
+      .chip{font-size:9px;padding:1px 4px;white-space:normal;line-height:1.2;} .sarrow{display:none;}` : ""}
       /* the dashboard's stat tiles and inline-SVG charts, as app.css draws them */
       .statrow{display:flex;flex-wrap:wrap;gap:18px;margin:6px 0 12px;}
       .stat{display:flex;flex-direction:column;gap:1px;}
@@ -182,8 +199,8 @@ export function printSheet(title, subtitle, innerHtml, opts = {}) {
       .dnone{color:${v("--muted", "#5f7480")};font-style:italic;}
       /* tick boxes (Planning): a box to mark by hand, a tick where the system already knows */
       th.tickcol,td.tickcol{text-align:center;padding-left:2px;padding-right:2px;}
-      .tick{display:inline-block;width:14px;height:14px;border:1px solid ${v("--muted", "#5f7480")};border-radius:3px;
-            font-size:11px;line-height:13px;text-align:center;color:${v("--ok", "#1a7f37")};font-weight:700;vertical-align:middle;}
+      .tick{display:inline-block;width:17px;height:17px;border:1px solid ${v("--muted", "#5f7480")};border-radius:3px;
+            font-size:12px;line-height:16px;text-align:center;color:${v("--ok", "#1a7f37")};font-weight:700;vertical-align:middle;}
       .tick.on{border-color:${v("--ok", "#1a7f37")};background:${v("--ok-bg", "#eef7ef")};}
     </style></head><body>
     <h1>${esc(title)}</h1>

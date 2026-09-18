@@ -103,25 +103,28 @@ export const REPORT_PAGES = [
     order: "installation_date.asc.nullslast",
     defaultSort: ["issue_flag", "city", "order_id"],
     print: { portrait: true, onePage: true },
+    /* `w` is a width in px, applied to the header cell. On screen it fixes the column; on the
+     * portrait sheet the table is laid out fixed at 100%, so these act as PROPORTIONS. The stage
+     * boxes are the point of the sheet and get the room; customer and time give it up (user, 18 Sep). */
     cols: [
-      { k: "installation_date", key: "col.install", date: 1 },
-      { k: "installation_time", key: "rep.instTime" },
-      { k: "city", key: "col.city" },
-      { k: "issue_flag", key: "rep.issueFlag", fmt: flagChip },
-      { k: "order_id", key: "col.order", bold: true },
-      { k: "customer_name", key: "col.customer" },
-      { k: "_recv", key: "rep.receive", fmt: (_v, r) => bar(r.recv_fab_done, r.recv_fab_total) },
-      { k: "_mat", key: "rep.materials", fmt: (_v, r) => bar(r.recv_mat_done, r.recv_mat_total) },
-      { k: "_st_receive", key: "rep.stReceive", tick: 1, fmt: (_v, r) => tick(r.recv_fab_total > 0 && r.recv_fab_done >= r.recv_fab_total) },
-      { k: "_st_cut",     key: "rep.stCut",     tick: 1, fmt: (_v, r) => tick(Number(r.prep_started) > 0) },
-      { k: "_st_hem",     key: "rep.stHem",     tick: 1, fmt: () => tick(false) },
-      { k: "_st_iron",    key: "rep.stIron",    tick: 1, fmt: () => tick(false) },
-      { k: "_st_mark",    key: "rep.stMark",    tick: 1, fmt: () => tick(false) },
-      { k: "_st_tape",    key: "rep.stTape",    tick: 1, fmt: () => tick(false) },
-      { k: "_st_fold",    key: "rep.stFold",    tick: 1, fmt: (_v, r) => tick(Number(r.prep_done) > 0) },
-      { k: "owl_curtains", key: "rep.curtains", n: 1, total: 1, heat: 1 },
-      { k: "report_meters", key: "col.meters", n: 1, total: 1, heat: 1 },
-      { k: "received_meters", key: "rep.recMeter", n: 1, total: 1, heat: 1 },
+      { k: "installation_date", key: "col.install", date: 1, w: 68, wrap: 1 },
+      { k: "installation_time", key: "rep.time", w: 54 },
+      { k: "city", key: "col.city", w: 64, wrap: 1 },
+      { k: "issue_flag", key: "rep.issueFlag", fmt: flagChip, w: 62 },
+      { k: "order_id", key: "col.order", bold: true, w: 60 },
+      { k: "customer_name", key: "col.customer", w: 90, wrap: 1 },
+      { k: "_recv", key: "rep.receive", fmt: (_v, r) => bar(r.recv_fab_done, r.recv_fab_total), w: 66, wrap: 1 },
+      { k: "_mat", key: "rep.materials", fmt: (_v, r) => bar(r.recv_mat_done, r.recv_mat_total), w: 70, wrap: 1 },
+      { k: "_st_receive", key: "rep.stReceive", tick: 1, w: 62, fmt: (_v, r) => tick(r.recv_fab_total > 0 && r.recv_fab_done >= r.recv_fab_total) },
+      { k: "_st_cut",     key: "rep.stCut",     tick: 1, w: 62, fmt: (_v, r) => tick(Number(r.prep_started) > 0) },
+      { k: "_st_hem",     key: "rep.stHem",     tick: 1, w: 62, fmt: () => tick(false) },
+      { k: "_st_iron",    key: "rep.stIron",    tick: 1, w: 62, fmt: () => tick(false) },
+      { k: "_st_mark",    key: "rep.stMark",    tick: 1, w: 62, fmt: () => tick(false) },
+      { k: "_st_tape",    key: "rep.stTape",    tick: 1, w: 62, fmt: () => tick(false) },
+      { k: "_st_fold",    key: "rep.stFold",    tick: 1, w: 62, fmt: (_v, r) => tick(Number(r.prep_done) > 0) },
+      { k: "owl_curtains", key: "rep.curtains", n: 1, total: 1, heat: 1, w: 52 },
+      { k: "report_meters", key: "col.meters", n: 1, total: 1, heat: 1, w: 62 },
+      { k: "received_meters", key: "rep.recMeter", n: 1, total: 1, heat: 1, w: 62 },
     ],
   },
   {
@@ -411,7 +414,7 @@ export async function render(mount, state, setFilters) {
     return esc(String(v));
   };
   const tdAttrs = (c, r) => {
-    const cls = [c.wide ? "wide" : "", c.n || c.money ? "num" : "", c.tick ? "tickcol" : ""].filter(Boolean).join(" ");
+    const cls = [c.wide ? "wide" : "", c.n || c.money ? "num" : "", c.tick ? "tickcol" : "", c.wrap ? "wrap" : ""].filter(Boolean).join(" ");
     return `${cls ? ` class="${cls}"` : ""}${c.heat ? heatStyle(r[c.k], maxes[c.k], c.heat) : ""}`;
   };
 
@@ -419,7 +422,7 @@ export async function render(mount, state, setFilters) {
   const table = el(`
     <table class="dense report">
       <thead><tr>${page.cols.map((c) =>
-        `<th data-sort="${esc(c.k)}" tabindex="0" aria-sort="${sortState(page, c.k)}" class="${c.wide ? "wide" : ""}${c.n || c.money ? " num" : ""}${c.tick ? " tickcol" : ""}">${esc(tr(c.key))}<span class="sarrow" aria-hidden="true">${sortGlyph(page, c.k)}</span></th>`).join("")}</tr></thead>
+        `<th data-sort="${esc(c.k)}" tabindex="0" aria-sort="${sortState(page, c.k)}" class="${c.wide ? "wide" : ""}${c.n || c.money ? " num" : ""}${c.tick ? " tickcol" : ""}${c.wrap ? " wrap" : ""}"${c.w ? ` style="width:${c.w}px"` : ""}>${esc(tr(c.key))}<span class="sarrow" aria-hidden="true">${sortGlyph(page, c.k)}</span></th>`).join("")}</tr></thead>
       <tbody></tbody>
       <tfoot><tr>${page.cols.map((c, i) => {
         if (i === 0) return `<th>${esc(tr("rep.total"))} (${rows.length})</th>`;

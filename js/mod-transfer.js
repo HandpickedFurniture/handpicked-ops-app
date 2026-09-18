@@ -107,10 +107,15 @@ async function renderTransfers(mount, state, setFilters) {
   const bar = $("#fbar", mount);
   const stateBox = $("#tstate", mount);
   const box = $("#tlist", mount);
-  const paintBar = () => renderFilterBar(bar, state, OPTIONS, setFilters);
-  paintBar();
 
   const fStatus = state.params.get("tstatus") || "";
+  /* Apply on the shared bar rebuilds the hash from the bar's fields alone, so the sub-tab (`sec`)
+   * and the transfer-status pick (`tstatus`) were dropped on every Apply (user, 18 Sep 2026 - the
+   * same fault Reports and the dashboard had). They ride along as extras. */
+  const secId = state.params.get("sec") || "transfers";
+  const setF = (f) => writeHash("transfer", f, { sec: secId === "transfers" ? "" : secId, tstatus: fStatus });
+  const paintBar = () => renderFilterBar(bar, state, OPTIONS, setF);
+  paintBar();
 
   let q = toQuery(state.filters);
   if (fStatus === "__none__") q += "&transfer_status=is.null";

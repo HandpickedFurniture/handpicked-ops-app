@@ -903,3 +903,7 @@ table.dense th.tickcol,table.dense td.tickcol{text-align:center;padding-left:3px
 .tick{display:inline-block;width:18px;height:18px;border:1.5px solid var(--muted);border-radius:4px;
   font-size:13px;line-height:16px;text-align:center;color:var(--ok);font-weight:700;vertical-align:middle;}
 .tick.on{border-color:var(--ok);background:var(--ok-bg);}
+
+/* Planning: fixed column widths (style="width" on the header) with wrapping in the cells that give
+   room to the stage boxes - the dense table otherwise sizes every column to its longest value. */
+table.dense.report th.wrap,table.dense.report td.wrap{white-space:normal;overflow-wrap:anywhere;}
