@@ -212,7 +212,9 @@ control with one value. Apply on the shared bar carries it along; without that t
 the query string from the filter fields alone and drop it.
 
 **3. Management dashboard** (`#/dashboard`, `#/eod`) — date-bucket tiles, every order-status field as
-a filter, billing totals, and an end-of-day report at team **and** overall level.
+a filter, billing totals, and an end-of-day report at team **and** overall level. Downloads as CSV
+or as a PDF of the page as drawn — headline numbers, both charts, the table, the filters in force
+named in the header (`printSheet`, see Reports).
 
 **4. Transfer of materials** (`#/transfer`) — two sub-tabs.
 

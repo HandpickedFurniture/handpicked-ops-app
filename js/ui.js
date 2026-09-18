@@ -163,6 +163,21 @@ export function printSheet(title, subtitle, innerHtml) {
       .chip.info{background:${v("--info-bg", "#e8f0f3")};color:${v("--brand", "#0f4c5c")};border-color:#c5d8de;}
       .chip.mute,.chip.wait{background:${v("--mute-bg", "#f2f5f7")};color:${v("--muted", "#5f7480")};border-color:${v("--line", "#d7dfe3")};}
       .foot{margin-top:10px;font-size:10px;color:${v("--muted", "#5f7480")};}
+      /* the dashboard's stat tiles and inline-SVG charts, as app.css draws them */
+      .statrow{display:flex;flex-wrap:wrap;gap:18px;margin:6px 0 12px;}
+      .stat{display:flex;flex-direction:column;gap:1px;}
+      .stat .sn{font-size:18px;font-weight:800;}
+      .stat .sl{font-size:9px;color:${v("--muted", "#5f7480")};text-transform:uppercase;letter-spacing:.03em;}
+      .chartwrap{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:0 0 12px;page-break-inside:avoid;}
+      .chartwrap .card{border:1px solid ${v("--line", "#d7dfe3")};border-radius:8px;padding:8px 10px;}
+      .chartwrap .spread{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;}
+      .chartwrap h4{margin:0;font-size:12px;}
+      .chartwrap details{display:none;}
+      .chart{width:100%;height:auto;}
+      .chart .track{fill:${v("--mute-bg", "#f2f5f7")};}
+      .chart .lbl{font-size:11px;fill:${v("--muted", "#5f7480")};}
+      .chart .val{font-size:11px;font-weight:700;fill:${v("--ink", "#16232a")};}
+      .dnone{color:${v("--muted", "#5f7480")};font-style:italic;}
     </style></head><body>
     <h1>${esc(title)}</h1>
     <p class="sub">${esc(subtitle)}</p>

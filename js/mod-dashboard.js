@@ -15,9 +15,12 @@ import {
   ORDER_STATUSES, STATUS_TONE, DATE_BUCKETS, PRODUCTION_STATES, bucketOf,
 } from "./config.js";
 import {
-  $, esc, el, chip, aed, aed0, num, fmtDate, today, toast, loading, selectHtml, downloadCsv, copyText,
+  $, esc, el, chip, aed, aed0, num, fmtDate, fmtDateTime, today, toast, loading, selectHtml, downloadCsv,
+  copyText, printSheet,
 } from "./ui.js";
-import { renderFilterBar, toQuery, deriveOptions, writeHash, has, toggle } from "./filters.js";
+import {
+  renderFilterBar, toQuery, deriveOptions, writeHash, has, toggle, vals, TEXT_FIELDS, MULTI_FIELDS,
+} from "./filters.js";
 import { chartCard, ORDINAL_RAMP } from "./charts.js";
 
 const COLS = [
@@ -196,8 +199,28 @@ export async function render(mount, state, setFilters) {
     box.appendChild(wrap);
   }
 
-  box.appendChild(el(`<div class="row" style="justify-content:flex-end">
-      <button class="btn sm" id="dlcsv">${esc(tr("dash.csv"))}</button></div>`));
+  box.appendChild(el(`<div class="row" style="justify-content:flex-end;gap:8px">
+      <button class="btn sm" id="dlcsv">${esc(tr("dash.csv"))}</button>
+      <button class="btn sm" id="dlpdf">${esc(tr("dash.pdf"))}</button></div>`));
+  /* The PDF is the page as drawn - the headline numbers, both charts (inline SVG prints as it
+   * renders) and the table - through the browser's print engine; see printSheet in ui.js. The
+   * header names every filter in force, including the four that sit outside the shared bar, so the
+   * sheet says what it is a sheet of. */
+  $("#dlpdf", box).addEventListener("click", () => {
+    const f = state.filters;
+    const parts = [];
+    TEXT_FIELDS.forEach((k) => { if (f[k]) parts.push(`${k}: ${f[k]}`); });
+    MULTI_FIELDS.forEach((k) => { const v = vals(f, k); if (v.length) parts.push(`${k}: ${v.join(", ")}`); });
+    if (fStatus) parts.push(`${tr("col.status")}: ${fStatus}`);
+    if (fTeam)   parts.push(`${tr("col.team")}: ${fTeam}`);
+    if (fReady)  parts.push(`${tr("st.ready")}: ${fReady}`);
+    if (fAdj)    parts.push(`${tr("col.adjustments")}: ${fAdj}`);
+    const sub = `${parts.length ? parts.join(" · ") : tr("f.none", { m: rows.length })} · ${rows.length} ${tr("col.order")} · ${fmtDateTime(new Date().toISOString())}`;
+    const html = (box.querySelector(".statrow")?.outerHTML ?? "")
+      + (box.querySelector(".chartwrap")?.outerHTML ?? "")
+      + (box.querySelector("table.dense")?.outerHTML ?? "");
+    if (!printSheet(tr("nav.dashboard"), sub, html)) toast(tr("rep.pdfBlocked"), "bad");
+  });
   $("#dlcsv", box).addEventListener("click", () => downloadCsv(`orders_${today()}.csv`, rows.map((r) => ({
     order_id: r.order_id, customer: r.customer_name, city: r.city,
     install_date: r.installation_date, bucket: r.date_bucket, status: r.status,
