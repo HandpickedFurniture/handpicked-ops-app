@@ -29,7 +29,7 @@ import { PREP_STAGES, ISSUE_FLAGS, flagOf } from "./config.js";
 import {
   $, esc, el, num, aed, aed0, fmtDate, fmtDateTime, today, loading, chip, downloadCsv, printSheet, toast,
 } from "./ui.js";
-import { renderFilterBar, toQuery, deriveOptions, vals, TEXT_FIELDS, MULTI_FIELDS } from "./filters.js";
+import { renderFilterBar, toQuery, deriveOptions, writeHash, vals, TEXT_FIELDS, MULTI_FIELDS } from "./filters.js";
 import { syncBar } from "./sync.js";
 
 /* The issue flag as a chip: tone from ISSUE_FLAGS, wording translated. */
@@ -360,7 +360,12 @@ export async function render(mount, state, setFilters) {
 
   const opts = await options();
   const bar_ = $("#repbar", mount);
-  const paintBar = () => renderFilterBar(bar_, state, opts, setFilters, CAPS);
+  /* Apply rebuilds the hash from the filter fields alone, and `rep` is not one of them - so the
+   * router's plain setFilters dropped it and every Apply on Planning landed on the default page,
+   * the Management dashboard (user, 18 Sep 2026). The page id rides along as an extra, the same
+   * way the Installation board keeps its outcome filter and the dashboard its four status filters. */
+  const setF = (f) => writeHash("reports", f, { rep: page.id });
+  const paintBar = () => renderFilterBar(bar_, state, opts, setF, CAPS);
   paintBar();
 
   const box = $("#repbody", mount);
