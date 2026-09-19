@@ -1,6 +1,10 @@
 -- Management alerts, the four-valued issue flag, the Management Dashboard views, and the anon
 -- lock-down.  18 September 2026.
 --
+-- SUPERSEDED IN PART by 20260919_management_alerts_v2.sql (19 Sep): 4/4 production status is now
+-- the next working day, 2/4 order value's YTD / MTD / per day are by the date the order was
+-- received (v_mgmt_order_received) and 'recent 3 days' is gone. Items 1, 2, 3 and 5 below stand.
+--
 -- APPLIED as eight migrations, in this order (the full statement text of each is in
 -- supabase_migrations.schema_migrations, which is the record of what actually ran):
 --

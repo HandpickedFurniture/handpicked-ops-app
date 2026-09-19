@@ -309,11 +309,17 @@ ingestion agent is the Python twin.
 The Management dashboard's first table is the 3D sheets **row by row** (`v_mgmt_schedule_rows` —
 an order can be on a sheet twice, and only the row knows whether it is the installation or the
 issue resolution), **Order-flagged rows from today onwards**, rolled up by date with a city split.
-ISR and Odd Time rows are never counted. The second is order value by installation date — year to
-date, month to date, the run rate, the last three days, today, the next five — from
+ISR and Odd Time rows are never counted. The second is order value on two bases, from
 `fn_mgmt_order_value`, the same function the 07:00 WhatsApp message is built from, so the page and
-the message cannot disagree; it is one row per order and is not narrowed by the bar. Under both,
-the four 07:00 messages exactly as they would read now (`fn_mgmt_body_*`).
+the message cannot disagree: **year to date, month to date and the run rate are by the date the
+order was received** (`v_mgmt_order_received` — the `PO-YYYYMMDD` date in the PO number, else the
+July backfill's Order Received Date column; every order except cancelled, because a sales figure
+has no business with the sheet's scheduling flag), while **today and the next five days are by
+installation date, Order rows only**, like Table 1. One row per order either way, not narrowed by
+the bar. Under both, the four 07:00 messages exactly as they would read now (`fn_mgmt_body_*`):
+the production-status one (4/4) is about the **next working day** — tomorrow, or Monday when
+tomorrow is a Sunday (`fn_mgmt_next_working_day`) — because at 07:00 today's vans are already
+loaded. SQL: `supabase/sql/20260919_management_alerts_v2.sql`.
 
 **10. Finance** (`#/finance`) — where the accounts team takes the figures for an invoice. Two grids
 behind one route. **Orders** is one row per billable PO line: order number, the billing SKU beside

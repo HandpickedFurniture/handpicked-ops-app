@@ -690,11 +690,15 @@ function printableTable(table) {
  * Odd Time never appear here; they are not filtered out, they were never counted (fn_issue_flag).
  * The shared bar narrows it further - a city, a customer, a window ref, a commercial name.
  *
- * Table 2 is order value by installation date - year to date, month to date, the run rate, the
- * last three days, today, the next five - from fn_mgmt_order_value, the same function the 07:00
- * WhatsApp message is built from, so the two can never disagree. It is one order per row (an order
- * has one PO value however many sheet rows it has), Order-flagged and not cancelled, and it is not
- * narrowed by the bar: a year-to-date figure filtered to one window ref is not a figure.
+ * Table 2 is order value on two bases, from fn_mgmt_order_value, the same function the 07:00
+ * WhatsApp message is built from, so the two can never disagree. Year to date, month to date and
+ * the run rate are by the date the order was RECEIVED (v_mgmt_order_received: the PO-YYYYMMDD date
+ * in the PO number, else the July backfill's Order Received Date column), every order except
+ * cancelled - a sales figure, so the Order flag (a 3D-sheet scheduling idea) does not apply. Today
+ * and the next five days are by installation date, Order-flagged and not cancelled, like Table 1
+ * (v_mgmt_order_value). One order per row either way (an order has one PO value however many sheet
+ * rows it has), and none of it is narrowed by the bar: a year-to-date figure filtered to one window
+ * ref is not a figure. There is no "recent 3 days" any more (user, 19 Sep 2026).
  *
  * Under both: the four 07:00 messages exactly as they would go out now.
  */
@@ -808,8 +812,6 @@ async function renderMgmt(box, state, paintBar) {
         <table class="dense report">
           <thead><tr><th>${esc(tr("col.install"))}</th><th class="num">${esc(tr("rep.orders"))}</th><th class="num">${esc(tr("rep.credits"))}</th></tr></thead>
           <tbody>
-            <tr class="grp"><td colspan="3">${esc(tr("rep.recent3"))}</td></tr>
-            ${(ov.recent || []).map((r) => dayRow(r)).join("")}
             ${dayRow(ov.today_row || { date: ov.today, orders: 0, value: 0 }, tr("bucket.today"))}
             <tr class="grp"><td colspan="3">${esc(tr("rep.next5"))}</td></tr>
             ${(ov.future || []).map((r) => dayRow(r)).join("")}
