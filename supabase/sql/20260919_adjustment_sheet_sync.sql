@@ -5,8 +5,11 @@
 --   adjustment_sheet_manual_hold   sheet_hold_reason + the queue view re-created with 'manual_hold'
 --                                  first - so a person can keep one row off the sheet (used on the
 --                                  first day for the nine rows that looked like restatements)
--- This file is the end state. The writer is ingestion-agent/sheet_sync.py, run at the end of every
--- 5-minute agent pass.
+-- This file is the end state of those two; 20260919_trello_and_finance_decisions.sql then adds
+-- accounting_alerts.city_override (a person routes an order with no city) and re-creates the
+-- queue view to take it before the roster - read that file for the view as it stands. The writer
+-- is ingestion-agent/sheet_sync.py inside the 2-hourly handpicked-finance job (finance_sync.py); it
+-- ran at the end of the 5-minute agent pass for two cycles on 19 Sep before the user moved it.
 --
 -- What this is for. Every adjustment - WhatsApp Chotu, the app's Chotu, the Installations module -
 -- already lands as one accounting_alerts row through fn_ops_add_adjustment. Until now somebody
