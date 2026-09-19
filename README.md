@@ -385,6 +385,21 @@ selection intact, because the two are usually pressed one after the other on the
 all-or-nothing across every adjustment on the order, which the per-adjustment Invoice created box
 now answers properly. `fn_finance_set_adjustment_status` still exists; nothing calls it.
 
+**Updated on 3D sheet is ticked by the machine now (19 Sep 2026).** The ingestion agent's
+`sheet_sync.py` appends every chargeable adjustment to the partner's Dubai or Abu Dhabi
+*Adjustments* tab within five minutes of capture and ticks this box itself
+(`sheet_updated_by = 'sheet-sync'`, plus `sheet_row_ref` = where it landed and `sheet_amount_aed`
+= the amount as written). Routing is by `v_ops_order_roster.city`; an order with no city anywhere
+is held and the Admin Alerts group hears about it. The Installations module's auto-proposed
+revisit charge goes only once it is marked **reviewed** - the Chotu capture for the same day
+usually already bills that visit. *Copy for sheet* and the bulk *Mark sheet updated* stay for the
+exceptions. Un-ticking a synced row puts it back in the queue: the sync finds its `Ref HP-<id>`
+on the sheet and re-ticks it rather than writing it twice; delete the sheet row first if a
+re-copy is what you want. A row whose amount changes after it reached the sheet is NOT edited
+there - `v_adjustment_sheet_drift` lists it and Admin Alerts asks for the sheet to be corrected by
+hand. Rule and views: `supabase/sql/20260919_adjustment_sheet_sync.sql`; writer:
+`ingestion-agent/sheet_sync.py`.
+
 The **cause** (`reason_code`) is an editable dropdown in the grid — the person on site picks it in
 the moment and the accounts team is the one who later has to explain the bill, so a wrong one used
 to be stuck. A row whose cause is one of the three that mean the work is OURS, still carrying money,
