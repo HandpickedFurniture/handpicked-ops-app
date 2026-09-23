@@ -5,7 +5,7 @@
  * TRANSLATED. Reverse that and writes start failing their CHECK.
  */
 
-export const BUILD = "2026-09-19.1";
+export const BUILD = "2026-09-22.1";
 
 /* Supabase project "handpicked-curtains". The publishable key is safe to ship: every table is
  * RLS-locked to the `authenticated` role and `anon` has no policy at all. The bearer token on each
@@ -309,6 +309,21 @@ export const ISSUE_FLAGS = [
 ];
 export const flagOf = (v) =>
   ISSUE_FLAGS.find((f) => f.value === v) || { value: v || "", key: "", tone: "mute" };
+
+/* ---------------------------------------------------------------- planning priority (22 Sep 2026)
+ * planning_status.priority - High / Medium / Low, or nothing at all, which is what almost every
+ * order holds. Set on the Planning sheet and shown as a colour down the row's left edge.
+ * Never colour-only: each carries a letter and a translated word, so the mark survives a monochrome
+ * printout and a reader who cannot tell the colours apart. Green is deliberately NOT among the
+ * tones - on that sheet green already means a stage is DONE, and a "low priority" row glowing the
+ * same green as a finished one is the one misreading this must not allow.
+ * The order of this list IS the order one tap moves through (see prioNext in mod-reports.js). */
+export const PLAN_PRIORITIES = [
+  { value: "high",   key: "prio.high",   glyph: "H", tone: "bad" },
+  { value: "medium", key: "prio.medium", glyph: "M", tone: "warn" },
+  { value: "low",    key: "prio.low",    glyph: "L", tone: "info" },
+];
+export const priorityOf = (v) => PLAN_PRIORITIES.find((p) => p.value === v) || null;
 
 /* ---------------------------------------------------------------- date buckets
  * Computed server-side in v_ops_order_roster against Asia/Dubai, so a laptop on the wrong timezone

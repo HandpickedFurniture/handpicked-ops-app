@@ -202,6 +202,17 @@ export function printSheet(title, subtitle, innerHtml, opts = {}) {
       .tick{display:inline-block;width:17px;height:17px;border:1px solid ${v("--muted", "#5f7480")};border-radius:3px;
             font-size:12px;line-height:16px;text-align:center;color:${v("--ok", "#1a7f37")};font-weight:700;vertical-align:middle;}
       .tick.on{border-color:${v("--ok", "#1a7f37")};background:${v("--ok-bg", "#eef7ef")};}
+      /* the priority mark (Planning): a letter in the order cell, the colour down the row's edge */
+      .prio{display:inline-block;width:15px;height:15px;border:1px dashed ${v("--line", "#d7dfe3")};border-radius:3px;
+            font-size:10px;line-height:13px;text-align:center;font-weight:800;color:${v("--muted", "#5f7480")};
+            vertical-align:middle;}
+      .prio.bad{border:1px solid ${v("--danger", "#c0392b")};background:${v("--bad-bg", "#fdecea")};color:${v("--danger", "#c0392b")};}
+      .prio.warn{border:1px solid ${v("--warn", "#9a5b00")};background:${v("--warn-bg", "#fff4e0")};color:${v("--warn", "#9a5b00")};}
+      .prio.info{border:1px solid ${v("--brand", "#0f4c5c")};background:${v("--info-bg", "#e8f0f3")};color:${v("--brand", "#0f4c5c")};}
+      tr.prio-bad td:first-child,tr.prio-warn td:first-child,tr.prio-info td:first-child{padding-left:8px;}
+      tr.prio-bad  td:first-child{box-shadow:inset 4px 0 0 ${v("--danger", "#c0392b")};}
+      tr.prio-warn td:first-child{box-shadow:inset 4px 0 0 ${v("--warn", "#9a5b00")};}
+      tr.prio-info td:first-child{box-shadow:inset 4px 0 0 ${v("--brand", "#0f4c5c")};}
     </style></head><body>
     <h1>${esc(title)}</h1>
     <p class="sub">${esc(subtitle)}</p>

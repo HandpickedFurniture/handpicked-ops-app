@@ -17,6 +17,10 @@ src = open("js/config.js", encoding="utf-8").read()
 
 # The database side of the contract. Keep in step with the migrations.
 EXPECTED = {
+    # receiving_expectations_status_check. fn_ops_set_receiving ALSO writes each value as
+    # receiving_events.event_type, whose CHECK is not mirrored here and must stay a superset of
+    # this set - 'pending' was missing from it until 18 Sep 2026 and every revert to Pending
+    # failed (supabase/sql/20260918_receiving_events_allow_pending.sql).
     "RECV_STATUSES": {"pending", "ordered", "received", "partial", "out_of_stock", "cancelled"},
     "QC_RESULTS": {"ok_fabric", "damaged_fabric", "insufficient_fabric", "wrong_fabric"},
     # preparation_events' CHECK still permits the four dropped stages plus four older legacy values;
@@ -67,6 +71,9 @@ EXPECTED = {
     "LOCATION_KINDS": {"warehouse", "rack", "shelf", "van", "site", "contractor", "office", "other"},
     "PHOTO_CONTEXTS": {"receiving", "prep", "dispatch", "order_status", "visit", "adjustment",
                        "transfer", "inventory", "other"},
+    # planning_status_priority_check. The column is nullable and NULL is "no priority" - the absence
+    # of a value, so it is not one of these (supabase/sql/20260922_planning_priority.sql).
+    "PLAN_PRIORITIES": {"high", "medium", "low"},
 }
 
 # The first two are pre-states; the rest are outcomes. Order matters here because the UI renders

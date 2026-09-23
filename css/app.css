@@ -915,3 +915,35 @@ button.tick:hover{border-color:var(--brand);}
 .tick.sys{background:var(--info-bg);border-color:#c5d8de;color:var(--brand);cursor:default;}
 input.plancmt{width:100%;min-width:110px;font-size:12px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:#fff;}
 input.plancmt:focus{border-color:var(--brand);outline:none;}
+
+/* Planning's priority mark (22 Sep 2026): High / Medium / Low, asked for as a colour and given no
+   column - the letter sits in the order cell and the colour runs down the row's left edge. Dashed
+   and grey = no priority yet, which is most rows. Green is not one of the three: on this sheet
+   green means a stage is DONE. */
+.prio{display:inline-block;width:17px;height:17px;border:1.5px dashed var(--line);border-radius:4px;
+  font-size:11px;line-height:14px;text-align:center;font-weight:800;color:var(--muted);
+  background:var(--card);vertical-align:middle;padding:0;}
+button.prio{cursor:pointer;}
+button.prio:hover{border-color:var(--brand);}
+.prio.bad{border:1.5px solid var(--danger);background:var(--bad-bg);color:var(--danger);}
+.prio.warn{border:1.5px solid var(--warn);background:var(--warn-bg);color:var(--warn);}
+.prio.info{border:1.5px solid var(--brand);background:var(--info-bg);color:var(--brand);}
+table.dense.report tr.prio-bad td:first-child,
+table.dense.report tr.prio-warn td:first-child,
+table.dense.report tr.prio-info td:first-child{padding-left:12px;}
+table.dense.report tr.prio-bad  td:first-child{box-shadow:inset 5px 0 0 var(--danger);}
+table.dense.report tr.prio-warn td:first-child{box-shadow:inset 5px 0 0 var(--warn);}
+table.dense.report tr.prio-info td:first-child{box-shadow:inset 5px 0 0 var(--brand);}
+
+/* Planning, one day at a time (19 Sep 2026): the day strip above the filter bar. The big date and
+   its arrows borrow the Schedule board's dress (.schdate); the week ahead is a row of chips in the
+   bucket row's shape, the day on screen filled in. Every control here switches the sheet at once. */
+.plandate{display:flex;align-items:center;justify-content:space-between;gap:10px 16px;flex-wrap:wrap;padding:10px 14px;margin-bottom:10px;}
+.daychips{display:flex;gap:6px;flex-wrap:wrap;}
+.daychips button{border:1.5px solid var(--line);background:var(--card);border-radius:10px;
+  padding:7px 11px;font-size:13px;font-weight:700;cursor:pointer;color:var(--txt);white-space:nowrap;min-height:34px;}
+.daychips button:hover{border-color:var(--brand);}
+.daychips button.on{background:var(--brand);border-color:var(--brand);color:#fff;}
+/* the server could not be reached and the sheet on screen is the device's copy - said in words */
+.plannote{background:var(--warn-bg);border:1px solid #f0d9ac;border-radius:var(--radius);padding:8px 12px;
+  font-size:13px;margin-bottom:10px;}

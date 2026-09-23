@@ -293,7 +293,42 @@ does not carry — are added at the foot of the list for a date from the picker 
 (`planning_extra`; number or customer name) and can be taken off again. Its PDF is **portrait A4 and
 one page** (`print: { portrait, onePage }`; `printSheet` scales the sheet to fit, never below half
 size), comments and ticks included. `tools/planning_onepager.py` in the project root produces the
-paper sheet from the command line for any date. SQL: `supabase/sql/20260918_planning_live.sql`. Every table downloads as CSV or as **PDF**: the PDF is the table as drawn (chips, shading, totals,
+paper sheet from the command line for any date. SQL: `supabase/sql/20260918_planning_live.sql`.
+
+**Priority, as a colour and no column** (22 Sep 2026). Each row can be marked **High / Medium / Low**
+from the small box in front of the order number: one tap moves to the next - none, High, Medium,
+Low, none - and unlike a stage tick it asks nothing first, because a priority reaches nobody but
+this sheet and the next tap takes it back. The mark colours the row's **left edge**, which is the
+half of it that reads from across the workshop, and it is never colour alone: the box carries the
+letter H / M / L and the title says the word, so a monochrome printout and a reader who cannot tell
+the colours apart both still have it. Red / amber / **blue**, not red / amber / green - on this
+sheet green already means a stage is done. A viewer sees the mark and not a button. It is written by
+`fn_ops_planning_priority` into `planning_status.priority` through the same offline queue as the
+ticks, so it survives a lift with no signal, and it rides in the view as `plan_priority`; the CSV
+names it even though the sheet gives it no column. Nothing downstream reads it - it is the sheet's
+own note about the order of the day's work, not a production state.
+SQL: `supabase/sql/20260922_planning_priority.sql`.
+
+**Planning works one day at a time** (19 Sep 2026). The workshop has several days' sheets in hand
+at once and moves between them all shift, so the day is not a From / To with an Apply: a **date
+strip** above the bar — previous / next, the week ahead as chips, a date box for any other day —
+switches the sheet the moment it is touched. The day rides in the hash as `?date=` (like the
+Schedule board's), so a link names a day and Back steps through the days visited; the bar's own
+bucket row and From / To stay off this page (`caps.singleDate` in `js/filters.js`), and Apply and
+Clear keep the day. The day is **remembered on the device** (`kops_plan_date`): opening Planning
+from the ribbon, the launcher or Home lands on the day that phone was last working on, unless it
+has passed. Every sheet fetched is **kept on the device** (`kops_plan_sheet_<day+filters>`, the last
+14, in memory for the session and in localStorage across reloads): a day opens from that copy at
+once — with the row it was scrolled to — while the server is asked again in the background, and is
+repainted only if the two differ. With no signal the copy stays up and says so, and ticks and
+comments still save through the offline queue. Rows fresh from the server are laid over with
+whatever `fn_ops_planning_set` / `fn_ops_planning_comment` writes the queue still holds, which is
+what stops a tick made in a lift from looking lost when its day is opened again; every tick and
+comment also updates the device's copy as it is made. The background refresh is not awaited: the
+router holds every navigation until a render resolves, and a request on a bad signal takes 20
+seconds to give up.
+
+Every table downloads as CSV or as **PDF**: the PDF is the table as drawn (chips, shading, totals,
 the active filters in the header), printed through the browser's own engine (`printSheet` in
 `js/ui.js`) — landscape A4, "Save as PDF" in the dialog — because that engine already lays out
 Arabic, Hindi and Bengali text, which a client-side PDF library would not without a megabyte of

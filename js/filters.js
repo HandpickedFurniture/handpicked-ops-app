@@ -42,6 +42,13 @@ export const FIELDS = [...TEXT_FIELDS, ...MULTI_FIELDS];
  * procurement, review and poversion exist only on v_ops_line_review, which the Comments page reads. */
 const OPTIONAL = ["fabstatus", "tailor", "prodstate", "procurement", "review", "poversion", "flag"];
 
+/* The bar's own date controls - the bucket row and From / To. A page that works ONE day at a time
+ * (Planning, 19 Sep 2026: the workshop's sheet is a sheet for a date) carries its own date strip
+ * and asks with `caps.singleDate` for these to stay off the bar: two date controls on one screen
+ * fight, and a bucket ticked on another page would AND itself onto the day and empty the sheet. The
+ * page still hands `from` / `to` to toQuery - that is how the day reaches the predicate. */
+const DATE_CONTROLS = ["bucket", "from", "to"];
+
 /* The selected values of one multi-field, always as a list.
  *
  * Tolerates a bare string, so a hand-typed link (?bucket=today) and any caller still handing over a
@@ -78,7 +85,10 @@ export function writeHash(route, filters, extra) {
 
 export function activeCount(f, caps) {
   const set = (k) => (MULTI_FIELDS.includes(k) ? vals(f, k).length > 0 : !!f[k]);
-  return FIELDS.filter((k) => set(k) && (!OPTIONAL.includes(k) || (caps && caps[k]))).length;
+  return FIELDS.filter((k) => set(k)
+    && (!OPTIONAL.includes(k) || (caps && caps[k]))
+    // the day a single-date page is on is where it is, not a filter it has applied
+    && !(caps && caps.singleDate && DATE_CONTROLS.includes(k))).length;
 }
 
 /* Build the PostgREST query string fragment for the current filters. */
@@ -101,7 +111,8 @@ export function toQuery(f, caps) {
   if (f.to)    q.push(`installation_date=lte.${f.to}`);
 
   if (m("sheet").length)  q.push(inList("sheet_status", m("sheet")));
-  if (m("bucket").length) q.push(inList("date_bucket", m("bucket")));
+  // a single-date page has no bucket row, so a bucket can only be a leftover from another page's link
+  if (m("bucket").length && !(caps && caps.singleDate)) q.push(inList("date_bucket", m("bucket")));
 
   /* `alteration` is exposed on the roster AND the status board, so this one predicate works in every
    * module rather than needing a per-module special case. Ticking both Yes and No says exactly what
@@ -234,6 +245,7 @@ export function renderFilterBar(mount, state, opts, onChange, caps) {
   const f = state.filters;
   const n = activeCount(f, caps);
   const collapsed = n === 0;
+  const singleDate = !!(caps && caps.singleDate);   // see DATE_CONTROLS
 
   /* Every value list this bar can draw. Held here rather than inlined in the markup so the search
    * box can repaint one list without rebuilding the bar around it. */
@@ -298,20 +310,20 @@ export function renderFilterBar(mount, state, opts, onChange, caps) {
         <span class="muted" data-toggle>▾</span>
       </div>
       <div class="fbody">
-        <div class="bucketrow" data-field="bucket" role="group" aria-label="${esc(tr("col.install"))}">
+        ${singleDate ? "" : `<div class="bucketrow" data-field="bucket" role="group" aria-label="${esc(tr("col.install"))}">
           ${DATE_BUCKETS.map((b) => `<label class="${picks.bucket.has(b.value) ? "on" : ""}">
              <input type="checkbox" data-cb="bucket" value="${esc(b.value)}"${
                picks.bucket.has(b.value) ? " checked" : ""}>${esc(b.glyph)} ${esc(tr(b.key))}</label>`).join("")}
-        </div>
+        </div>`}
         <div class="fgrid">
           <div><label class="f">${esc(tr("f.orderId"))}</label>
                <input type="text" name="order" value="${esc(f.order || "")}" inputmode="numeric"></div>
           <div><label class="f">${esc(tr("f.customer"))}</label>
                <input type="text" name="customer" value="${esc(f.customer || "")}"></div>
-          <div><label class="f">${esc(tr("f.dateFrom"))}</label>
+          ${singleDate ? "" : `<div><label class="f">${esc(tr("f.dateFrom"))}</label>
                <input type="date" name="from" value="${esc(f.from || "")}"></div>
           <div><label class="f">${esc(tr("f.dateTo"))}</label>
-               <input type="date" name="to" value="${esc(f.to || "")}"></div>
+               <input type="date" name="to" value="${esc(f.to || "")}"></div>`}
         </div>
         <div class="fchips">
           ${cbField("city", tr("f.city"))}
@@ -379,6 +391,8 @@ export function renderFilterBar(mount, state, opts, onChange, caps) {
     MULTI_FIELDS.forEach((k) => {
       if (bar.querySelector(`[data-field="${CSS.escape(k)}"]`)) next[k] = Array.from(picks[k]);
     });
+    // a single-date page's day is not in these; a range or bucket that rode in on a link is dropped
+    if (singleDate) DATE_CONTROLS.forEach((k) => { delete next[k]; });
     return next;
   };
 

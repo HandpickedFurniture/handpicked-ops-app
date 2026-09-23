@@ -23,9 +23,9 @@
  * quantities, a second for money, both light enough that the figure stays black on top. Status-like
  * columns are chips with a tone AND a word, never colour alone.
  */
-import { apiAll, rpc, submit, isSignedIn, isViewer, currentActor } from "./api.js";
+import { apiAll, rpc, submit, isSignedIn, isViewer, currentActor, pendingWrites } from "./api.js";
 import { tr, tv } from "./i18n.js";
-import { PREP_STAGES, ISSUE_FLAGS, flagOf } from "./config.js";
+import { PREP_STAGES, ISSUE_FLAGS, PLAN_PRIORITIES, STORAGE_PREFIX, flagOf, priorityOf } from "./config.js";
 import {
   $, esc, el, num, aed, aed0, fmtDate, fmtDateTime, today, loading, chip, downloadCsv, printSheet, toast,
   confirmSheet,
@@ -116,7 +116,10 @@ export const REPORT_PAGES = [
       { k: "installation_time", key: "rep.time", w: 54 },
       { k: "city", key: "col.city", w: 64, wrap: 1 },
       { k: "issue_flag", key: "rep.issueFlag", fmt: flagChip, w: 62 },
-      { k: "order_id", key: "col.order", bold: true, w: 60 },
+      // 60 -> 78: the order cell carries the priority mark too (prioCell). The printed sheet reads
+      // these widths as proportions of their own total, so the other columns give up a hair each
+      // rather than the sheet growing past the page.
+      { k: "order_id", key: "col.order", bold: true, w: 78 },
       { k: "customer_name", key: "col.customer", w: 90, wrap: 1 },
       { k: "_recv", key: "rep.receive", fmt: (_v, r) => bar(r.recv_fab_done, r.recv_fab_total), w: 66, wrap: 1 },
       { k: "_mat", key: "rep.materials", fmt: (_v, r) => bar(r.recv_mat_done, r.recv_mat_total), w: 70, wrap: 1 },
@@ -361,6 +364,33 @@ function tickCell(r, stage) {
 }
 const tick = (on) => `<span class="tick${on ? " on" : ""}">${on ? "✓" : ""}</span>`;
 
+/* ---------------------------------------------------------------- the priority mark (22 Sep 2026)
+ * High / Medium / Low, or nothing. Asked for as a colour, and given no column of its own: the mark
+ * rides INSIDE the order cell and colours the row's left edge, so the fourteen columns the sheet
+ * already fits on one portrait page keep their room (user, 22 Sep 2026).
+ *
+ * One tap moves to the next - none → High → Medium → Low → none - and unlike a stage tick it asks
+ * no question first. A tick reaches the Dashboard the same second and is worth a question; a
+ * priority reaches nobody but this sheet, and the next tap takes it back.
+ *
+ * A viewer sees the mark and not a button, and sees nothing at all where there is no priority -
+ * an empty box on every row of a sheet they cannot change is clutter, not information. */
+const prioNext = (v) => {
+  const i = PLAN_PRIORITIES.findIndex((p) => p.value === v);
+  return i < 0 ? PLAN_PRIORITIES[0].value : (PLAN_PRIORITIES[i + 1] || { value: null }).value;
+};
+const prioWords = (p) => `${tr("rep.priority")}: ${p ? tr(p.key) : tr("rep.prioNone")}`;
+function prioCell(r) {
+  const p = priorityOf(r.plan_priority);
+  const cls = `prio${p ? " " + p.tone : ""}`;
+  if (isViewer()) {
+    return p ? `<span class="${cls}" title="${esc(prioWords(p))}">${esc(p.glyph)}</span> ` : "";
+  }
+  return `<button type="button" class="${cls}" data-prio="${esc(r.order_id)}"
+            title="${esc(prioWords(p) + " — " + tr("rep.prioTap"))}"
+            aria-label="${esc(prioWords(p))}">${esc(p ? p.glyph : "")}</button> `;
+}
+
 function commentCell(r) {
   const v = r.plan_comment || "";
   if (isViewer()) return esc(v) || `<span class="muted">—</span>`;
@@ -373,54 +403,268 @@ function commentCell(r) {
  * second, and a thumb on a phone in a workshop lands on the wrong row often enough - and ticking
  * again undoes it, through the same question. Then optimistic: the box flips at once, the write
  * goes through the offline queue, and a refusal flips it back with the server's reason. The row
- * object is updated too, so a later sort or the CSV sees what was ticked without a re-fetch. */
-function wireLive(table, rows) {
-  const byId = new Map(rows.map((r) => [String(r.order_id), r]));
+ * object is updated too, so a later sort or the CSV sees what was ticked without a re-fetch.
+ *
+ * The row and the box are looked up in LIVE - the sheet as it stands NOW - rather than held from
+ * the click. Since the sheet paints from the device's copy and then again from the server (see
+ * renderLive), a table can be replaced while the question is still open; a tick applied to the
+ * old row object and a detached button would go to the server and never show on screen. */
+const LIVE = { key: null, rows: [], byId: new Map(), table: null };
+const liveRow = (id) => LIVE.byId.get(String(id));
+const liveBox = (id, stage) => LIVE.table && LIVE.table.querySelector(
+  `[data-tick="${CSS.escape(stage)}"][data-order="${CSS.escape(String(id))}"]`);
+const paintTick = (id, stage, on) => {
+  const b = liveBox(id, stage);
+  if (!b) return;
+  b.classList.toggle("on", on); b.textContent = on ? "✓" : ""; b.setAttribute("aria-pressed", String(on));
+};
+/* The mark AND the row's edge, which is the half of it that can be read from across the workshop. */
+const paintPrio = (id, v) => {
+  const b = LIVE.table && LIVE.table.querySelector(`[data-prio="${CSS.escape(String(id))}"]`);
+  if (!b) return;
+  const p = priorityOf(v);
+  b.className = `prio${p ? " " + p.tone : ""}`;
+  b.textContent = p ? p.glyph : "";
+  b.title = prioWords(p) + " — " + tr("rep.prioTap");
+  b.setAttribute("aria-label", prioWords(p));
+  const row = b.closest("tr");
+  if (row) {
+    PLAN_PRIORITIES.forEach((q) => row.classList.remove("prio-" + q.tone));
+    if (p) row.classList.add("prio-" + p.tone);
+  }
+};
+function wireLive(table) {
   table.addEventListener("click", async (e) => {
     const b = e.target.closest("[data-tick]");
     if (!b) return;
-    const r = byId.get(b.dataset.order);
-    const stage = b.dataset.tick;
-    if (!r) return;
-    const next = !r["plan_" + stage];
-    const who = `${r.order_id}${r.customer_name ? " · " + r.customer_name : ""}`;
+    const id = b.dataset.order, stage = b.dataset.tick;
+    const r0 = liveRow(id);
+    if (!r0) return;
+    const next = !r0["plan_" + stage];
+    const who = `${r0.order_id}${r0.customer_name ? " · " + r0.customer_name : ""}`;
     const ok = await confirmSheet(
       tr(next ? "rep.confirmTick" : "rep.confirmUntick", { stage: tr(STAGE_KEY[stage]), id: who }),
       tr(next ? "rep.confirmTickBody" : "rep.confirmUntickBody"));
     if (!ok) return;
-    r["plan_" + stage] = next;
-    b.classList.toggle("on", next); b.textContent = next ? "✓" : ""; b.setAttribute("aria-pressed", String(next));
+    const r = liveRow(id) || r0;          // the sheet may have been repainted while the question was open
+    r["plan_" + stage] = next; r._touched = Date.now();
+    paintTick(id, stage, next);
+    keepSheet(LIVE.key, LIVE.rows);
     try {
       await submit("fn_ops_planning_set", { p_order_id: r.order_id, p_stage: stage, p_on: next, p_actor: currentActor() });
     } catch (err) {
-      r["plan_" + stage] = !next;
-      b.classList.toggle("on", !next); b.textContent = !next ? "✓" : ""; b.setAttribute("aria-pressed", String(!next));
+      const r2 = liveRow(id) || r;
+      r2["plan_" + stage] = !next; r2._touched = Date.now();
+      paintTick(id, stage, !next);
+      keepSheet(LIVE.key, LIVE.rows);
+      toast(err.message || String(err), "bad");
+    }
+  });
+  /* Priority: optimistic like a tick, through the same queue, and put back with the server's
+   * reason if the write is refused. No confirmation - see prioCell. */
+  table.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-prio]");
+    if (!b) return;
+    const id = b.dataset.prio;
+    const r0 = liveRow(id);
+    if (!r0) return;
+    const prev = r0.plan_priority || null;
+    const next = prioNext(prev);
+    r0.plan_priority = next; r0._touched = Date.now();
+    paintPrio(id, next);
+    keepSheet(LIVE.key, LIVE.rows);
+    try {
+      await submit("fn_ops_planning_priority", { p_order_id: r0.order_id, p_priority: next, p_actor: currentActor() });
+    } catch (err) {
+      const r2 = liveRow(id) || r0;
+      r2.plan_priority = prev; r2._touched = Date.now();
+      paintPrio(id, prev);
+      keepSheet(LIVE.key, LIVE.rows);
       toast(err.message || String(err), "bad");
     }
   });
   table.addEventListener("change", async (e) => {
     const i = e.target.closest("[data-cmt]");
     if (!i) return;
-    const r = byId.get(i.dataset.cmt);
+    const r = liveRow(i.dataset.cmt);
     if (!r) return;
     const prev = r.plan_comment || "";
-    r.plan_comment = i.value.trim();
+    r.plan_comment = i.value.trim(); r._touched = Date.now();
+    keepSheet(LIVE.key, LIVE.rows);
     try {
       await submit("fn_ops_planning_comment", { p_order_id: r.order_id, p_comment: r.plan_comment, p_actor: currentActor() });
     } catch (err) {
-      r.plan_comment = prev; i.value = prev;
+      r.plan_comment = prev; i.value = prev; r._touched = Date.now();
+      keepSheet(LIVE.key, LIVE.rows);
       toast(err.message || String(err), "bad");
     }
   });
 }
 
+/* ---------------------------------------------------------------- one day at a time
+ * Planning works ONE date at a time (user, 19 Sep 2026). The sheet is a sheet for a day, and the
+ * workshop has several days' sheets in hand at once - today's, tomorrow's, the day after's - and
+ * moves between them all shift. So the day is not a From / To with an Apply: it is a strip above
+ * the bar - previous / next, the week ahead as chips, a date box for any other day - and every
+ * control on it switches the sheet the moment it is touched. The day rides in the hash as ?date=,
+ * the way the Schedule board's does, so a link still names a day and Back steps through the days
+ * visited; the bar's own bucket row and From / To stay off this page (caps.singleDate).
+ *
+ * The day is also REMEMBERED on the device. Opening Planning with no day in the hash - the ribbon,
+ * the launcher, the Home tile - lands on the day this phone was last working on, as long as that
+ * day has not passed: a phone in the workshop is on the same sheet all afternoon, and making its
+ * owner pick the day again on every visit is the Apply button back under another name. */
+const PLAN_DATE_KEY = STORAGE_PREFIX + "plan_date";
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+/* Calendar arithmetic in UTC on purpose: `new Date("…T00:00:00")` is LOCAL midnight, which
+ * toISOString() renders as 20:00 the day before anywhere east of Greenwich - Dubai included. */
+const isoShift = (iso, days) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+};
+const dayChip = (iso) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", timeZone: "UTC" });
+};
+const DAYS_AHEAD = 7;                                  // chips: today and the six days after it
+
+function planDate(state) {
+  const q = state.params.get("date");
+  if (q && ISO_DATE.test(q)) return q;
+  let kept = "";
+  try { kept = localStorage.getItem(PLAN_DATE_KEY) || ""; } catch (e) {}
+  return ISO_DATE.test(kept) && kept >= today() ? kept : today();
+}
+const rememberDate = (date) => { try { localStorage.setItem(PLAN_DATE_KEY, date); } catch (e) {} };
+
+/* Where the sheet was scrolled to, per day, for the session: coming back to a day lands on the
+ * row that was being worked, not at the top of the list again. */
+const SCROLL = new Map();
+
+/* The strip. Every control writes the day into the hash and the router repaints - no Apply. The
+ * other filters ride along untouched, as they do when a report sub-tab is clicked. */
+function dateStrip(page, f, date) {
+  const td = today();
+  const chips = Array.from({ length: DAYS_AHEAD }, (_, i) => isoShift(td, i));
+  const strip = el(`<div class="card plandate">
+    <div class="schdate">
+      <button type="button" class="btn ghost sm" data-shift="-1" title="${esc(tr("sch.prev"))}" aria-label="${esc(tr("sch.prev"))}">◀</button>
+      <div class="schdateinner">
+        <div class="schdatelabel">${esc(tr("rep.sheetFor"))}</div>
+        <div class="schdatebig">${esc(fmtDate(date))}</div>
+        <input type="date" name="plandate" value="${esc(date)}" aria-label="${esc(tr("rep.sheetFor"))}">
+      </div>
+      <button type="button" class="btn ghost sm" data-shift="1" title="${esc(tr("sch.next"))}" aria-label="${esc(tr("sch.next"))}">▶</button>
+    </div>
+    <div class="daychips" role="group" aria-label="${esc(tr("rep.sheetFor"))}">${chips.map((d, i) =>
+      `<button type="button" class="${d === date ? "on" : ""}" data-date="${d}" aria-pressed="${d === date}">${
+        i === 0 ? "● " + esc(tr("bucket.today")) : esc(dayChip(d))}</button>`).join("")}</div>
+  </div>`);
+  const go = (d) => {
+    if (!ISO_DATE.test(d) || d === date) return;
+    SCROLL.set(date, window.scrollY);
+    writeHash("reports", f, { rep: page.id, date: d });
+  };
+  strip.querySelectorAll("[data-shift]").forEach((b) =>
+    b.addEventListener("click", () => go(isoShift(date, Number(b.dataset.shift)))));
+  strip.querySelectorAll("[data-date]").forEach((b) => b.addEventListener("click", () => go(b.dataset.date)));
+  strip.querySelector('[name="plandate"]').addEventListener("change", (e) => go(e.target.value));
+  return strip;
+}
+
+/* ---------------------------------------------------------------- the sheet, kept on the device
+ * Switching days must be instant, and it must work in the workshop, where the signal comes and
+ * goes. So every sheet fetched is kept - in memory for the session and in localStorage across
+ * reloads - under its day and the rest of the filters, and a day opens from that copy at once
+ * while the server is asked again in the background (renderLive). The copy is updated by every
+ * tick and comment as it is made, so coming back to a day shows the work done on it whatever the
+ * network did in between. The last KEEP_SHEETS fetched stay on the device; older ones go. */
+const SHEET_PREFIX = STORAGE_PREFIX + "plan_sheet_";
+const SHEET_INDEX = STORAGE_PREFIX + "plan_sheets";      // key -> saved-at, for the pruning
+const KEEP_SHEETS = 14;
+const SHEETS = new Map();                                // key -> { rows, at }, this session
+const sheetKey = (date, query) => date + (query || "");
+const readIndex = () => { try { return JSON.parse(localStorage.getItem(SHEET_INDEX) || "{}") || {}; } catch (e) { return {}; } };
+function readSheet(key) {
+  if (SHEETS.has(key)) return SHEETS.get(key);
+  try {
+    const s = JSON.parse(localStorage.getItem(SHEET_PREFIX + key) || "null");
+    // a copy from before a reload: whatever the queue still holds for it goes on top
+    if (s && Array.isArray(s.rows)) { overlayQueue(s.rows); SHEETS.set(key, s); return s; }
+  } catch (e) {}
+  return null;
+}
+function keepSheet(key, rows) {
+  if (!key) return;
+  const s = { rows, at: Date.now() };
+  SHEETS.set(key, s);
+  try {
+    localStorage.setItem(SHEET_PREFIX + key, JSON.stringify(s));
+    const idx = readIndex();
+    idx[key] = s.at;
+    Object.entries(idx).sort((a, b) => b[1] - a[1]).slice(KEEP_SHEETS).forEach(([k]) => {
+      delete idx[k];
+      localStorage.removeItem(SHEET_PREFIX + k);
+    });
+    localStorage.setItem(SHEET_INDEX, JSON.stringify(idx));
+  } catch (e) {}                                          // quota: the session copy still works
+}
+function forgetSheet(key) {
+  SHEETS.delete(key);
+  try {
+    localStorage.removeItem(SHEET_PREFIX + key);
+    const idx = readIndex(); delete idx[key];
+    localStorage.setItem(SHEET_INDEX, JSON.stringify(idx));
+  } catch (e) {}
+}
+
+/* Ticks and comments still waiting in the offline queue, laid over rows fresh from the server.
+ * Without this a tick made in a lift LOOKS lost the moment the day is opened again: the server
+ * has not seen it yet, so its rows say the box is empty. The queue is in order, so a later write
+ * to the same box wins. */
+const PLAN_FNS = ["fn_ops_planning_set", "fn_ops_planning_comment", "fn_ops_planning_priority"];
+function overlayQueue(rows) {
+  const waiting = pendingWrites().filter((w) => PLAN_FNS.includes(w.fn));
+  if (!waiting.length) return rows;
+  const byId = new Map(rows.map((r) => [String(r.order_id), r]));
+  waiting.forEach((w) => {
+    const r = byId.get(String(w.args && w.args.p_order_id));
+    if (!r) return;
+    if (w.fn === "fn_ops_planning_set") r["plan_" + w.args.p_stage] = !!w.args.p_on;
+    else if (w.fn === "fn_ops_planning_priority") r.plan_priority = w.args.p_priority || null;
+    else r.plan_comment = w.args.p_comment;
+  });
+  return rows;
+}
+
+/* The ticks this device made while a request was OUT, laid over the rows that request brought
+ * back. The queue overlay above cannot cover them: a tick made a second after the fetch left and
+ * sent a second before its answer arrived is in neither the queue nor the answer, and the answer
+ * would blank the box. Every tick and comment stamps its row (_touched, in wireLive); a stamp
+ * later than the request's start wins over what the server said for those fields. */
+const PLAN_FIELDS = ["plan_receive", "plan_cut", "plan_hemming", "plan_iron", "plan_marking", "plan_taping", "plan_fold",
+                     "plan_comment", "plan_priority"];
+function overlayTouched(rows, kept, since) {
+  if (!kept) return rows;
+  const byId = new Map(rows.map((r) => [String(r.order_id), r]));
+  kept.forEach((c) => {
+    if (!(c._touched >= since)) return;
+    const r = byId.get(String(c.order_id));
+    if (!r) return;
+    PLAN_FIELDS.forEach((k) => { r[k] = c[k]; });
+    r._touched = c._touched;
+  });
+  return rows;
+}
+// the stamp is the device's, not the sheet's: two copies that differ only by it are the same sheet
+const sheetJson = (rows) => JSON.stringify(rows, (k, v) => (k === "_touched" ? undefined : v));
+
 /* Ad hoc orders for a date, appended after the sheet's own rows: a rework, a job the 3D sheet does
- * not carry. Kept in planning_extra and shown when the date being viewed matches (the bar's date
- * range, else today and the fortnight ahead). */
+ * not carry. Kept in planning_extra and shown for the day being viewed (renderLive sets from and
+ * to to that day). */
 function planDateRange(f) {
   const from = f.from || today();
-  const to = f.to || (f.from ? f.from : new Date(Date.now() + 4 * 3600 * 1000 + 13 * 86400000).toISOString().slice(0, 10));
-  return { from, to };
+  return { from, to: f.to || from };
 }
 async function extraRows(page, f, have) {
   const { from, to } = planDateRange(f);
@@ -502,12 +746,15 @@ export async function render(mount, state, setFilters) {
   // Management dashboard leads: it is the page management opens; the detail pages follow
   const pageId = state.params.get("rep") || "mgmt";
   const page = REPORT_PAGES.find((p) => p.id === pageId) || REPORT_PAGES[0];
+  // the live sheet works one day at a time and carries its own date strip - see caps.singleDate
+  const caps = page.live ? { ...CAPS, singleDate: true } : CAPS;
 
   mount.innerHTML = `
     <div class="sectionbar">
       <div class="subtabs" id="reptabs"></div>
       <span id="repsync"></span>
     </div>
+    <div id="repdate"></div>
     <div id="repbar"></div>
     <div id="repbody"></div>`;
   $("#repsync", mount).appendChild(syncBar());
@@ -528,9 +775,11 @@ export async function render(mount, state, setFilters) {
   /* Apply rebuilds the hash from the filter fields alone, and `rep` is not one of them - so the
    * router's plain setFilters dropped it and every Apply on Planning landed on the default page,
    * the Management dashboard (user, 18 Sep 2026). The page id rides along as an extra, the same
-   * way the Installation board keeps its outcome filter and the dashboard its four status filters. */
-  const setF = (f) => writeHash("reports", f, { rep: page.id });
-  const paintBar = () => renderFilterBar(bar_, state, opts, setF, CAPS);
+   * way the Installation board keeps its outcome filter and the dashboard its four status filters.
+   * The live sheet's day rides the same way, so Apply and Clear keep the day on screen. */
+  const date = page.live ? planDate(state) : null;
+  const setF = (f) => writeHash("reports", f, { rep: page.id, date });
+  const paintBar = () => renderFilterBar(bar_, state, opts, setF, caps);
   paintBar();
 
   const box = $("#repbody", mount);
@@ -538,35 +787,142 @@ export async function render(mount, state, setFilters) {
     await renderMgmt(box, state, paintBar);
     return;
   }
+  if (page.live) {
+    await renderLive(mount, box, page, state, setFilters, date, caps, paintBar);
+    return;
+  }
 
   loading(true, tr("t.loading"));
   let rows = [];
   try {
     rows = await apiAll(
-      `/rest/v1/${page.view}?select=*&order=${page.order}${page.extra || ""}${toQuery(state.filters, CAPS)}`,
+      `/rest/v1/${page.view}?select=*&order=${page.order}${page.extra || ""}${toQuery(state.filters, caps)}`,
       500);
   } catch (e) {
     loading(false);
     box.innerHTML = `<div class="card"><span class="err">${esc(e.message)}</span></div>`;
     return;
   }
-  // the live sheet: the ad hoc orders for the date being viewed come after the sheet's own rows
-  if (page.live) {
-    const have = new Set(rows.map((r) => String(r.order_id)));
-    rows = rows.concat(await extraRows(page, state.filters, have));
-  }
   loading(false);
 
   state.count = rows.length;
   paintBar();
-
-  const reload = () => render(mount, state, setFilters);
   if (!rows.length) {
     box.innerHTML = `<div class="card"><span class="muted">${esc(tr("t.empty"))}</span></div>`;
-    if (page.live && !isViewer()) box.appendChild(addBar(page, state.filters, ORDERS, reload));
     return;
   }
+  paintTable(box, page, rows, state.filters);
+}
 
+/* The live sheet for one day. It paints TWICE when it can: first from the copy this device kept
+ * of the day (instant, and the only paint there is when the workshop has no signal), then from the
+ * server, repainted only if the two differ. Every fresh fetch is laid over with whatever the
+ * offline queue still holds, and kept as the device's new copy. The day, the filters and the
+ * scroll position all survive the trip to another day and back; a comment being typed survives a
+ * repaint under it.
+ *
+ * With a copy on screen the server is asked in the BACKGROUND - not awaited - because the router
+ * holds every navigation until a render resolves, and a request on a bad signal takes 20 seconds
+ * to give up: awaiting it would make the next day's chip wait that long. A refresh that comes
+ * back after the day was switched (LIVE_SEQ moved on, or its box left the page) paints nothing. */
+let LIVE_SEQ = 0;
+async function renderLive(mount, box, page, state, setFilters, date, caps, paintBar) {
+  const seq = ++LIVE_SEQ;
+  rememberDate(date);
+  /* A visit that named no day (the ribbon, the launcher) now shows one: write it into the hash
+   * without navigating, so a link copied from here names the day and Back steps through days. */
+  if (state.params.get("date") !== date) {
+    const q = new URLSearchParams(location.hash.split("?")[1] || "");
+    q.set("date", date);
+    history.replaceState(null, "", "#/reports?" + q.toString());
+  }
+
+  /* The day IS the date filter: `f` is what the query and the ad hoc bar read, with the day as
+   * from and to; `rest` is what goes back into the hash, without it - a range or a bucket that
+   * rode in on an old link applies to nothing here and is not carried on. */
+  const rest = { ...state.filters };
+  delete rest.from; delete rest.to; delete rest.bucket;
+  const f = { ...rest, from: date, to: date };
+  const strip = $("#repdate", mount);
+  strip.innerHTML = "";
+  strip.appendChild(dateStrip(page, rest, date));
+  const note = el(`<div class="plannote" hidden></div>`);
+  strip.appendChild(note);
+
+  const query = toQuery(f, caps);
+  const key = sheetKey(date, query);
+  const reload = () => { forgetSheet(key); render(mount, state, setFilters); };
+
+  const paint = (rows) => {
+    /* A comment half-typed when the server's copy lands must not be wiped by the repaint: carry
+     * the text and the caret across, and put the focus back where it was. */
+    const a = document.activeElement;
+    const typing = a && box.contains(a) && a.dataset.cmt
+      ? { id: a.dataset.cmt, v: a.value, s: a.selectionStart, e: a.selectionEnd } : null;
+    LIVE.key = key; LIVE.rows = rows; LIVE.byId = new Map(rows.map((r) => [String(r.order_id), r])); LIVE.table = null;
+    state.count = rows.length;
+    paintBar();
+    box.innerHTML = "";
+    if (!rows.length) {
+      box.innerHTML = `<div class="card"><span class="muted">${esc(tr("t.empty"))}</span></div>`;
+    } else {
+      LIVE.table = paintTable(box, page, rows, f, reload);
+      wireLive(LIVE.table);
+    }
+    if (!isViewer()) box.appendChild(addBar(page, f, ORDERS, reload));
+    if (typing) {
+      const i = box.querySelector(`[data-cmt="${CSS.escape(typing.id)}"]`);
+      if (i) { i.value = typing.v; i.focus(); try { i.setSelectionRange(typing.s, typing.e); } catch (e) {} }
+    }
+  };
+
+  const cached = readSheet(key);
+  const restoreScroll = () => { if (SCROLL.has(date)) window.scrollTo(0, SCROLL.get(date)); };
+  const stale = () => seq !== LIVE_SEQ || !box.isConnected;
+
+  const refresh = async () => {
+    const since = Date.now();            // see overlayTouched
+    let rows;
+    try {
+      rows = await apiAll(`/rest/v1/${page.view}?select=*&order=${page.order}${page.extra || ""}${query}`, 500);
+      // the ad hoc orders for the day come after the sheet's own rows
+      const have = new Set(rows.map((r) => String(r.order_id)));
+      rows = rows.concat(await extraRows(page, f, have));
+    } catch (e) {
+      if (!cached) {
+        loading(false);
+        box.innerHTML = `<div class="card"><span class="err">${esc(e.message)}</span></div>`;
+        return;
+      }
+      if (stale()) return;
+      // the device's copy stays up, and says so: work on it still saves through the queue
+      note.textContent = "⚠ " + tr("rep.savedCopy", { t: fmtDateTime(new Date(cached.at).toISOString()) });
+      note.hidden = false;
+      return;
+    }
+    if (!cached) loading(false);
+    const current = readSheet(key);      // holds the ticks made while the request was out
+    rows = overlayTouched(overlayQueue(rows), current && current.rows, since);
+    const same = !!current && sheetJson(current.rows) === sheetJson(rows);
+    keepSheet(key, same ? current.rows : rows);
+    if (stale() || same) return;
+    paint(rows);
+    if (!cached) restoreScroll();
+  };
+
+  if (cached) {
+    paint(cached.rows);
+    restoreScroll();
+    refresh();                           // in the background - see the note above
+  } else {
+    loading(true, tr("t.loading"));
+    await refresh();
+  }
+}
+
+/* The table itself: totals row, heat shading, sortable headers, the CSV and PDF row under it.
+ * Returns the table element so the live sheet can wire its ticks to it. */
+function paintTable(box, page, rows, filters, reload) {
   const totals = {}, maxes = {};
   page.cols.forEach((c) => {
     if (c.total) totals[c.k] = rows.reduce((a, r) => a + (Number(r[c.k]) || 0), 0);
@@ -575,9 +931,11 @@ export async function render(mount, state, setFilters) {
 
   const cell = (c, r) => {
     const v = r[c.k];
+    // Planning's priority mark rides in the order cell instead of taking a column of its own
+    const mark = page.live && c.k === "order_id" ? prioCell(r) : "";
     // an ad hoc row says so on its order number, with a way to take it off the day again
     if (c.k === "order_id" && r._adhoc) {
-      return `${esc(String(v))} ${chip(tr("rep.adhoc"), "info")}${isViewer() ? "" :
+      return `${mark}${esc(String(v))} ${chip(tr("rep.adhoc"), "info")}${isViewer() ? "" :
         ` <button type="button" class="btn sm ghost" data-unadhoc="${esc(r.order_id)}" data-date="${esc(r._adhoc)}" title="${esc(tr("rep.removeAdhoc"))}">×</button>`}`;
     }
     if (c.fmt) return c.fmt(v, r);
@@ -585,7 +943,12 @@ export async function render(mount, state, setFilters) {
     if (c.date) return esc(fmtDate(v));
     if (c.money) return esc(aed(v));
     if (c.n) return esc(num(v));
-    return esc(String(v));
+    return mark + esc(String(v));
+  };
+  /* The priority as a colour down the row's left edge - see .prio-* in app.css. */
+  const rowClass = (r) => {
+    const p = page.live ? priorityOf(r.plan_priority) : null;
+    return p ? ` class="prio-${p.tone}"` : "";
   };
   const tdAttrs = (c, r) => {
     const cls = [c.wide ? "wide" : "", c.n || c.money ? "num" : "", c.tick ? "tickcol" : "", c.wrap ? "wrap" : ""].filter(Boolean).join(" ");
@@ -617,7 +980,7 @@ export async function render(mount, state, setFilters) {
     </table>`);
   const tb = table.querySelector("tbody");
   const fill = () => {
-    tb.innerHTML = sortRows(page, rows).map((r) => `<tr>${page.cols.map((c) =>
+    tb.innerHTML = sortRows(page, rows).map((r) => `<tr${rowClass(r)}>${page.cols.map((c) =>
       `<td${tdAttrs(c, r)}>${c.bold ? "<b>" : ""}${cell(c, r)}${c.bold ? "</b>" : ""}</td>`
     ).join("")}</tr>`).join("");
     table.querySelectorAll("th[data-sort]").forEach((th) => {
@@ -642,7 +1005,6 @@ export async function render(mount, state, setFilters) {
   box.appendChild(wrap);
 
   if (page.live) {
-    wireLive(table, rows);
     table.addEventListener("click", async (e) => {
       const b = e.target.closest("[data-unadhoc]");
       if (!b) return;
@@ -651,7 +1013,6 @@ export async function render(mount, state, setFilters) {
         reload();
       } catch (err) { toast(err.message || String(err), "bad"); }
     });
-    if (!isViewer()) box.appendChild(addBar(page, state.filters, ORDERS, reload));
   }
 
   box.appendChild(downloadRow(page.id, tr(page.key), rows.length,
@@ -661,10 +1022,13 @@ export async function render(mount, state, setFilters) {
         if (c.tick) o[tr(c.key)] = c.fmt(null, r).includes("✓") ? "yes" : "";
         else if (!c.k.startsWith("_")) o[tr(c.key)] = r[c.k];
       });
+      // the priority has no column on the sheet, so it is named here rather than left out of the file
+      if (page.live) o[tr("rep.priority")] = r.plan_priority ? tr(priorityOf(r.plan_priority).key) : "";
       return o;
     }),
     () => printableTable(wrap.querySelector("table")),
-    state.filters, page.print));
+    filters, page.print));
+  return table;
 }
 
 /* The sheet as it prints: a comment box becomes its text, a tick button a plain box, the ad hoc
@@ -674,7 +1038,7 @@ function printableTable(table) {
   t.querySelectorAll("input.plancmt").forEach((i) => {
     const span = document.createElement("span"); span.textContent = i.value; i.replaceWith(span);
   });
-  t.querySelectorAll("button.tick").forEach((b) => {
+  t.querySelectorAll("button.tick,button.prio").forEach((b) => {
     const span = document.createElement("span"); span.className = b.className; span.textContent = b.textContent; b.replaceWith(span);
   });
   t.querySelectorAll("[data-unadhoc]").forEach((b) => b.remove());
