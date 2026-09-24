@@ -98,21 +98,36 @@ function markSheet(targetRows, after) {
     const on = !m.sheet.querySelector('[name="bulkoff"]').checked;
     m.close();
     if (!await confirmSheet(tr("rev.markAll", { n }), tr("rev.markAllConfirm", { n }))) return;
-
-    loading(true, tr("bulk.working", { n }));
-    try {
-      for (let i = 0; i < n; i += MARK_CHUNK) {
-        await submit("fn_ops_set_line_review_bulk", {
-          p_line_ids: targetRows.slice(i, i + MARK_CHUNK).map((r) => r.line_id),
-          p_status: status, p_on: on,
-          p_actor: currentActor(), p_op: crypto.randomUUID(),
-        });
-      }
-    } finally { loading(false); }
-    if (after) after();
-    toast(queueDepth() ? tr("t.queued") : tr("bulk.done", { n }), "ok");
-    window.dispatchEvent(new CustomEvent("ops:rerender"));
+    await applyMark(targetRows, status, on, after);
   };
+}
+
+/* The write behind every bulk path. The toast used to say "{n} updated" whatever happened - the
+ * requested count, never checked against submit()'s answer - so a Mark all that changed nothing, or
+ * one the server parked, read exactly like success. It now says how many lines actually move (from
+ * the marks the rows already carry) and says so plainly when a chunk queued or failed. */
+async function applyMark(targetRows, status, on, after) {
+  const n = targetRows.length;
+  const changes = targetRows.filter((r) => (r.marks || []).includes(status) !== on).length;
+  const results = [];
+  loading(true, tr("rev.linesWorking", { n }));
+  try {
+    for (let i = 0; i < n; i += MARK_CHUNK) {
+      results.push(await submit("fn_ops_set_line_review_bulk", {
+        p_line_ids: targetRows.slice(i, i + MARK_CHUNK).map((r) => r.line_id),
+        p_status: status, p_on: on,
+        p_actor: currentActor(), p_op: crypto.randomUUID(),
+      }));
+    }
+  } finally { loading(false); }
+  if (after) after();
+
+  const failed = results.filter((r) => r.status === "failed");
+  if (failed.length) toast(failed[0].error || tr("t.failed", { n: failed.length }), "bad");
+  else if (results.some((r) => r.status === "queued")) toast(tr("t.queued"), "");
+  else if (!changes) toast(tr("rev.linesNoop", { n }), "");
+  else toast(tr("rev.linesDone", { c: changes, n }), "ok");
+  window.dispatchEvent(new CustomEvent("ops:rerender"));
 }
 
 export async function render(mount, state, setFilters) {
@@ -287,6 +302,35 @@ export async function render(mount, state, setFilters) {
   const procChips = (r) => (r.procurement_req || [])
     .map((p) => chip(tv(PROCUREMENT_REQS, p), "warn", "!")).join(" ");
 
+  /* Mark a whole order read from its first row, without filtering down to it first. It covers the
+   * order's lines in the FILTERED set, drawn or not - the same rule as Mark all - and the confirm
+   * says how many are still unread, so it is never a blind tick. */
+  const orderRows = new Map();
+  rows.forEach((r) => {
+    if (!orderRows.has(r.order_id)) orderRows.set(r.order_id, []);
+    orderRows.get(r.order_id).push(r);
+  });
+
+  const orderMarkHtml = (orderId) => {
+    if (isViewer()) return "";
+    const lines = orderRows.get(orderId) || [];
+    return lines.every((x) => x.is_read)
+      ? `<div style="margin-top:4px">${chip(tr("rev.orderAllRead"), "ok", "✓")}</div>`
+      : `<button class="btn sm" data-markorder="${esc(orderId)}" style="margin-top:4px"
+           >${esc(tr("rev.markOrder"))}</button>`;
+  };
+
+  wrap.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-markorder]");
+    if (!b) return;
+    const o = b.dataset.markorder;
+    const lines = orderRows.get(o) || [];
+    const u = lines.filter((x) => !x.is_read).length;
+    if (!await confirmSheet(tr("rev.markOrder"),
+        tr("rev.markOrderConfirm", { n: lines.length, o, u }))) return;
+    await applyMark(lines, "read", true);
+  });
+
   function drawRow(r, isFirstOfOrder) {
     const marks = new Set(r.marks || []);
     const actioned = new Set(r.marks_actioned || []);
@@ -300,7 +344,7 @@ export async function render(mount, state, setFilters) {
                   // a revised PO is the one worth re-reading, so it is called out rather than left
                   // to the filter; v1 is every other order and would be noise on 4,000 rows
                   Number(r.version_no) > 1 ? " " + chip("v" + r.version_no, "warn") : ""
-                }<div class="muted">${esc(r.customer_name || "")}</div>`
+                }<div class="muted">${esc(r.customer_name || "")}</div>${orderMarkHtml(r.order_id)}`
               : `<span class="muted">${esc(r.order_id)}</span>`}</td>
         ${isViewer() ? "" : `<td><input type="checkbox" data-read${marks.has("read") ? " checked" : ""}
               aria-label="${esc(tr("rev.read"))} ${esc(r.window_ref || r.line_id)}"
