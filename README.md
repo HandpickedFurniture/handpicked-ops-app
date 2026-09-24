@@ -363,8 +363,15 @@ order was received** (`v_mgmt_order_received` — the `PO-YYYYMMDD` date in the 
 July backfill's Order Received Date column; every order except cancelled, because a sales figure
 has no business with the sheet's scheduling flag), while **today and the next five days are by
 installation date, Order rows only**, like Table 1. One row per order either way, not narrowed by
-the bar. Under both, the four 07:00 messages exactly as they would read now (`fn_mgmt_body_*`):
-the production-status one (4/4) is about the **next working day** — tomorrow, or Monday when
+the bar. The third table (24 Sep 2026) is **fabric metres for the next 7 days**, per date and city,
+from `fn_mgmt_fabric`. That is the same function the fifth 07:00 message (`fn_mgmt_body_fabric`,
+5/5) is built from. **Total** is the Planning sheet's Fabric (m): metres received where the fabric
+is in, else metres ordered. **Received** is `received_meters`. **Ready** is the total of orders
+whose `production_state` is `packed` (packed on Preparation, or Fold ticked on Planning). **Yet to
+be done** is total minus ready. ISR and cancelled rows are left out. Ready only moves when the
+workshop records finished work, so it reads 0 when nobody ticks Fold. SQL:
+`supabase/sql/20260924_mgmt_fabric.sql`. Under the tables, the five 07:00 messages exactly as they
+would read now (`fn_mgmt_body_*`): the production-status one (4/5) is about the **next working day** — tomorrow, or Monday when
 tomorrow is a Sunday (`fn_mgmt_next_working_day`) — because at 07:00 today's vans are already
 loaded. SQL: `supabase/sql/20260919_management_alerts_v2.sql`.
 

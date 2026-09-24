@@ -1208,7 +1208,12 @@ function printableTable(table) {
  * rows it has), and none of it is narrowed by the bar: a year-to-date figure filtered to one window
  * ref is not a figure. There is no "recent 3 days" any more (user, 19 Sep 2026).
  *
- * Under both: the four 07:00 messages exactly as they would go out now.
+ * Table 3 is fabric metres for the next 7 days, per date and city: total (the Planning sheet's
+ * Fabric (m)), received, ready (orders packed) and still to do - from fn_mgmt_fabric, the same
+ * function the fifth 07:00 message is built from (user, 24 Sep 2026). ISR and cancelled rows are
+ * not counted; like Table 2 it is not narrowed by the bar.
+ *
+ * Under them: the five 07:00 messages exactly as they would go out now.
  */
 const MGMT_COLS = [
   { k: "orders", key: "rep.orders", heat: 1 },
@@ -1222,13 +1227,14 @@ const MGMT_COLS = [
 async function renderMgmt(box, state, paintBar) {
   const td = today();
   loading(true, tr("t.loading"));
-  let rows = [], ov = null, previews = null;
+  let rows = [], ov = null, fab = [], previews = null;
   try {
-    [rows, ov] = await Promise.all([
+    [rows, ov, fab] = await Promise.all([
       apiAll(`/rest/v1/v_mgmt_schedule_rows?select=install_date,city,order_id,issue_flag,window_count,owl_blinds,owl_curtains,owl_total,credits,sheet_windows,order_known`
         + `&issue_flag=eq.Order&install_date=gte.${td}&order=install_date.asc,city.asc,install_time.asc`
         + toQuery(state.filters, CAPS), 500),
       rpc("fn_mgmt_order_value", {}),
+      rpc("fn_mgmt_fabric", {}).catch(() => []),      // a missing table 3 must not blank tables 1 and 2
     ]);
   } catch (e) {
     loading(false);
@@ -1328,9 +1334,49 @@ async function renderMgmt(box, state, paintBar) {
       </div>`);
     box.appendChild(t2);
   }
+  /* ---- Table 3: fabric metres, by date, city split beneath - see the note at the top */
+  const FAB_COLS = [
+    { k: "total_m", key: "rep.fabTotal" }, { k: "received_m", key: "rep.fabRecv" },
+    { k: "ready_m", key: "rep.fabReady" }, { k: "todo_m", key: "rep.fabTodo" },
+  ];
+  const fabBy = new Map();
+  const fabZero = () => ({ orders: 0, total_m: 0, received_m: 0, ready_m: 0, todo_m: 0 });
+  const fabAdd = (b, r) => { b.orders += Number(r.orders) || 0; FAB_COLS.forEach((c) => { b[c.k] += Number(r[c.k]) || 0; }); };
+  const fabAll = fabZero();
+  (fab || []).forEach((r) => {
+    if (!fabBy.has(r.install_date)) fabBy.set(r.install_date, { all: fabZero(), cities: [] });
+    const d = fabBy.get(r.install_date);
+    fabAdd(d.all, r); d.cities.push(r); fabAdd(fabAll, r);
+  });
+  const mCell = (v, muted) => `<td class="num${muted ? " muted" : ""}">${esc(num(Math.round(Number(v) || 0)))}</td>`;
+  const fabRows = Array.from(fabBy.entries()).map(([d, v]) => {
+    const one = v.cities.length === 1 ? ` <span class="muted">· ${esc(v.cities[0].city)}</span>` : "";
+    const split = v.cities.length > 1 ? v.cities.map((c) =>
+      `<tr class="sub"><td class="muted">↳ ${esc(c.city)}</td><td class="num muted">${esc(num(c.orders))}</td>${
+        FAB_COLS.map((col) => mCell(c[col.k], true)).join("")}</tr>`).join("") : "";
+    return `<tr><td><b>${esc(fmtDate(d))}</b>${one}</td><td class="num">${esc(num(v.all.orders))}</td>${
+      FAB_COLS.map((col) => mCell(v.all[col.k])).join("")}</tr>${split}`;
+  }).join("");
+  const t3 = el(`
+    <div class="card" style="padding:0">
+      <div class="cardhead">
+        <h3>${esc(tr("rep.mgmtFabric"))}</h3>
+        <span class="muted">${esc(tr("rep.mgmtNote3"))}</span>
+      </div>
+      <div class="scrollx">
+      <table class="dense report">
+        <thead><tr><th>${esc(tr("col.install"))}</th><th class="num">${esc(tr("rep.orders"))}</th>${
+          FAB_COLS.map((c) => `<th class="num">${esc(tr(c.key))}</th>`).join("")}</tr></thead>
+        <tbody>${fabRows || `<tr><td colspan="${FAB_COLS.length + 2}" class="muted">${esc(tr("t.empty"))}</td></tr>`}</tbody>
+        <tfoot><tr><th>${esc(tr("rep.total"))} (${fabBy.size} ${esc(tr("rep.days"))})</th><th class="num">${esc(num(fabAll.orders))}</th>${
+          FAB_COLS.map((c) => `<th class="num">${esc(num(Math.round(fabAll[c.k])))}</th>`).join("")}</tr></tfoot>
+      </table></div>
+    </div>`);
+  box.appendChild(t3);
+
   pdfBtn.addEventListener("click", () => {
     const sub = `${filterSummary(state.filters)} · ${fmtDateTime(new Date().toISOString())}`;
-    const html = Array.from(box.querySelectorAll(".card")).slice(0, 2).map((c) =>
+    const html = Array.from(box.querySelectorAll(".card")).slice(0, 3).map((c) =>
       `<h2 style="font-size:14px;margin:12px 0 2px">${esc(c.querySelector("h3")?.textContent ?? "")}</h2>` +
       `<p class="muted" style="font-size:10px;margin:0 0 6px">${esc(c.querySelector(".cardhead .muted")?.textContent ?? "")}</p>` +
       (c.querySelector(".statrow")?.outerHTML ?? "").replace(/class="statrow"/, 'class="statrow" style="display:flex;gap:18px;margin:4px 0 8px"') +
@@ -1349,6 +1395,7 @@ async function renderMgmt(box, state, paintBar) {
       previews = await Promise.all([
         rpc("fn_mgmt_body_owl", {}), rpc("fn_mgmt_body_order_value", {}),
         rpc("fn_mgmt_body_install_status", {}), rpc("fn_mgmt_body_production_status", {}),
+        rpc("fn_mgmt_body_fabric", {}),
       ]);
       host.innerHTML = previews.map((t) => `<pre class="wa">${esc(String(t || ""))}</pre>`).join("");
     } catch (err) {
