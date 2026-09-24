@@ -309,6 +309,18 @@ names it even though the sheet gives it no column. Nothing downstream reads it -
 own note about the order of the day's work, not a production state.
 SQL: `supabase/sql/20260922_planning_priority.sql`.
 
+**Frozen titles, city subtotals, tick to add up** (24 Sep 2026). The sheet scrolls inside its own
+box (`.planscroll`, sized to the window by `fitPlan`), because a table that scrolls sideways cannot
+pin its header to the window. Inside that box the column titles stay at the top and the foot stays
+at the bottom. The foot is three **subtotal rows**, not one total: Abu Dhabi, Dubai, and Abu Dhabi +
+Dubai, each adding curtains, fabric (m) and metres received. **ISR rows count in none of them**, and
+rows with no city count in neither city (`subtotals` on the page). Each foot row sticks at its own
+`bottom`, measured in `fitPlan`. A single sticky `<tfoot>` leaves gaps the body shows through, and
+the `top` from `table.dense th` has to be cleared or it beats `bottom`. A **checkbox on every row**
+(the header box ticks every row) adds up the ticked orders' fabric and received metres in a bar
+above the sheet, with a Clear button. It writes nothing: the ticks belong to the device, are kept
+per sheet for the session, and are taken off the printed sheet (`printableTable`).
+
 **Planning works one day at a time** (19 Sep 2026). The workshop has several days' sheets in hand
 at once and moves between them all shift, so the day is not a From / To with an Apply: a **date
 strip** above the bar — previous / next, the week ahead as chips, a date box for any other day —

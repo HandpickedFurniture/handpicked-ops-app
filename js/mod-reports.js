@@ -108,10 +108,17 @@ export const REPORT_PAGES = [
     defaultSort: ["issue_flag", "city", "order_id"],
     print: { portrait: true, onePage: true },
     live: true,
+    /* The foot of the sheet is three subtotal rows rather than one total - Abu Dhabi, Dubai, and the
+     * two together - with ISR rows left out of all three: a rework's metres are not the day's
+     * production (user, 24 Sep 2026). Rows with no city count in neither. */
+    subtotals: { by: "city", groups: ["Abu Dhabi", "Dubai"], skipFlag: "ISR" },
     /* `w` is a width in px, applied to the header cell. On screen it fixes the column; on the
      * portrait sheet the table is laid out fixed at 100%, so these act as PROPORTIONS. The stage
      * boxes are the point of the sheet and get the room; customer and time give it up (user, 18 Sep). */
     cols: [
+      // screen only: tick orders to add their fabric up in the bar above the sheet (see pickBar);
+      // the column is taken out of the printed sheet, so the widths below keep their proportions
+      { k: "_sel", key: "rep.pick", sel: 1, w: 30 },
       { k: "installation_date", key: "col.install", date: 1, w: 68, wrap: 1 },
       { k: "installation_time", key: "rep.time", w: 54 },
       { k: "city", key: "col.city", w: 64, wrap: 1 },
@@ -501,6 +508,80 @@ function wireLive(table) {
   });
 }
 
+/* ---------------------------------------------------------------- tick to add up (24 Sep 2026)
+ * A box on every row of the sheet, and a bar above it that adds up the fabric metres of whatever
+ * is ticked - the sum the team was doing on a calculator (user, 24 Sep 2026). It writes nothing:
+ * the ticks are this device's, kept per sheet (day + filters) for the session, so a re-sort or the
+ * server's repaint keeps them and another day starts empty. A viewer can use it too. */
+const PICKS = new Map();                                 // sheet key -> Set of order ids
+const picks = () => {
+  if (!PICKS.has(LIVE.key)) PICKS.set(LIVE.key, new Set());
+  return PICKS.get(LIVE.key);
+};
+const pickSum = (ids, k) => ids.reduce((a, id) => a + (Number((liveRow(id) || {})[k]) || 0), 0);
+function pickBar() {
+  const b = el(`<div class="selbar planpick" role="status" aria-live="polite"></div>`);
+  b.addEventListener("click", (e) => {
+    if (!e.target.closest("[data-pickclear]")) return;
+    picks().clear();
+    paintPicks();
+  });
+  return b;
+}
+/* The bar, the boxes and the row shading, from the set. Rows that are no longer on the sheet (the
+ * server dropped an order since it was ticked) fall out of the sum rather than haunting it. */
+function paintPicks() {
+  const set = picks();
+  [...set].forEach((id) => { if (!liveRow(id)) set.delete(id); });
+  const ids = [...set];
+  const bar = LIVE.table && LIVE.table.closest("#repbody")?.querySelector(".planpick");
+  if (bar) {
+    bar.innerHTML = ids.length
+      ? `<span class="selcount"><b>${esc(tr("rep.picked", { n: ids.length }))}</b></span>
+         <span class="picksum">${esc(tr("rep.pickFabric"))}: <b>${esc(num(pickSum(ids, "report_meters")))} m</b></span>
+         <span class="picksum">${esc(tr("rep.pickRecv"))}: <b>${esc(num(pickSum(ids, "received_meters")))} m</b></span>
+         <button type="button" class="btn sm" data-pickclear>${esc(tr("rep.pickClear"))}</button>`
+      : `<span class="selcount">☐ ${esc(tr("rep.pickNone"))}</span>`;
+  }
+  if (!LIVE.table) return;
+  LIVE.table.querySelectorAll("input[data-pick]").forEach((cb) => {
+    cb.checked = set.has(cb.dataset.pick);
+    cb.closest("tr").classList.toggle("selected", cb.checked);
+  });
+  const all = LIVE.table.querySelector("input[data-pickall]");
+  if (all) {
+    all.checked = ids.length > 0 && ids.length === LIVE.rows.length;
+    all.indeterminate = ids.length > 0 && ids.length < LIVE.rows.length;
+  }
+}
+
+/* The sheet scrolls inside its own box, so its column titles stay on screen (thead sticks to the
+ * top of the box) and so do the subtotals (tfoot sticks to the bottom). A table that scrolls
+ * sideways cannot pin its header to the WINDOW - overflow-x makes the box the scroll container -
+ * which is why the titles used to scroll away (user, 24 Sep 2026). The box is sized to what is
+ * left of the window under the app header, the tabs and the tick bar, all measured, because the
+ * header wraps onto more lines on a narrow screen. */
+const restsAt = (node) => {
+  if (!node) return 0;
+  const s = getComputedStyle(node);
+  return s.position === "sticky" ? (parseFloat(s.top) || 0) + node.offsetHeight : 0;
+};
+function fitPlan() {
+  const box = LIVE.table && LIVE.table.closest(".planscroll");
+  if (!box || !box.isConnected) return;
+  const chrome = Math.max(restsAt($("#hdr")), restsAt($("nav.tabs")));
+  const bar = box.parentElement.querySelector(".planpick");
+  if (bar) bar.style.top = chrome + "px";
+  box.style.maxHeight = `calc(100vh - ${chrome + (bar ? bar.offsetHeight + 10 : 0) + 8}px)`;
+  // the subtotal rows, stacked from the bottom up: each sits on the heights of the rows below it
+  let under = 0;
+  [...LIVE.table.querySelectorAll("tfoot tr")].reverse().forEach((tr) => {
+    tr.querySelectorAll("th").forEach((th) => { th.style.bottom = under + "px"; });
+    under += Math.floor(tr.getBoundingClientRect().height);   // down, never up: overlap a hair, no gap
+  });
+}
+window.addEventListener("resize", fitPlan);
+
 /* ---------------------------------------------------------------- one day at a time
  * Planning works ONE date at a time (user, 19 Sep 2026). The sheet is a sheet for a day, and the
  * workshop has several days' sheets in hand at once - today's, tomorrow's, the day after's - and
@@ -562,7 +643,9 @@ function dateStrip(page, f, date) {
   </div>`);
   const go = (d) => {
     if (!ISO_DATE.test(d) || d === date) return;
-    SCROLL.set(date, window.scrollY);
+    // the page AND the sheet's own box - the rows scroll inside the box now (see fitPlan)
+    const inner = LIVE.table && LIVE.table.closest(".planscroll");
+    SCROLL.set(date, { y: window.scrollY, t: inner ? inner.scrollTop : 0 });
     writeHash("reports", f, { rep: page.id, date: d });
   };
   strip.querySelectorAll("[data-shift]").forEach((b) =>
@@ -859,6 +942,9 @@ async function renderLive(mount, box, page, state, setFilters, date, caps, paint
     const a = document.activeElement;
     const typing = a && box.contains(a) && a.dataset.cmt
       ? { id: a.dataset.cmt, v: a.value, s: a.selectionStart, e: a.selectionEnd } : null;
+    // the rows scroll inside their own box, which a repaint replaces - carry its position across
+    const was = box.querySelector(".planscroll");
+    const keepTop = was ? was.scrollTop : null, keepLeft = was ? was.scrollLeft : null;
     LIVE.key = key; LIVE.rows = rows; LIVE.byId = new Map(rows.map((r) => [String(r.order_id), r])); LIVE.table = null;
     state.count = rows.length;
     paintBar();
@@ -868,6 +954,10 @@ async function renderLive(mount, box, page, state, setFilters, date, caps, paint
     } else {
       LIVE.table = paintTable(box, page, rows, f, reload);
       wireLive(LIVE.table);
+      paintPicks();
+      fitPlan();
+      const now = box.querySelector(".planscroll");
+      if (now && keepTop !== null) { now.scrollTop = keepTop; now.scrollLeft = keepLeft; }
     }
     if (!isViewer()) box.appendChild(addBar(page, f, ORDERS, reload));
     if (typing) {
@@ -877,7 +967,13 @@ async function renderLive(mount, box, page, state, setFilters, date, caps, paint
   };
 
   const cached = readSheet(key);
-  const restoreScroll = () => { if (SCROLL.has(date)) window.scrollTo(0, SCROLL.get(date)); };
+  const restoreScroll = () => {
+    const s = SCROLL.get(date);
+    if (!s) return;
+    window.scrollTo(0, s.y);
+    const inner = LIVE.table && LIVE.table.closest(".planscroll");
+    if (inner) inner.scrollTop = s.t;
+  };
   const stale = () => seq !== LIVE_SEQ || !box.isConnected;
 
   const refresh = async () => {
@@ -931,6 +1027,11 @@ function paintTable(box, page, rows, filters, reload) {
 
   const cell = (c, r) => {
     const v = r[c.k];
+    if (c.sel) {
+      const id = String(r.order_id);
+      return `<input type="checkbox" class="pickbox" data-pick="${esc(id)}"${picks().has(id) ? " checked" : ""}
+                aria-label="${esc(tr("rep.pick"))} ${esc(id)}">`;
+    }
     // Planning's priority mark rides in the order cell instead of taking a column of its own
     const mark = page.live && c.k === "order_id" ? prioCell(r) : "";
     // an ad hoc row says so on its order number, with a way to take it off the day again
@@ -948,10 +1049,11 @@ function paintTable(box, page, rows, filters, reload) {
   /* The priority as a colour down the row's left edge - see .prio-* in app.css. */
   const rowClass = (r) => {
     const p = page.live ? priorityOf(r.plan_priority) : null;
-    return p ? ` class="prio-${p.tone}"` : "";
+    const cls = [p ? "prio-" + p.tone : "", page.live && picks().has(String(r.order_id)) ? "selected" : ""].filter(Boolean);
+    return cls.length ? ` class="${cls.join(" ")}"` : "";
   };
   const tdAttrs = (c, r) => {
-    const cls = [c.wide ? "wide" : "", c.n || c.money ? "num" : "", c.tick ? "tickcol" : "", c.wrap ? "wrap" : ""].filter(Boolean).join(" ");
+    const cls = [c.wide ? "wide" : "", c.n || c.money ? "num" : "", c.tick ? "tickcol" : "", c.wrap ? "wrap" : "", c.sel ? "selcol" : ""].filter(Boolean).join(" ");
     return `${cls ? ` class="${cls}"` : ""}${c.heat ? heatStyle(r[c.k], maxes[c.k], c.heat) : ""}`;
   };
 
@@ -966,17 +1068,42 @@ function paintTable(box, page, rows, filters, reload) {
       `<div class="stat"><span class="sn">${esc(num(v))} ${esc(page.summaryBy.unit || "")}</span><span class="sl">${esc(String(k))}</span></div>`).join("")}</div>`));
   }
 
-  const wrap = el(`<div class="card scrollx" style="padding:0"></div>`);
-  const table = el(`
-    <table class="dense report">
-      <thead><tr>${page.cols.map((c) =>
-        `<th data-sort="${esc(c.k)}" tabindex="0" aria-sort="${sortState(page, c.k)}" class="${c.wide ? "wide" : ""}${c.n || c.money ? " num" : ""}${c.tick ? " tickcol" : ""}${c.wrap ? " wrap" : ""}"${c.w ? ` style="width:${c.w}px"` : ""}>${esc(tr(c.key))}<span class="sarrow" aria-hidden="true">${sortGlyph(page, c.k)}</span></th>`).join("")}</tr></thead>
-      <tbody></tbody>
-      <tfoot><tr>${page.cols.map((c, i) => {
+  /* The foot: one Total row, or - where the page asks for it - a subtotal per city and one for
+   * the cities together, the label spanning every column up to the first one that adds up. */
+  const footRows = () => {
+    if (!page.subtotals) {
+      return `<tr>${page.cols.map((c, i) => {
         if (i === 0) return `<th>${esc(tr("rep.total"))} (${rows.length})</th>`;
         if (!c.total) return "<th></th>";
         return `<th class="num">${c.money ? esc(aed(totals[c.k])) : esc(num(totals[c.k]))}</th>`;
-      }).join("")}</tr></tfoot>
+      }).join("")}</tr>`;
+    }
+    const { by, groups, skipFlag } = page.subtotals;
+    const counted = rows.filter((r) => !skipFlag || r.issue_flag !== skipFlag);
+    const lead = Math.max(1, page.cols.findIndex((c) => c.total));
+    const line = (label, rs, note, cls) => `<tr${cls ? ` class="${cls}"` : ""}><th colspan="${lead}" data-lead class="footlabel">${esc(label)} (${rs.length})${
+      note ? ` <span class="footnote">· ${esc(note)}</span>` : ""}</th>${page.cols.slice(lead).map((c) => {
+        if (!c.total) return "<th></th>";
+        const t = rs.reduce((a, r) => a + (Number(r[c.k]) || 0), 0);
+        return `<th class="num">${c.money ? esc(aed(t)) : esc(num(t))}</th>`;
+      }).join("")}</tr>`;
+    return groups.map((g) => line(g, counted.filter((r) => r[by] === g))).join("")
+      + line(tr("rep.bothCities"), counted.filter((r) => groups.includes(r[by])), skipFlag ? tr("rep.exclIsr") : "", "grand");
+  };
+  const headCell = (c) => c.sel
+    ? `<th class="selcol" style="width:${c.w}px"><input type="checkbox" class="pickbox" data-pickall
+         title="${esc(tr("rep.pickAll"))}" aria-label="${esc(tr("rep.pickAll"))}"></th>`
+    : null;
+
+  const wrap = el(page.live
+    ? `<div class="card planscroll" style="padding:0"></div>`
+    : `<div class="card scrollx" style="padding:0"></div>`);
+  const table = el(`
+    <table class="dense report">
+      <thead><tr>${page.cols.map((c) => headCell(c) ||
+        `<th data-sort="${esc(c.k)}" tabindex="0" aria-sort="${sortState(page, c.k)}" class="${c.wide ? "wide" : ""}${c.n || c.money ? " num" : ""}${c.tick ? " tickcol" : ""}${c.wrap ? " wrap" : ""}"${c.w ? ` style="width:${c.w}px"` : ""}>${esc(tr(c.key))}<span class="sarrow" aria-hidden="true">${sortGlyph(page, c.k)}</span></th>`).join("")}</tr></thead>
+      <tbody></tbody>
+      <tfoot>${footRows()}</tfoot>
     </table>`);
   const tb = table.querySelector("tbody");
   const fill = () => {
@@ -1002,9 +1129,21 @@ function paintTable(box, page, rows, filters, reload) {
     });
   });
   wrap.appendChild(table);
+  if (page.live) box.appendChild(pickBar());
   box.appendChild(wrap);
 
   if (page.live) {
+    // tick to add up: one row, or every row on the sheet from the header box
+    table.addEventListener("change", (e) => {
+      const one = e.target.closest("input[data-pick]");
+      const all = e.target.closest("input[data-pickall]");
+      if (!one && !all) return;
+      const set = picks();
+      if (one) { if (one.checked) set.add(one.dataset.pick); else set.delete(one.dataset.pick); }
+      else if (all.checked) LIVE.rows.forEach((r) => set.add(String(r.order_id)));
+      else set.clear();
+      paintPicks();
+    });
     table.addEventListener("click", async (e) => {
       const b = e.target.closest("[data-unadhoc]");
       if (!b) return;
@@ -1042,6 +1181,11 @@ function printableTable(table) {
     const span = document.createElement("span"); span.className = b.className; span.textContent = b.textContent; b.replaceWith(span);
   });
   t.querySelectorAll("[data-unadhoc]").forEach((b) => b.remove());
+  if (t.querySelector(".selcol")) {
+    t.querySelectorAll(".selcol").forEach((c) => c.remove());
+    t.querySelectorAll("th[data-lead]").forEach((th) => { th.colSpan = Math.max(1, th.colSpan - 1); });
+  }
+  t.querySelectorAll("tr.selected").forEach((r) => r.classList.remove("selected"));
   return t.outerHTML;
 }
 

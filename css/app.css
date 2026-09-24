@@ -947,3 +947,22 @@ table.dense.report tr.prio-info td:first-child{box-shadow:inset 5px 0 0 var(--br
 /* the server could not be reached and the sheet on screen is the device's copy - said in words */
 .plannote{background:var(--warn-bg);border:1px solid #f0d9ac;border-radius:var(--radius);padding:8px 12px;
   font-size:13px;margin-bottom:10px;}
+
+/* Planning (24 Sep 2026): the sheet scrolls inside its own box so the column titles stay put at the
+   top of it and the three city subtotals at the bottom (fitPlan in mod-reports.js sizes the box to
+   the window). Each foot row's cells stick at their own `bottom`, set by fitPlan from the heights of
+   the rows under it - three rows all at bottom:0 would stack on one another, and a sticky <tfoot>
+   leaves gaps between its rows that the body shows through. */
+.planscroll{overflow:auto;-webkit-overflow-scrolling:touch;}
+.planscroll table.dense thead th{top:0;}
+.planscroll table.dense.report tfoot th{position:sticky;top:auto;z-index:6;border-top:1px solid var(--line);}
+.planscroll table.dense tfoot tr:first-child th{border-top:2px solid var(--line);}
+.planscroll table.dense tfoot tr.grand th{background:#d6e8ef;font-size:13px;}
+table.dense tfoot th.footlabel{text-align:left;white-space:nowrap;}
+table.dense tfoot .footnote{font-weight:400;font-size:11px;color:var(--muted);text-transform:none;letter-spacing:0;}
+/* tick to add up: a plain checkbox, and the bar above the sheet that carries the sum */
+table.dense th.selcol,table.dense td.selcol{text-align:center;padding-left:4px;padding-right:4px;}
+input.pickbox{width:17px;height:17px;margin:0;cursor:pointer;accent-color:var(--brand);vertical-align:middle;}
+.planpick{gap:14px;}
+.planpick .picksum{font-size:14px;white-space:nowrap;}
+.planpick .picksum b{font-size:16px;}
