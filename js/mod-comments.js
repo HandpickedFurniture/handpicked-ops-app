@@ -17,7 +17,7 @@
  */
 import { apiAll, isSignedIn, submit, currentActor, queueDepth, isViewer } from "./api.js";
 import { tr, tv } from "./i18n.js";
-import { LINE_REVIEW_STATUSES, PROCUREMENT_REQS, PAGE_SIZE } from "./config.js";
+import { LINE_REVIEW_STATUSES, PROCUREMENT_REQS, FABRIC_RECV_STATES, PAGE_SIZE } from "./config.js";
 import {
   $, esc, el, chip, num, toast, loading, modal, downloadCsv, today, progressBar,
   selectHtml, confirmSheet,
@@ -25,8 +25,9 @@ import {
 import { renderFilterBar, toQuery, deriveOptions, activeCount } from "./filters.js";
 import { syncBar } from "./sync.js";
 
-/* v_ops_line_review is the only view carrying these four. */
-const CAPS = { prodstate: true, procurement: true, review: true, poversion: true };
+/* v_ops_line_review is the only view carrying the last three. fabstatus is the roster's
+ * fabric_recv_state carried onto every line (25 Sep 2026), so it answers for the whole order. */
+const CAPS = { prodstate: true, procurement: true, review: true, poversion: true, fabstatus: true };
 
 /* The 21 columns the coordinators asked for, in the order they read them - which is the order of
  * the order form itself, not of the database. `wide` marks the free-text ones that need room. */
@@ -57,7 +58,7 @@ const COLS = [
 
 const SELECT = ["line_id", "order_id", "line_no", "marks", "marks_actioned", "is_read",
   "open_follow_ups", "procurement_req", "customer_name", "installation_date", "version_no",
-  ...COLS.map((c) => c.k)].join(",");
+  "fabric_recv_state", ...COLS.map((c) => c.k)].join(",");
 
 /* Which procurement requirement, if any, a given column is evidence of - so the highlight lands on
  * the cell that explains it rather than washing the whole row. */
@@ -212,7 +213,8 @@ export async function render(mount, state, setFilters) {
 
   head.querySelector("[data-csv]").addEventListener("click", () =>
     downloadCsv(`line_review_${today()}.csv`, rows.map((r) => {
-      const o = { order_id: r.order_id, [tr("col.version")]: r.version_no };
+      const o = { order_id: r.order_id, [tr("col.version")]: r.version_no,
+                  [tr("f.fabricStatus")]: tv(FABRIC_RECV_STATES, r.fabric_recv_state) };
       COLS.forEach((c) => { o[tr(c.key)] = r[c.k]; });
       o[tr("rev.marks")] = (r.marks || []).map((s) => tv(LINE_REVIEW_STATUSES, s)).join(" | ");
       o[tr("rev.actioned")] = (r.marks_actioned || []).map((s) => tv(LINE_REVIEW_STATUSES, s)).join(" | ");
@@ -299,6 +301,12 @@ export async function render(mount, state, setFilters) {
     return esc(String(v));
   };
 
+  // the order's fabric state, shown once on its first row so the filter's answer is visible
+  const fabChip = (r) => {
+    const s = FABRIC_RECV_STATES.find((x) => x.value === r.fabric_recv_state);
+    return s ? `<div style="margin-top:3px">${chip(tr(s.key), s.tone)}</div>` : "";
+  };
+
   const procChips = (r) => (r.procurement_req || [])
     .map((p) => chip(tv(PROCUREMENT_REQS, p), "warn", "!")).join(" ");
 
@@ -344,7 +352,7 @@ export async function render(mount, state, setFilters) {
                   // a revised PO is the one worth re-reading, so it is called out rather than left
                   // to the filter; v1 is every other order and would be noise on 4,000 rows
                   Number(r.version_no) > 1 ? " " + chip("v" + r.version_no, "warn") : ""
-                }<div class="muted">${esc(r.customer_name || "")}</div>${orderMarkHtml(r.order_id)}`
+                }<div class="muted">${esc(r.customer_name || "")}</div>${fabChip(r)}${orderMarkHtml(r.order_id)}`
               : `<span class="muted">${esc(r.order_id)}</span>`}</td>
         ${isViewer() ? "" : `<td><input type="checkbox" data-read${marks.has("read") ? " checked" : ""}
               aria-label="${esc(tr("rev.read"))} ${esc(r.window_ref || r.line_id)}"

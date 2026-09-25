@@ -264,7 +264,9 @@ count. Removed photos are still listed with who removed them and why.
 **8. PO review** (`#/po`) — every PO line, with the 21 order-form columns coordinators read from, each
 markable and each logged with who marked it. Filterable by marks, procurement requirement and **PO
 version** — a revised PO is the one worth re-reading, so
-*Revised* is a filter value of its own beside the version numbers.
+*Revised* is a filter value of its own beside the version numbers. Also filterable by **Fabric
+status** (not / partially / fully received, 25 Sep 2026) — the order roster's `fabric_recv_state`
+carried onto every line, so it agrees with Production, and shown as a chip under the order number.
 
 **9. Chotu** (`#/chotu`) — see below.
 
