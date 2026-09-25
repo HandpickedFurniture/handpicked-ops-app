@@ -280,6 +280,10 @@ Every column title sorts — ascending, descending, then back to the page's defa
 browser over the whole filtered set, as Production does; Planning opens sorted by type (Order
 first), city, order. The CSV and the PDF follow the sort on screen.
 
+Planning also filters by **Fabric status** (not / partially / fully received, 25 Sep 2026) — the
+roster's `fabric_recv_state`, passed through `v_ops_report_orders`. Ad hoc rows ignore it, as they
+ignore every filter.
+
 **Planning is the workshop's sheet, and it is live.** Its columns are the Looker page's: date, time,
 city, type, order, customer, fabric in, materials in, then four stage **tick boxes** — Receive, Cut,
 Marking, Fold — a **comment** (a box that grows with its text), then curtains, metres, metres

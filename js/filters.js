@@ -38,7 +38,8 @@ export const FIELDS = [...TEXT_FIELDS, ...MULTI_FIELDS];
  * module that does not gets neither the control nor the predicate, rather than a 400 on a column
  * the view has never heard of.
  *
- * fabstatus is on the roster and v_ops_line_review (the PO tab, 25 Sep 2026); tailor is roster-only; prodstate is on the roster AND the status board;
+ * fabstatus is on the roster, v_ops_line_review (the PO tab) and v_ops_report_orders (Planning),
+ * both since 25 Sep 2026; tailor is roster-only; prodstate is on the roster AND the status board;
  * procurement, review and poversion exist only on v_ops_line_review, which the Comments page reads. */
 const OPTIONAL = ["fabstatus", "tailor", "prodstate", "procurement", "review", "poversion", "flag"];
 

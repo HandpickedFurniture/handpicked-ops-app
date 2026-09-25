@@ -831,8 +831,10 @@ export async function render(mount, state, setFilters) {
   // Management dashboard leads: it is the page management opens; the detail pages follow
   const pageId = state.params.get("rep") || "mgmt";
   const page = REPORT_PAGES.find((p) => p.id === pageId) || REPORT_PAGES[0];
-  // the live sheet works one day at a time and carries its own date strip - see caps.singleDate
-  const caps = page.live ? { ...CAPS, singleDate: true } : CAPS;
+  /* the live sheet works one day at a time and carries its own date strip - see caps.singleDate.
+   * It also filters on fabric received (25 Sep 2026): v_ops_report_orders passes the roster's
+   * fabric_recv_state through. Ad hoc rows are appended unfiltered, like every other filter here. */
+  const caps = page.live ? { ...CAPS, singleDate: true, fabstatus: true } : CAPS;
 
   mount.innerHTML = `
     <div class="sectionbar">
