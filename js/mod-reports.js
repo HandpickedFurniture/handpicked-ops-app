@@ -112,35 +112,33 @@ export const REPORT_PAGES = [
      * two together - with ISR rows left out of all three: a rework's metres are not the day's
      * production (user, 24 Sep 2026). Rows with no city count in neither. */
     subtotals: { by: "city", groups: ["Abu Dhabi", "Dubai"], skipFlag: "ISR" },
-    /* `w` is a width in px, applied to the header cell. On screen it fixes the column; on the
-     * portrait sheet the table is laid out fixed at 100%, so these act as PROPORTIONS. The stage
-     * boxes are the point of the sheet and get the room; customer and time give it up (user, 18 Sep). */
+    /* `w` is a PROPORTION, not a width: on screen and on the portrait sheet alike the table is laid
+     * out fixed at 100% (table.plan in app.css), so every column shows at once and the sheet only
+     * scrolls down - sideways only on a phone, under the table's min-width (user, 25 Sep 2026).
+     * Hemming, Iron and Taping are off the sheet since the same day (user): the planning_status
+     * columns stay, and any stage still moves the roster to "in production", so Cut and Marking
+     * carry that alone. The comment has the room they gave up. */
     cols: [
       // screen only: tick orders to add their fabric up in the bar above the sheet (see pickBar);
       // the column is taken out of the printed sheet, so the widths below keep their proportions
-      { k: "_sel", key: "rep.pick", sel: 1, w: 30 },
-      { k: "installation_date", key: "col.install", date: 1, w: 68, wrap: 1 },
-      { k: "installation_time", key: "rep.time", w: 54 },
-      { k: "city", key: "col.city", w: 64, wrap: 1 },
-      { k: "issue_flag", key: "rep.issueFlag", fmt: flagChip, w: 62 },
-      // 60 -> 78: the order cell carries the priority mark too (prioCell). The printed sheet reads
-      // these widths as proportions of their own total, so the other columns give up a hair each
-      // rather than the sheet growing past the page.
-      { k: "order_id", key: "col.order", bold: true, w: 78 },
-      { k: "customer_name", key: "col.customer", w: 90, wrap: 1 },
-      { k: "_recv", key: "rep.receive", fmt: (_v, r) => bar(r.recv_fab_done, r.recv_fab_total), w: 66, wrap: 1 },
-      { k: "_mat", key: "rep.materials", fmt: (_v, r) => bar(r.recv_mat_done, r.recv_mat_total), w: 70, wrap: 1 },
-      { k: "_st_receive", key: "rep.stReceive", tick: 1, w: 62, fmt: (_v, r) => tickCell(r, "receive") },
-      { k: "_st_cut",     key: "rep.stCut",     tick: 1, w: 62, fmt: (_v, r) => tickCell(r, "cut") },
-      { k: "_st_hem",     key: "rep.stHem",     tick: 1, w: 62, fmt: (_v, r) => tickCell(r, "hemming") },
-      { k: "_st_iron",    key: "rep.stIron",    tick: 1, w: 62, fmt: (_v, r) => tickCell(r, "iron") },
-      { k: "_st_mark",    key: "rep.stMark",    tick: 1, w: 62, fmt: (_v, r) => tickCell(r, "marking") },
-      { k: "_st_tape",    key: "rep.stTape",    tick: 1, w: 62, fmt: (_v, r) => tickCell(r, "taping") },
-      { k: "_st_fold",    key: "rep.stFold",    tick: 1, w: 62, fmt: (_v, r) => tickCell(r, "fold") },
-      { k: "plan_comment", key: "rep.comment", w: 120, wrap: 1, fmt: (v, r) => commentCell(r) },
-      { k: "owl_curtains", key: "rep.curtains", n: 1, total: 1, heat: 1, w: 52 },
-      { k: "report_meters", key: "col.meters", n: 1, total: 1, heat: 1, w: 62 },
-      { k: "received_meters", key: "rep.recMeter", n: 1, total: 1, heat: 1, w: 62 },
+      { k: "_sel", key: "rep.pick", sel: 1, w: 26 },
+      { k: "installation_date", key: "col.install", date: 1, w: 60, wrap: 1 },
+      { k: "installation_time", key: "rep.time", w: 48, wrap: 1 },
+      { k: "city", key: "col.city", w: 54, wrap: 1 },
+      { k: "issue_flag", key: "rep.issueFlag", fmt: flagChip, w: 54, wrap: 1 },
+      // the order cell carries the priority mark too (prioCell)
+      { k: "order_id", key: "col.order", bold: true, w: 68 },
+      { k: "customer_name", key: "col.customer", w: 92, wrap: 1 },
+      { k: "_recv", key: "rep.receive", fmt: (_v, r) => bar(r.recv_fab_done, r.recv_fab_total), w: 64, wrap: 1 },
+      { k: "_mat", key: "rep.materials", fmt: (_v, r) => bar(r.recv_mat_done, r.recv_mat_total), w: 64, wrap: 1 },
+      { k: "_st_receive", key: "rep.stReceive", tick: 1, w: 56, fmt: (_v, r) => tickCell(r, "receive") },
+      { k: "_st_cut",     key: "rep.stCut",     tick: 1, w: 50, fmt: (_v, r) => tickCell(r, "cut") },
+      { k: "_st_mark",    key: "rep.stMark",    tick: 1, w: 58, fmt: (_v, r) => tickCell(r, "marking") },
+      { k: "_st_fold",    key: "rep.stFold",    tick: 1, w: 50, fmt: (_v, r) => tickCell(r, "fold") },
+      { k: "plan_comment", key: "rep.comment", w: 160, wrap: 1, fmt: (v, r) => commentCell(r) },
+      { k: "owl_curtains", key: "rep.curtains", n: 1, total: 1, heat: 1, w: 58, wrap: 1 },
+      { k: "report_meters", key: "col.meters", n: 1, total: 1, heat: 1, w: 54, wrap: 1 },
+      { k: "received_meters", key: "rep.recMeter", n: 1, total: 1, heat: 1, w: 56, wrap: 1 },
     ],
   },
   {
@@ -291,10 +289,7 @@ const SORT_KEYS = {
   _stage:     (r) => Number(r.prep_max_rank || 0) + Math.max(0, frac(r.prep_done, r.prep_total)),
   _st_receive: (r) => (stageOn(r, "receive") ? 1 : 0),
   _st_cut:     (r) => (stageOn(r, "cut") ? 1 : 0),
-  _st_hem:     (r) => (stageOn(r, "hemming") ? 1 : 0),
-  _st_iron:    (r) => (stageOn(r, "iron") ? 1 : 0),
   _st_mark:    (r) => (stageOn(r, "marking") ? 1 : 0),
-  _st_tape:    (r) => (stageOn(r, "taping") ? 1 : 0),
   _st_fold:    (r) => (stageOn(r, "fold") ? 1 : 0),
 };
 const blank = (v) => v === null || v === undefined || v === "";
@@ -398,12 +393,16 @@ function prioCell(r) {
             aria-label="${esc(prioWords(p))}">${esc(p ? p.glyph : "")}</button> `;
 }
 
+/* The comment is a box two lines tall that grows with what is typed into it, so a long comment is
+ * read whole rather than scrolled inside a one-line input (user, 25 Sep 2026). CSS field-sizing
+ * does the growing where the browser has it; growCmt does it everywhere else. */
 function commentCell(r) {
   const v = r.plan_comment || "";
   if (isViewer()) return esc(v) || `<span class="muted">—</span>`;
-  return `<input class="plancmt" data-cmt="${esc(r.order_id)}" value="${esc(v)}" placeholder="…"
-            aria-label="${esc(tr("rep.comment"))} ${esc(r.order_id)}">`;
+  return `<textarea class="plancmt" data-cmt="${esc(r.order_id)}" rows="2" placeholder="…"
+            aria-label="${esc(tr("rep.comment"))} ${esc(r.order_id)}">${esc(v)}</textarea>`;
 }
+const growCmt = (t) => { t.style.height = "auto"; t.style.height = t.scrollHeight + 2 + "px"; };
 
 /* Ticks and comments, delegated on the table so a re-sort (which rebuilds the body) keeps them.
  * Every tick asks first (user, 18 Sep 2026) - a stage marked done reaches the Dashboard the same
@@ -489,6 +488,9 @@ function wireLive(table) {
       keepSheet(LIVE.key, LIVE.rows);
       toast(err.message || String(err), "bad");
     }
+  });
+  table.addEventListener("input", (e) => {
+    if (e.target.matches("textarea.plancmt")) growCmt(e.target);
   });
   table.addEventListener("change", async (e) => {
     const i = e.target.closest("[data-cmt]");
@@ -962,7 +964,7 @@ async function renderLive(mount, box, page, state, setFilters, date, caps, paint
     if (!isViewer()) box.appendChild(addBar(page, f, ORDERS, reload));
     if (typing) {
       const i = box.querySelector(`[data-cmt="${CSS.escape(typing.id)}"]`);
-      if (i) { i.value = typing.v; i.focus(); try { i.setSelectionRange(typing.s, typing.e); } catch (e) {} }
+      if (i) { i.value = typing.v; growCmt(i); i.focus(); try { i.setSelectionRange(typing.s, typing.e); } catch (e) {} }
     }
   };
 
@@ -1090,8 +1092,12 @@ function paintTable(box, page, rows, filters, reload) {
     return groups.map((g) => line(g, counted.filter((r) => r[by] === g))).join("")
       + line(tr("rep.bothCities"), counted.filter((r) => groups.includes(r[by])), skipFlag ? tr("rep.exclIsr") : "", "grand");
   };
+  /* Planning's widths are shares of the screen: as px, a fixed table whose columns add up to more
+   * than the window grows past it and scrolls sideways - exactly what the widths are there to stop. */
+  const wSum = page.cols.reduce((a, c) => a + (c.w || 0), 0);
+  const wCss = (c) => (page.live ? `${(c.w / wSum * 100).toFixed(2)}%` : `${c.w}px`);
   const headCell = (c) => c.sel
-    ? `<th class="selcol" style="width:${c.w}px"><input type="checkbox" class="pickbox" data-pickall
+    ? `<th class="selcol" style="width:${wCss(c)}"><input type="checkbox" class="pickbox" data-pickall
          title="${esc(tr("rep.pickAll"))}" aria-label="${esc(tr("rep.pickAll"))}"></th>`
     : null;
 
@@ -1099,9 +1105,9 @@ function paintTable(box, page, rows, filters, reload) {
     ? `<div class="card planscroll" style="padding:0"></div>`
     : `<div class="card scrollx" style="padding:0"></div>`);
   const table = el(`
-    <table class="dense report">
+    <table class="dense report${page.live ? " plan" : ""}">
       <thead><tr>${page.cols.map((c) => headCell(c) ||
-        `<th data-sort="${esc(c.k)}" tabindex="0" aria-sort="${sortState(page, c.k)}" class="${c.wide ? "wide" : ""}${c.n || c.money ? " num" : ""}${c.tick ? " tickcol" : ""}${c.wrap ? " wrap" : ""}"${c.w ? ` style="width:${c.w}px"` : ""}>${esc(tr(c.key))}<span class="sarrow" aria-hidden="true">${sortGlyph(page, c.k)}</span></th>`).join("")}</tr></thead>
+        `<th data-sort="${esc(c.k)}" tabindex="0" aria-sort="${sortState(page, c.k)}" class="${c.wide ? "wide" : ""}${c.n || c.money ? " num" : ""}${c.tick ? " tickcol" : ""}${c.wrap ? " wrap" : ""}"${c.w ? ` style="width:${wCss(c)}"` : ""}>${esc(tr(c.key))}<span class="sarrow" aria-hidden="true">${sortGlyph(page, c.k)}</span></th>`).join("")}</tr></thead>
       <tbody></tbody>
       <tfoot>${footRows()}</tfoot>
     </table>`);
@@ -1114,6 +1120,8 @@ function paintTable(box, page, rows, filters, reload) {
       th.setAttribute("aria-sort", sortState(page, th.dataset.sort));
       th.querySelector(".sarrow").textContent = sortGlyph(page, th.dataset.sort);
     });
+    // a comment box can only be measured once the table is on the page, which is right after this
+    if (page.live) requestAnimationFrame(() => table.querySelectorAll("textarea.plancmt").forEach(growCmt));
   };
   fill();
   // ascending, descending, then back to the page's default order
@@ -1174,8 +1182,11 @@ function paintTable(box, page, rows, filters, reload) {
  * remove button disappears. The screen keeps its controls; the paper gets the state. */
 function printableTable(table) {
   const t = table.cloneNode(true);
-  t.querySelectorAll("input.plancmt").forEach((i) => {
-    const span = document.createElement("span"); span.textContent = i.value; i.replaceWith(span);
+  // what is in the box NOW, read off the screen's table: a cloned textarea carries only the text
+  // it was drawn with, not what was typed since
+  const typed = new Map([...table.querySelectorAll("textarea.plancmt")].map((i) => [i.dataset.cmt, i.value]));
+  t.querySelectorAll("textarea.plancmt").forEach((i) => {
+    const span = document.createElement("span"); span.textContent = typed.get(i.dataset.cmt) ?? i.value; i.replaceWith(span);
   });
   t.querySelectorAll("button.tick,button.prio").forEach((b) => {
     const span = document.createElement("span"); span.className = b.className; span.textContent = b.textContent; b.replaceWith(span);

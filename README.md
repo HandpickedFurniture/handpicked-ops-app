@@ -279,12 +279,15 @@ browser over the whole filtered set, as Production does; Planning opens sorted b
 first), city, order. The CSV and the PDF follow the sort on screen.
 
 **Planning is the workshop's sheet, and it is live.** Its columns are the Looker page's: date, time,
-city, type, order, customer, fabric in, materials in, then seven stage **tick boxes** — Receive, Cut,
-Hemming, Iron, Marking, Taping, Fold — a **comment**, then curtains, metres, metres received. The
+city, type, order, customer, fabric in, materials in, then four stage **tick boxes** — Receive, Cut,
+Marking, Fold — a **comment** (a box that grows with its text), then curtains, metres, metres
+received. Hemming, Iron and Taping came off the sheet on 25 Sep 2026: their `planning_status`
+columns stay, nothing ticks them any more. On screen every column fits one view — the widths are
+shares of the window (percentages), not pixels — and scrolls sideways only below 960px. The
 production team ticks the boxes here, per order: every tick asks first and the same box ticks again
 to undo; the write is `fn_ops_planning_set` into `planning_status` through the offline queue, and
 `v_ops_order_roster.production_state` reads those ticks alongside the unit-level data, so the
-**Dashboard's "by production status" follows the sheet** (Fold → packed, Cut…Taping →
+**Dashboard's "by production status" follows the sheet** (Fold → packed, Cut or Marking →
 in production, Receive → fabric in; a tick moves an order forward, never back). A box the app's own
 records already set — Receive when every fabric is received, Cut when preparation started, Fold when
 packed — shows ticked and **locked**: what the Production and Preparation screens recorded per
