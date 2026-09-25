@@ -37,7 +37,7 @@ export const I18N = {
     "auth.required": "Please sign in to continue.",
 
     "f.title": "Filters", "f.clear": "Clear", "f.apply": "Apply", "f.orderId": "Order ID",
-    "f.dateFrom": "Install date from", "f.dateTo": "Install date to",
+    "f.date": "Install date", "f.dateFrom": "Install date from", "f.dateTo": "Install date to",
     "f.sheetStatus": "Installation status (3D sheet)", "f.city": "City",
     "f.customer": "Customer name", "f.stitching": "Curtain stitching type",
     "f.commercial": "Commercial name", "f.windowRef": "Window ref",
@@ -336,7 +336,7 @@ export const I18N = {
 
     "nav.finance": "Finance", "home.dFinance": "Invoice figures and adjustments",
     "fin.orders": "Orders", "fin.adjustments": "Adjustments",
-    "fin.fInstall": "Installation status", "fin.fReceivedFrom": "Received from",
+    "fin.fInstall": "Installation status", "fin.fReceived": "Received date", "fin.fReceivedFrom": "Received from",
     "fin.fReceivedTo": "Received to", "fin.fInvoice": "Invoice status", "fin.fReview": "Needs review",
     "fin.noStatus": "No status set",
     "fin.selectVisible": "Select all shown", "fin.selectNone": "Clear selection",
@@ -407,7 +407,7 @@ export const I18N = {
     "st.alteration": "Alteration", "st.alterationNote": "Alteration detail",
     "st.removalCount": "Curtains removed",
 
-    "audit.title": "Photo audit", "audit.filters": "Filters", "audit.from": "From", "audit.to": "To",
+    "audit.title": "Photo audit", "audit.filters": "Filters", "audit.date": "Date", "audit.from": "From", "audit.to": "To",
     "audit.total": "{n} photo(s)", "audit.export": "Download index (CSV)",
     "audit.noPhotos": "No photos match these filters.",
 
@@ -633,7 +633,7 @@ export const I18N = {
     "auth.required": "जारी रखने के लिए साइन इन करें।",
 
     "f.title": "फ़िल्टर", "f.clear": "साफ़ करें", "f.apply": "लागू करें", "f.orderId": "ऑर्डर आईडी",
-    "f.dateFrom": "इंस्टॉल तिथि से", "f.dateTo": "इंस्टॉल तिथि तक",
+    "f.date": "इंस्टॉल तिथि", "f.dateFrom": "इंस्टॉल तिथि से", "f.dateTo": "इंस्टॉल तिथि तक",
     "f.sheetStatus": "इंस्टॉलेशन स्थिति (3D शीट)", "f.city": "शहर",
     "f.customer": "ग्राहक का नाम", "f.stitching": "पर्दा सिलाई प्रकार",
     "f.commercial": "व्यावसायिक नाम", "f.windowRef": "खिड़की संदर्भ",
@@ -932,7 +932,7 @@ export const I18N = {
 
     "nav.finance": "फ़ाइनेंस", "home.dFinance": "बिल के आंकड़े और एडजस्टमेंट",
     "fin.orders": "ऑर्डर", "fin.adjustments": "एडजस्टमेंट",
-    "fin.fInstall": "इंस्टॉलेशन स्थिति", "fin.fReceivedFrom": "प्राप्ति — से",
+    "fin.fInstall": "इंस्टॉलेशन स्थिति", "fin.fReceived": "प्राप्ति तिथि", "fin.fReceivedFrom": "प्राप्ति — से",
     "fin.fReceivedTo": "प्राप्ति — तक", "fin.fInvoice": "बिल स्थिति", "fin.fReview": "जाँच चाहिए",
     "fin.noStatus": "कोई स्थिति नहीं",
     "fin.selectVisible": "सभी दिख रहे चुनें", "fin.selectNone": "चयन हटाएँ",
@@ -1003,7 +1003,7 @@ export const I18N = {
     "st.alteration": "अल्टरेशन", "st.alterationNote": "अल्टरेशन विवरण",
     "st.removalCount": "हटाए गए पर्दे",
 
-    "audit.title": "फ़ोटो ऑडिट", "audit.filters": "फ़िल्टर", "audit.from": "से", "audit.to": "तक",
+    "audit.title": "फ़ोटो ऑडिट", "audit.filters": "फ़िल्टर", "audit.date": "तिथि", "audit.from": "से", "audit.to": "तक",
     "audit.total": "{n} फ़ोटो", "audit.export": "सूची डाउनलोड करें (CSV)",
     "audit.noPhotos": "इन फ़िल्टर से कोई फ़ोटो नहीं मिली।",
 
@@ -1229,7 +1229,7 @@ export const I18N = {
     "auth.required": "চালিয়ে যেতে সাইন ইন করুন।",
 
     "f.title": "ফিল্টার", "f.clear": "মুছুন", "f.apply": "প্রয়োগ করুন", "f.orderId": "অর্ডার আইডি",
-    "f.dateFrom": "ইনস্টল তারিখ থেকে", "f.dateTo": "ইনস্টল তারিখ পর্যন্ত",
+    "f.date": "ইনস্টল তারিখ", "f.dateFrom": "ইনস্টল তারিখ থেকে", "f.dateTo": "ইনস্টল তারিখ পর্যন্ত",
     "f.sheetStatus": "ইনস্টলেশন অবস্থা (3D শিট)", "f.city": "শহর",
     "f.customer": "গ্রাহকের নাম", "f.stitching": "পর্দা সেলাইয়ের ধরন",
     "f.commercial": "বাণিজ্যিক নাম", "f.windowRef": "জানালা রেফ",
@@ -1528,7 +1528,7 @@ export const I18N = {
 
     "nav.finance": "ফাইন্যান্স", "home.dFinance": "বিলের হিসাব ও অ্যাডজাস্টমেন্ট",
     "fin.orders": "অর্ডার", "fin.adjustments": "অ্যাডজাস্টমেন্ট",
-    "fin.fInstall": "ইনস্টলেশন অবস্থা", "fin.fReceivedFrom": "প্রাপ্তি — থেকে",
+    "fin.fInstall": "ইনস্টলেশন অবস্থা", "fin.fReceived": "প্রাপ্তির তারিখ", "fin.fReceivedFrom": "প্রাপ্তি — থেকে",
     "fin.fReceivedTo": "প্রাপ্তি — পর্যন্ত", "fin.fInvoice": "বিল অবস্থা", "fin.fReview": "যাচাই দরকার",
     "fin.noStatus": "কোনো অবস্থা নেই",
     "fin.selectVisible": "সব দেখানো নির্বাচন", "fin.selectNone": "নির্বাচন মুছুন",
@@ -1599,7 +1599,7 @@ export const I18N = {
     "st.alteration": "অল্টারেশন", "st.alterationNote": "অল্টারেশন বিবরণ",
     "st.removalCount": "সরানো পর্দা",
 
-    "audit.title": "ছবি অডিট", "audit.filters": "ফিল্টার", "audit.from": "থেকে", "audit.to": "পর্যন্ত",
+    "audit.title": "ছবি অডিট", "audit.filters": "ফিল্টার", "audit.date": "তারিখ", "audit.from": "থেকে", "audit.to": "পর্যন্ত",
     "audit.total": "{n} ছবি", "audit.export": "সূচি ডাউনলোড (CSV)",
     "audit.noPhotos": "এই ফিল্টারে কোনো ছবি নেই।",
 

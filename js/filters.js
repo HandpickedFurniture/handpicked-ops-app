@@ -43,7 +43,7 @@ export const FIELDS = [...TEXT_FIELDS, ...MULTI_FIELDS];
  * procurement, review and poversion exist only on v_ops_line_review, which the Comments page reads. */
 const OPTIONAL = ["fabstatus", "tailor", "prodstate", "procurement", "review", "poversion", "flag"];
 
-/* The bar's own date controls - the bucket row and From / To. A page that works ONE day at a time
+/* The bar's own date controls - the bucket row and the install date (from / to underneath). A page that works ONE day at a time
  * (Planning, 19 Sep 2026: the workshop's sheet is a sheet for a date) carries its own date strip
  * and asks with `caps.singleDate` for these to stay off the bar: two date controls on one screen
  * fight, and a bucket ticked on another page would AND itself onto the day and empty the sheet. The
@@ -321,10 +321,8 @@ export function renderFilterBar(mount, state, opts, onChange, caps) {
                <input type="text" name="order" value="${esc(f.order || "")}" inputmode="numeric"></div>
           <div><label class="f">${esc(tr("f.customer"))}</label>
                <input type="text" name="customer" value="${esc(f.customer || "")}"></div>
-          ${singleDate ? "" : `<div><label class="f">${esc(tr("f.dateFrom"))}</label>
-               <input type="date" name="from" value="${esc(f.from || "")}"></div>
-          <div><label class="f">${esc(tr("f.dateTo"))}</label>
-               <input type="date" name="to" value="${esc(f.to || "")}"></div>`}
+          ${singleDate ? "" : `<div><label class="f">${esc(tr("f.date"))}</label>
+               <input type="date" data-day value="${esc(f.from || f.to || "")}"></div>`}
         </div>
         <div class="fchips">
           ${cbField("city", tr("f.city"))}
@@ -389,6 +387,10 @@ export function renderFilterBar(mount, state, opts, onChange, caps) {
   const merged = () => {
     const next = { ...f };
     bar.querySelectorAll("input[name]").forEach((i) => { next[i.name] = i.value; });
+    /* One install date, not a From / To pair (25 Sep 2026: two pickers per search was the slow
+     * part). It still rides as from = to = that day, so the predicate and every old link are unchanged. */
+    const day = bar.querySelector("input[data-day]");
+    if (day) { next.from = day.value; next.to = day.value; }
     MULTI_FIELDS.forEach((k) => {
       if (bar.querySelector(`[data-field="${CSS.escape(k)}"]`)) next[k] = Array.from(picks[k]);
     });
@@ -486,7 +488,7 @@ export function renderFilterBar(mount, state, opts, onChange, caps) {
   bar.querySelector("[data-clear]").addEventListener("click", () => onChange({}));
   bar.querySelector("[data-apply]").addEventListener("click", () => onChange(merged()));
   // Enter anywhere in the bar applies - including from a list's search box
-  bar.querySelectorAll('input[name],input[type="search"]').forEach((i) => {
+  bar.querySelectorAll('input[name],input[data-day],input[type="search"]').forEach((i) => {
     i.addEventListener("keydown", (e) => {
       if (e.key === "Enter") { e.preventDefault(); bar.querySelector("[data-apply]").click(); }
     });

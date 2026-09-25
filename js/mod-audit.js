@@ -40,10 +40,8 @@ export async function render(mount, state) {
         <div><label class="f">${esc(tr("photo.context"))}</label>
           ${selectHtml("acontext", PHOTO_CONTEXTS.map((c) => ({ value: c.value, label: tr(c.key) })),
                        f.context, tr("f.any"))}</div>
-        <div><label class="f">${esc(tr("audit.from"))}</label>
-          <input type="date" name="afrom" value="${esc(f.from)}"></div>
-        <div><label class="f">${esc(tr("audit.to"))}</label>
-          <input type="date" name="ato" value="${esc(f.to)}"></div>
+        <div><label class="f">${esc(tr("audit.date"))}</label>
+          <input type="date" name="aday" value="${esc(f.from || f.to)}"></div>
         <div><label class="f">${esc(tr("photo.uploader"))}</label>
           <input type="text" name="awho" value="${esc(f.who)}"></div>
         <div><label class="f">${esc(tr("loc.title"))}</label>
@@ -68,8 +66,8 @@ export async function render(mount, state) {
     const g = (n) => $(`[name="${n}"]`, mount).value.trim();
     if (g("aorder")) q.set("order", g("aorder"));
     if (g("acontext")) q.set("context", g("acontext"));
-    if (g("afrom")) q.set("from", g("afrom"));
-    if (g("ato")) q.set("to", g("ato"));
+    // one day, carried as from = to so old links with a range still read back
+    if (g("aday")) { q.set("from", g("aday")); q.set("to", g("aday")); }
     if (g("awho")) q.set("who", g("awho"));
     if (g("aloc")) q.set("loc", g("aloc"));
     if ($('[name="adeleted"]', mount).checked) q.set("deleted", "1");

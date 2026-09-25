@@ -183,10 +183,8 @@ function paintFilters(mount, state) {
             ${opt("(none)", tr("fin.noStatus"), FILTERS.status)}
             ${ORDER_STATUSES.map((s) => opt(s, s, FILTERS.status)).join("")}
           </select></div>
-        <div><label class="f">${esc(tr("fin.fReceivedFrom"))}</label>
-          <input type="date" name="ffrom" value="${esc(FILTERS.from)}"></div>
-        <div><label class="f">${esc(tr("fin.fReceivedTo"))}</label>
-          <input type="date" name="fto" value="${esc(FILTERS.to)}"></div>
+        <div><label class="f">${esc(tr("fin.fReceived"))}</label>
+          <input type="date" name="fday" value="${esc(FILTERS.from)}"></div>
         <div><label class="f">${esc(tr("fin.fInvoice"))}</label>
           <select name="finvoice">
             ${opt("", tr("f.any"), FILTERS.invoice)}
@@ -218,7 +216,11 @@ function paintFilters(mount, state) {
 
   const wire = (name, key) => bar.querySelector(`[name="${name}"]`)
     .addEventListener("change", (e) => { FILTERS[key] = e.target.value; reload(mount, state); });
-  wire("fstatus", "status"); wire("ffrom", "from"); wire("fto", "to");
+  wire("fstatus", "status");
+  // one received date rather than a From / To pair - it sets both ends, so the queries are unchanged
+  bar.querySelector('[name="fday"]').addEventListener("change", (e) => {
+    FILTERS.from = FILTERS.to = e.target.value; reload(mount, state);
+  });
   wire("finvoice", "invoice"); wire("freview", "review");
   if (TAB === "adj") { wire("fsheet", "sheetUpdated"); wire("finvcreated", "invCreated"); }
   bar.querySelector("[data-clear]").addEventListener("click", () => {
