@@ -101,23 +101,29 @@ export const REPORT_PAGES = [
      * fabric is received, Cut when preparation started, Fold when packed - is shown ticked and
      * LOCKED: what the Preparation and Production screens recorded per window is not undone from a
      * sheet at order grain. Ad hoc orders are added at the foot of the list for a date
-     * (planning_extra). Printed portrait, one page, it is still the paper sheet. Opens sorted by
+     * (planning_extra). Printed portrait, spilling onto further pages rather than shrinking to fit
+     * one - shrinking to one page forced a font too small to read (user, 30 Sep 2026). Every city and
+     * type (Order, ISR, Odd Time, Others) prints on the one sheet together, same as the screen; only
+     * the subtotal rows leave ISR out (user, 30 Sep 2026). Opens sorted by
      * type (Order first), city, order id; any header re-sorts it. */
     id: "production", key: "rep.production", view: "v_ops_report_orders",
     order: "installation_date.asc.nullslast",
     defaultSort: ["issue_flag", "city", "order_id"],
-    print: { portrait: true, onePage: true },
+    print: { portrait: true },
     live: true,
     /* The foot of the sheet is three subtotal rows rather than one total - Abu Dhabi, Dubai, and the
      * two together - with ISR rows left out of all three: a rework's metres are not the day's
      * production (user, 24 Sep 2026). Rows with no city count in neither. */
     subtotals: { by: "city", groups: ["Abu Dhabi", "Dubai"], skipFlag: "ISR" },
-    /* `w` is a PROPORTION, not a width: on screen and on the portrait sheet alike the table is laid
+    /* `w` is a PROPORTION, not a width: on screen and on the printed sheet alike the table is laid
      * out fixed at 100% (table.plan in app.css), so every column shows at once and the sheet only
      * scrolls down - sideways only on a phone, under the table's min-width (user, 25 Sep 2026).
      * Hemming, Iron and Taping are off the sheet since the same day (user): the planning_status
      * columns stay, and any stage still moves the roster to "in production", so Cut and Marking
-     * carry that alone. The comment has the room they gave up. */
+     * carry that alone. The comment has the room they gave up. Fabric in / Materials in (the two
+     * received-so-far progress bars) came off the printed columns 30 Sep 2026 (user) - the four
+     * stage ticks already say whether fabric is in, and Curtains/Fabric (m)/Metres received were
+     * narrowed the same day to make room. */
     cols: [
       // screen only: tick orders to add their fabric up in the bar above the sheet (see pickBar);
       // the column is taken out of the printed sheet, so the widths below keep their proportions
@@ -129,16 +135,14 @@ export const REPORT_PAGES = [
       // the order cell carries the priority mark too (prioCell)
       { k: "order_id", key: "col.order", bold: true, w: 68 },
       { k: "customer_name", key: "col.customer", w: 92, wrap: 1 },
-      { k: "_recv", key: "rep.receive", fmt: (_v, r) => bar(r.recv_fab_done, r.recv_fab_total), w: 64, wrap: 1 },
-      { k: "_mat", key: "rep.materials", fmt: (_v, r) => bar(r.recv_mat_done, r.recv_mat_total), w: 64, wrap: 1 },
       { k: "_st_receive", key: "rep.stReceive", tick: 1, w: 56, fmt: (_v, r) => tickCell(r, "receive") },
       { k: "_st_cut",     key: "rep.stCut",     tick: 1, w: 50, fmt: (_v, r) => tickCell(r, "cut") },
       { k: "_st_mark",    key: "rep.stMark",    tick: 1, w: 58, fmt: (_v, r) => tickCell(r, "marking") },
       { k: "_st_fold",    key: "rep.stFold",    tick: 1, w: 50, fmt: (_v, r) => tickCell(r, "fold") },
       { k: "plan_comment", key: "rep.comment", w: 160, wrap: 1, fmt: (v, r) => commentCell(r) },
-      { k: "owl_curtains", key: "rep.curtains", n: 1, total: 1, heat: 1, w: 58, wrap: 1 },
-      { k: "report_meters", key: "col.meters", n: 1, total: 1, heat: 1, w: 54, wrap: 1 },
-      { k: "received_meters", key: "rep.recMeter", n: 1, total: 1, heat: 1, w: 56, wrap: 1 },
+      { k: "owl_curtains", key: "rep.curtains", n: 1, total: 1, heat: 1, w: 40, wrap: 1 },
+      { k: "report_meters", key: "col.meters", n: 1, total: 1, heat: 1, w: 40, wrap: 1 },
+      { k: "received_meters", key: "rep.recMeter", n: 1, total: 1, heat: 1, w: 42, wrap: 1 },
     ],
   },
   {
@@ -282,8 +286,6 @@ const FLAG_RANK = Object.fromEntries(ISSUE_FLAGS.map((f, i) => [f.value, i]));
 const frac = (done, total) => (Number(total) ? Number(done) / Number(total) : -1);
 const SORT_KEYS = {
   issue_flag: (r) => (r.issue_flag in FLAG_RANK ? FLAG_RANK[r.issue_flag] : ISSUE_FLAGS.length),
-  _recv:      (r) => frac(r.recv_fab_done, r.recv_fab_total),
-  _mat:       (r) => frac(r.recv_mat_done, r.recv_mat_total),
   _started:   (r) => frac(r.prep_started, r.prep_total),
   _packed:    (r) => frac(r.prep_done, r.prep_total),
   _stage:     (r) => Number(r.prep_max_rank || 0) + Math.max(0, frac(r.prep_done, r.prep_total)),
@@ -369,7 +371,7 @@ const tick = (on) => `<span class="tick${on ? " on" : ""}">${on ? "✓" : ""}</s
 /* ---------------------------------------------------------------- the priority mark (22 Sep 2026)
  * High / Medium / Low, or nothing. Asked for as a colour, and given no column of its own: the mark
  * rides INSIDE the order cell and colours the row's left edge, so the fourteen columns the sheet
- * already fits on one portrait page keep their room (user, 22 Sep 2026).
+ * already has keep their room (user, 22 Sep 2026).
  *
  * One tap moves to the next - none → High → Medium → Low → none - and unlike a stage tick it asks
  * no question first. A tick reaches the Dashboard the same second and is worth a question; a
@@ -792,12 +794,6 @@ function addBar(page, f, orders, reload) {
     } catch (err) { toast(err.message || String(err), "bad"); }
   });
   return bar;
-}
-
-function bar(done, total) {
-  if (!total) return `<span class="muted">—</span>`;
-  const tone = done >= total ? "ok" : done > 0 ? "warn" : "mute";
-  return chip(`${done}/${total}`, tone, done >= total ? "✓" : "");
 }
 
 /* The furthest production stage actually reached - the Looker original shows hand-typed blanks. */
