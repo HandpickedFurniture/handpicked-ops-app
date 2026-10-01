@@ -556,6 +556,8 @@ export const I18N = {
     "act.expandCap": "Expanded the first {n} — open the rest individually.",
     "act.receiveAllMat": "Mark all materials received",
     "d.statusTab": "Status", "disp.notSent": "Not sent",
+    "d.addonUnlinked": "Add-on not linked to any curtain — confirm which window",
+    "d.addonsLoose": "Add-ons for windows with no panel in this list",
     "disp.toggleOff": "Tap again to clear this back to Not sent",
     "disp.cleared": "Cleared back to Not sent",
 
@@ -1152,6 +1154,8 @@ export const I18N = {
     "act.expandCap": "पहले {n} खोले गए — बाकी अलग से खोलें।",
     "act.receiveAllMat": "सभी सामग्री प्राप्त चिह्नित करें",
     "d.statusTab": "स्थिति", "disp.notSent": "भेजा नहीं",
+    "d.addonUnlinked": "ऐड-ऑन किसी पर्दे से नहीं जुड़ा — पुष्टि करें कि कौन सी खिड़की",
+    "d.addonsLoose": "उन खिड़कियों के ऐड-ऑन जिनका यहाँ कोई पैनल नहीं",
     "disp.toggleOff": "हटाने के लिए फिर दबाएँ — «भेजा नहीं» हो जाएगा",
     "disp.cleared": "हटाया गया — «भेजा नहीं»",
 
@@ -1748,6 +1752,8 @@ export const I18N = {
     "act.expandCap": "প্রথম {n}টি খোলা হয়েছে — বাকিগুলি আলাদাভাবে খুলুন।",
     "act.receiveAllMat": "সব উপকরণ প্রাপ্ত চিহ্নিত করুন",
     "d.statusTab": "অবস্থা", "disp.notSent": "পাঠানো হয়নি",
+    "d.addonUnlinked": "অ্যাড-অন কোনো পর্দার সাথে যুক্ত নয় — কোন জানালা তা নিশ্চিত করুন",
+    "d.addonsLoose": "যেসব জানালার এখানে কোনো প্যানেল নেই তাদের অ্যাড-অন",
     "disp.toggleOff": "মুছতে আবার চাপুন — «পাঠানো হয়নি» হবে",
     "disp.cleared": "মোছা হয়েছে — «পাঠানো হয়নি»",
 

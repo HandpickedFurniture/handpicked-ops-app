@@ -180,11 +180,60 @@ function receivingTab(d, orderId, refresh, which) {
   return box;
 }
 
+/* ---------------------------------------------------------------- add-ons on the Status tab
+ * Tie backs, velcro with stitching and lining are their own PO lines with no fabric, so they never
+ * become a panel here - and on 73982 that hid a 'Velcro with stitching' the machinist had to make
+ * (user, 1 Oct 2026). fn_order_addons ties each one to its window by fn_window_key (spacing and case
+ * forgiven - that order's curtain is 'Master  Bedroom right w', its velcro 'Master Bedroom right w').
+ * Each add-on hangs under the FIRST panel of its window; whatever matches no panel is listed above
+ * the panels, as a warning when it matches no curtain at all (linked === false). */
+function groupAddons(list) {
+  const by = new Map();
+  list.forEach((a) => {
+    const k = (a.window_key || "") + "|" + a.product;
+    const g = by.get(k) || { window_name: a.window_name, product: a.product, qty: 0, comments: [] };
+    g.qty += Number(a.quantity) || 1;
+    const c = (a.comment || "").trim();
+    if (c && !g.comments.includes(c)) g.comments.push(c);
+    by.set(k, g);
+  });
+  return [...by.values()];
+}
+
+function addonText(g, withWindow) {
+  return `${withWindow ? `<b>${esc((g.window_name || "").trim() || "—")}</b> · ` : ""}${
+    esc(g.product)}${g.qty > 1 ? " ×" + esc(num(g.qty)) : ""}${
+    g.comments.length ? ` <span class="muted">— ${esc(g.comments.join(" | "))}</span>` : ""}`;
+}
+
+function addonBlock(cls, title, groups) {
+  return el(`<div class="banner ${cls}">${esc(title)}
+    <ul class="addonlist">${groups.map((g) => `<li>${addonText(g, true)}</li>`).join("")}</ul></div>`);
+}
+
 /* ---------------------------------------------------------------- stages 5-10 */
 function prepTab(d, orderId, refresh) {
   const units = d.prep_units || [];
+  const addons = d.addons || [];
   const box = el(`<div class="dsec"></div>`);
-  if (!units.length) { box.innerHTML = `<div class="dnone">${esc(tr("d.none"))}</div>`; return box; }
+
+  // first panel of each window carries that window's add-ons; the rest are listed above the panels
+  const firstUnit = new Map();
+  units.forEach((u) => { if (!firstUnit.has(u.window_key)) firstUnit.set(u.window_key, u); });
+  const onUnit = new Map();
+  const unlinked = [], loose = [];
+  addons.forEach((a) => {
+    if (a.linked !== false && firstUnit.has(a.window_key)) {
+      onUnit.set(a.window_key, (onUnit.get(a.window_key) || []).concat(a));
+    } else (a.linked === false ? unlinked : loose).push(a);
+  });
+  if (unlinked.length) box.appendChild(addonBlock("bad", tr("d.addonUnlinked"), groupAddons(unlinked)));
+  if (loose.length) box.appendChild(addonBlock("info", tr("d.addonsLoose"), groupAddons(loose)));
+
+  if (!units.length) {
+    if (!addons.length) box.innerHTML = `<div class="dnone">${esc(tr("d.none"))}</div>`;
+    return box;
+  }
 
   const packed = units.filter((u) => u.stage === "folding_packing").length;
 
@@ -218,6 +267,7 @@ function prepTab(d, orderId, refresh) {
 
   units.forEach((u) => {
     const idx = PREP_STAGES.findIndex((s) => s.value === u.stage);
+    const mine = firstUnit.get(u.window_key) === u ? groupAddons(onUnit.get(u.window_key) || []) : [];
     const row = el(`
       <div class="unit">
         <div class="uname">${esc(u.window_ref || u.window_name)} · L${esc(u.layer_no)}
@@ -225,6 +275,7 @@ function prepTab(d, orderId, refresh) {
             ${u.cut_width_cm ? "· W" + esc(num(u.cut_width_cm)) : ""}
             ${u.cut_height_cm ? "· H" + esc(num(u.cut_height_cm)) : ""}
             ${u.pieces_label ? "· " + esc(u.pieces_label) : ""}</div>
+          ${mine.map((g) => `<div class="uaddon">＋ ${addonText(g, false)}</div>`).join("")}
         </div>
         <div>${u.stage
           ? chip(tv(PREP_STAGES, u.stage) || u.stage, idx === PREP_STAGES.length - 1 ? "ok" : "info",
