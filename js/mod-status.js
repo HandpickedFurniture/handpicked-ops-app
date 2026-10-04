@@ -477,8 +477,10 @@ async function openWorkSheet(r, v, reload, opts = {}) {
     const [cur, rates, vr, ar, stat, cardRows] = await Promise.all([
       api(`/rest/v1/v_ops_order_windows?select=window_name,first_line_no,line_no,description,style,layers,width_m,po_rate,remake_rate_per_layer,curtain_lines,priceable&order_id=eq.${q}&order=first_line_no`),
       api("/rest/v1/remake_rate_card?select=style,rate_aed_per_layer,label&order=style"),
-      rpc("fn_ops_rate_for", { p_charge_type: "additional_visit", p_qty: 1 }),
-      rpc("fn_ops_rate_for", { p_charge_type: "alteration", p_qty: 1 }),
+      /* p_order_id because the card is per CITY for visits (Dubai 100, Abu Dhabi 150 from 4 Oct
+       * 2026) - the function resolves the order's city from the roster, never from here. */
+      rpc("fn_ops_rate_for", { p_charge_type: "additional_visit", p_qty: 1, p_order_id: r.order_id }),
+      rpc("fn_ops_rate_for", { p_charge_type: "alteration", p_qty: 1, p_order_id: r.order_id }),
       api(`/rest/v1/order_status?select=alteration_adj_1l,alteration_adj_2l&order_id=eq.${q}`),
       /* The card is read once for LABELS, UNITS and the figure shown beside an unticked box. The
        * money that reaches the total still comes from fn_ops_rate_for - see chargeAmount below.
@@ -578,7 +580,7 @@ async function openWorkSheet(r, v, reload, opts = {}) {
     const k = `${row.type}|${row.qty}`;
     if (RATE_CACHE[k] === undefined) {
       try {
-        const res = await rpc("fn_ops_rate_for", { p_charge_type: row.type, p_qty: row.qty || 1 });
+        const res = await rpc("fn_ops_rate_for", { p_charge_type: row.type, p_qty: row.qty || 1, p_order_id: r.order_id });
         const got = Array.isArray(res) ? res[0] : res;
         RATE_CACHE[k] = got ? Number(got.amount_aed || 0) : 0;
       } catch (e) { RATE_CACHE[k] = 0; }

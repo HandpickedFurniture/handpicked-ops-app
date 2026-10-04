@@ -476,6 +476,20 @@ Migrations: `adjustment_amount_source_and_finance_flags`,
 `finance_adjustment_amount_and_flag_rpcs`,
 `expose_adjustment_amount_source_and_finance_flags_in_views` (22 Aug 2026).
 
+**Tie backs changed again on 28 Sep 2026: 50 flat per order (card row 27; row 24 closed 27 Sep), and
+always billed with a separate 150 `additional_visit` — 200 minimum.** Chotu's prompt (v12) says so;
+`product_catalog` id 69 is 50 too, but that row reverts on the next Context_lookup re-import.
+
+**The visit charge is per CITY from 4 Oct 2026: Dubai 100, Abu Dhabi 150** (user). `adjustment_rate_card`
+has a nullable `city` (NULL = every city); `additional_visit` has a Dubai row and an Abu Dhabi row, and
+row 3 (150, no city) is only the fallback for an order whose city is unknown. `fn_ops_rate_for` takes
+`p_order_id` and resolves the city with `fn_order_city` (roster, then an alert's `city_override`) - so
+**every caller that prices a charge must pass the order**, or a Dubai visit quietly prices at 150. The
+capture sheet, Chotu's rate box, `fn_ops_add_adjustment` (and so the auto-proposed revisit),
+`fn_ops_build_invoice`, Finance's Propose/Reset amount and both adjustment views all do. Tie backs are
+therefore 150 Dubai / 200 Abu Dhabi in total. Chotu v13 reads the city off each rate row. Migration:
+`supabase/sql/20261004_visit_charge_by_city.sql`. Booked amounts were not repriced.
+
 **The card and the policy agreed at last on 22 Aug 2026.** `tieback` was 150 *per piece*, so four
 tie backs priced at 600 where the policy is a flat 150 for the job — it is now `per order`, which is
 what `fn_ops_rate_for` treats as flat. `pickup` and `drop_off` were both 100 and `pickup` was

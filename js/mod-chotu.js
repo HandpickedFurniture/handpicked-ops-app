@@ -683,6 +683,7 @@ async function wireRate(box, f) {
   const typeSel = box.querySelector('[name="charge_type"]');
   const qtyIn = box.querySelector('[name="qty"]');
   const amtIn = box.querySelector('[name="amount"]');
+  const oidIn = box.querySelector('[name="order_id"]');
   const lbl = box.querySelector("[data-rate]");
   if (!typeSel || !amtIn || !lbl) return;
 
@@ -691,8 +692,10 @@ async function wireRate(box, f) {
 
   const refresh = async () => {
     try {
+      // the order decides the city, and the city decides the visit rate (Dubai 100, Abu Dhabi 150)
       const res = await rpc("fn_ops_rate_for", {
         p_charge_type: typeSel.value, p_qty: Number(qtyIn ? qtyIn.value : 1) || 1,
+        p_order_id: (oidIn && oidIn.value.trim()) || null,
       });
       const row = Array.isArray(res) ? res[0] : res;
       if (!row) { lbl.textContent = ""; return; }
@@ -702,6 +705,7 @@ async function wireRate(box, f) {
   };
   typeSel.addEventListener("change", () => { touched = false; refresh(); });
   if (qtyIn) qtyIn.addEventListener("change", refresh);
+  if (oidIn) oidIn.addEventListener("change", refresh);
   refresh();
 }
 
