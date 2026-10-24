@@ -1,0 +1,14 @@
+-- 24 Oct 2026: report_meters (Planning "Fabric (m)", Reports, Management fabric alert) is now the
+-- TOTAL expected fabric, never just what has arrived so far. Order 78079 showed 50.5 m after two of
+-- four fabrics were received (total 109).
+--   report_meters = GREATEST( sum(receiving_expectations.qty_expected, grain order_fabric)
+--                             falling back to meters_sent_total,
+--                             received_meters )      -- an over-delivery still wins
+-- Applied via a DO block that rewrote pg_get_viewdef('public.v_ops_report_orders'): added an `expm` CTE
+-- (sum of qty_expected per order), LEFT JOIN expm ex, and swapped the report_meters expression.
+-- received_meters and meters_is_received are unchanged; the received progress bars show the arrival.
+-- Guard: select * from fn_check_fabric_invariants();  -- must return ZERO rows. Flags any order whose
+-- total fabric is below what was received or what was expected. Not callable by anon (the column
+-- check script has no login), so run it with the Supabase MCP / SQL editor after touching report_meters.
+-- NOTE: v_ops_order_roster (Production tab list) has its OWN report_meters = meters_sent_total (110.5 for
+-- 78079 vs 109 here); it never used received metres, so it was not part of the 50.5 bug.

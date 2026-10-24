@@ -20,6 +20,7 @@ import * as production from "./mod-production.js";
 import * as prep from "./mod-prep.js";
 import * as status from "./mod-status.js";
 import * as schedule from "./mod-schedule.js";
+import * as stepper from "./mod-stepper.js";
 import * as transfer from "./mod-transfer.js";
 import * as inventory from "./mod-inventory.js";
 import * as comments from "./mod-comments.js";
@@ -49,6 +50,8 @@ const ROUTES = {
   // off the ribbon, reached from Home (and still linkable)
   menu:       { key: "nav.menu",       render: (m, s) => menu.render(m, s) },
   schedule:   { key: "nav.schedule",   render: (m, s, f) => schedule.render(m, s, f) },
+  // one city, order by order, with suggestions and a spoken Play (24 Oct 2026)
+  stepper:    { key: "nav.stepper",    render: (m, s) => stepper.render(m, s) },
   transfer:   { key: "nav.transfer",   render: (m, s, f) => transfer.render(m, s, f) },
   dashboard:  { key: "nav.dashboard",  render: (m, s, f) => dashboard.render(m, s, f) },
   reports:    { key: "nav.reports",    render: (m, s, f) => reports.render(m, s, f) },
@@ -238,7 +241,7 @@ function queueSheet() {
   });
 }
 
-const TAB_ICON = { home: "🏠", production: "✂️", prep: "🧵", status: "🚚", schedule: "🗓️",
+const TAB_ICON = { home: "🏠", production: "✂️", prep: "🧵", status: "🚚", schedule: "🗓️", stepper: "🧭",
                    transfer: "📦", inventory: "🔩", po: "📄", chotu: "🗣️", menu: "🧭",
                    dashboard: "📊", reports: "📈", eod: "🌙", audit: "📷", roles: "🔑" };
 

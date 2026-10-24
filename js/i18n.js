@@ -445,7 +445,7 @@ export const I18N = {
     "dash.noChart": "Nothing to chart yet.", "dash.byMeters": "Fabric metres by production status",
 
     "nav.home": "Home", "nav.po": "PO", "nav.reports": "Reports",
-    "nav.schedule": "Schedule", "nav.chotu": "Chotu", "nav.menu": "Menu",
+    "nav.schedule": "Schedule", "nav.stepper": "Step scheduler", "nav.chotu": "Chotu", "nav.menu": "Menu",
     "menu.sub": "What are you working on?", "menu.others": "Others",
 
     "sch.for": "Installation date", "sch.prev": "Previous day", "sch.next": "Next day",
@@ -529,6 +529,7 @@ export const I18N = {
     "home.dProduction": "Fabric receiving, stitching stages, dispatch",
     "home.dInstall": "Visits, teams, status, extra charges",
     "home.dSchedule": "Tomorrow's plan, by team, ready to send",
+    "home.dStepper": "Place one city's orders team by team, with suggestions",
     "home.dTransfer": "Materials out and back",
     "home.dInventory": "Stock, packs, movements",
     "home.dChotu": "Ask a question or record what happened, out loud",
@@ -1050,7 +1051,7 @@ export const I18N = {
     "dash.noChart": "अभी चार्ट के लिए कुछ नहीं।", "dash.byMeters": "उत्पादन स्थिति अनुसार कपड़ा मीटर",
 
     "nav.home": "होम", "nav.po": "PO", "nav.reports": "रिपोर्ट",
-    "nav.schedule": "शेड्यूल", "nav.chotu": "छोटू", "nav.menu": "मेन्यू",
+    "nav.schedule": "शेड्यूल", "nav.stepper": "चरणबद्ध शेड्यूलर", "nav.chotu": "छोटू", "nav.menu": "मेन्यू",
     "menu.sub": "आप किस काम पर हैं?", "menu.others": "अन्य",
 
     "sch.for": "इंस्टॉलेशन तारीख", "sch.prev": "पिछला दिन", "sch.next": "अगला दिन",
@@ -1134,6 +1135,7 @@ export const I18N = {
     "home.dProduction": "कपड़ा प्राप्ति, सिलाई चरण, भेजना",
     "home.dInstall": "विज़िट, टीम, स्थिति, अतिरिक्त शुल्क",
     "home.dSchedule": "कल की योजना, टीम अनुसार, भेजने को तैयार",
+    "home.dStepper": "एक शहर के ऑर्डर टीम-दर-टीम लगाएँ, सुझावों के साथ",
     "home.dTransfer": "सामग्री बाहर और वापस",
     "home.dInventory": "स्टॉक, पैक, मूवमेंट",
     "home.dChotu": "बोलकर सवाल पूछें या जानकारी दर्ज करें",
@@ -1655,7 +1657,7 @@ export const I18N = {
     "dash.noChart": "চার্ট করার মতো কিছু নেই।", "dash.byMeters": "উৎপাদন অবস্থা অনুযায়ী কাপড়ের মিটার",
 
     "nav.home": "হোম", "nav.po": "PO", "nav.reports": "রিপোর্ট",
-    "nav.schedule": "সময়সূচি", "nav.chotu": "ছোটু", "nav.menu": "মেনু",
+    "nav.schedule": "সময়সূচি", "nav.stepper": "ধাপে ধাপে শিডিউলার", "nav.chotu": "ছোটু", "nav.menu": "মেনু",
     "menu.sub": "আপনি কোন কাজে আছেন?", "menu.others": "অন্যান্য",
 
     "sch.for": "ইনস্টলেশনের তারিখ", "sch.prev": "আগের দিন", "sch.next": "পরের দিন",
@@ -1739,6 +1741,7 @@ export const I18N = {
     "home.dProduction": "কাপড় গ্রহণ, সেলাইয়ের ধাপ, পাঠানো",
     "home.dInstall": "ভিজিট, দল, অবস্থা, অতিরিক্ত চার্জ",
     "home.dSchedule": "আগামীকালের পরিকল্পনা, দল অনুযায়ী, পাঠাতে প্রস্তুত",
+    "home.dStepper": "এক শহরের অর্ডার দল ধরে বসান, পরামর্শসহ",
     "home.dTransfer": "উপকরণ বাইরে ও ফেরত",
     "home.dInventory": "স্টক, প্যাক, মুভমেন্ট",
     "home.dChotu": "মুখে প্রশ্ন করুন বা তথ্য জমা দিন",
