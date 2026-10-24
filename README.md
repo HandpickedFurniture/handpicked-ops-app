@@ -384,6 +384,18 @@ would read now (`fn_mgmt_body_*`): the production-status one (4/5) is about the 
 tomorrow is a Sunday (`fn_mgmt_next_working_day`) — because at 07:00 today's vans are already
 loaded. SQL: `supabase/sql/20260919_management_alerts_v2.sql`.
 
+**Reports > Materials** (`#/reports?rep=materials`, since 24 Oct 2026) — one row per order with the
+COUNTS of what goes on the van: blinds (roller + cassette + roman, big figure), motors, remotes, baton
+sticks, bending track, trunking, scaffolding, curtain windows by layer, expected fabric metres. Grouped
+by day with the day's totals on its header row, a grand total at the foot. Reads
+`v_ops_report_materials` (`supabase/sql/20261024_report_materials.sql`: `v_ops_report_orders` + the
+counts from `order_lines_final`, cancelled orders and removal lines excluded), so the shared bar
+(customer, fabric received, production state) drives it. Its own strip above the bar carries the date
+range (opens on today + 2 days), City and Type (Order / ISR / Odd time / Others) as one-tap buttons
+that write the same hash fields as the bar, and "Only orders with …" (`need=` in the hash, applied
+in the browser). Classification is by commercial-name keywords in the view — a new product family
+needs a line there.
+
 **10. Finance** (`#/finance`) — where the accounts team takes the figures for an invoice. Two grids
 behind one route. **Orders** is one row per billable PO line: order number, the billing SKU beside
 the PO SKU, description, quantity, adjusted width, price per unit, unit value and Credits, with an

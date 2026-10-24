@@ -25,7 +25,7 @@
  */
 import { apiAll, rpc, submit, isSignedIn, isViewer, currentActor, pendingWrites } from "./api.js";
 import { tr, tv } from "./i18n.js";
-import { PREP_STAGES, ISSUE_FLAGS, PLAN_PRIORITIES, STORAGE_PREFIX, flagOf, priorityOf } from "./config.js";
+import { PREP_STAGES, ISSUE_FLAGS, FABRIC_RECV_STATES, PLAN_PRIORITIES, STORAGE_PREFIX, flagOf, priorityOf } from "./config.js";
 import {
   $, esc, el, num, aed, aed0, fmtDate, fmtDateTime, today, loading, chip, downloadCsv, printSheet, toast,
   confirmSheet,
@@ -143,6 +143,40 @@ export const REPORT_PAGES = [
       { k: "owl_curtains", key: "rep.curtains", n: 1, total: 1, heat: 1, w: 40, wrap: 1 },
       { k: "report_meters", key: "col.meters", n: 1, total: 1, heat: 1, w: 40, wrap: 1 },
       { k: "received_meters", key: "rep.recMeter", n: 1, total: 1, heat: 1, w: 42, wrap: 1 },
+    ],
+  },
+  {
+    /* What has to be on the van, as COUNTS (user, 24 Oct 2026): blinds, motors, remotes, baton sticks,
+     * bending track, trunking, scaffolding, one row per order, grouped by day with a total on each
+     * day's header row. Reads v_ops_report_materials (v_ops_report_orders + the counts), so the shared
+     * bar drives it; it carries its own date range, city and Order / ISR buttons and an "only orders
+     * with ..." filter - see materialsStrip. */
+    id: "materials", key: "rep.matTab", view: "v_ops_report_materials", materials: true,
+    order: "installation_date.asc.nullslast",
+    defaultSort: ["installation_date", "city", "order_id"],
+    groupBy: "installation_date",
+    cols: [
+      { k: "installation_date", key: "col.install", date: 1 },
+      { k: "city", key: "col.city" },
+      { k: "issue_flag", key: "rep.issueFlag", fmt: flagChip },
+      { k: "order_id", key: "col.order", bold: true },
+      { k: "customer_name", key: "col.customer" },
+      { k: "window_count", key: "rep.matWin", n: 1, total: 1 },
+      { k: "m_curtains", key: "rep.matCurtains", n: 1, total: 1, blank0: 1,
+        fmt: (v, r) => Number(v) ? `${esc(num(v))} <small class="muted">${[Number(r.m_cur1) && `${num(r.m_cur1)}×1L`, Number(r.m_cur2) && `${num(r.m_cur2)}×2L`].filter(Boolean).join(" · ")}</small>` : "" },
+      { k: "m_roller", key: "rep.matRoller", n: 1, total: 1, blank0: 1 },
+      { k: "m_cassette", key: "rep.matCassette", n: 1, total: 1, blank0: 1 },
+      { k: "m_roman", key: "rep.matRoman", n: 1, total: 1, blank0: 1 },
+      { k: "m_blinds", key: "rep.matBlinds", n: 1, total: 1, blank0: 1, big: 1 },
+      { k: "m_motors", key: "rep.matMotors", n: 1, total: 1, blank0: 1 },
+      { k: "m_remotes", key: "rep.matRemotes", n: 1, total: 1, blank0: 1 },
+      { k: "m_baton", key: "rep.matBaton", n: 1, total: 1, blank0: 1 },
+      { k: "m_bend", key: "rep.matBend", n: 1, total: 1, blank0: 1 },
+      { k: "m_trunk", key: "rep.matTrunk", n: 1, total: 1, blank0: 1 },
+      { k: "m_scaf", key: "rep.matScaf", n: 1, total: 1, blank0: 1 },
+      { k: "report_meters", key: "rep.matFabric", n: 1, total: 1, blank0: 1 },
+      { k: "fabric_recv_state", key: "rep.receive",
+        fmt: (v) => { const s = FABRIC_RECV_STATES.find((x) => x.value === v); return s ? chip(tr(s.key), s.tone) : ""; } },
     ],
   },
   {
@@ -830,7 +864,8 @@ export async function render(mount, state, setFilters) {
   /* the live sheet works one day at a time and carries its own date strip - see caps.singleDate.
    * It also filters on fabric received (25 Sep 2026): v_ops_report_orders passes the roster's
    * fabric_recv_state through. Ad hoc rows are appended unfiltered, like every other filter here. */
-  const caps = page.live ? { ...CAPS, singleDate: true, fabstatus: true } : CAPS;
+  const caps = page.live ? { ...CAPS, singleDate: true, fabstatus: true }
+    : page.materials ? { ...CAPS, singleDate: true, fabstatus: true, prodstate: true } : CAPS;
 
   mount.innerHTML = `
     <div class="sectionbar">
@@ -861,7 +896,10 @@ export async function render(mount, state, setFilters) {
    * way the Installation board keeps its outcome filter and the dashboard its four status filters.
    * The live sheet's day rides the same way, so Apply and Clear keep the day on screen. */
   const date = page.live ? planDate(state) : null;
-  const setF = (f) => writeHash("reports", f, { rep: page.id, date });
+  const need = page.materials ? (state.params.get("need") || "") : "";
+  // the bar drops from / to on a page that has its own date control; Materials keeps its range
+  const setF = (f) => writeHash("reports", page.materials ? { ...f, from: state.filters.from, to: state.filters.to } : f,
+    { rep: page.id, date, need });
   const paintBar = () => renderFilterBar(bar_, state, opts, setF, caps);
   paintBar();
 
@@ -873,6 +911,16 @@ export async function render(mount, state, setFilters) {
   if (page.live) {
     await renderLive(mount, box, page, state, setFilters, date, caps, paintBar);
     return;
+  }
+
+  if (page.materials) {
+    // a visit with no dates opens on today and the next two days - what is being loaded this week
+    if (!state.filters.from && !state.filters.to) {
+      const td = today();
+      writeHash("reports", { ...state.filters, from: td, to: isoShift(td, 2) }, { rep: page.id, need });
+      return;
+    }
+    $("#repdate", mount).appendChild(materialsStrip(page, state, need));
   }
 
   loading(true, tr("t.loading"));
@@ -888,6 +936,10 @@ export async function render(mount, state, setFilters) {
   }
   loading(false);
 
+  if (page.materials) {
+    const keys = need.split(",").filter((k) => MAT_NEEDS.some((n) => n.k === k));
+    if (keys.length) rows = rows.filter((r) => keys.some((k) => Number(r[k]) > 0));
+  }
   state.count = rows.length;
   paintBar();
   if (!rows.length) {
@@ -895,6 +947,64 @@ export async function render(mount, state, setFilters) {
     return;
   }
   paintTable(box, page, rows, state.filters);
+  if (page.materials) box.appendChild(el(`<div class="muted" style="font-size:12px;margin-top:6px">${esc(tr("rep.matNote"))}</div>`));
+}
+
+/* ---------------------------------------------------------------- Materials: the strip above the bar
+ * Date range, City and Type (Order / ISR) in one tap each, plus "only orders with ...". City and Type
+ * write the same hash fields the bar's own City and Type lists do, so the two always agree; "only
+ * orders with" is the page's own `need` parameter, applied in the browser over the rows fetched. */
+const MAT_NEEDS = [
+  { k: "m_blinds", key: "rep.matBlinds" }, { k: "m_motors", key: "rep.matMotors" },
+  { k: "m_remotes", key: "rep.matRemotes" }, { k: "m_baton", key: "rep.matBaton" },
+  { k: "m_bend", key: "rep.matBend" }, { k: "m_trunk", key: "rep.matTrunk" }, { k: "m_scaf", key: "rep.matScaf" },
+];
+function materialsStrip(page, state, need) {
+  const f = state.filters, td = today();
+  const go = (nf, nneed = need) => writeHash("reports", nf, { rep: page.id, need: nneed });
+  const range = (days) => go({ ...f, from: td, to: isoShift(td, days) });
+  const seg = (k, items) => {
+    const cur = vals(f, k);
+    return `<div class="seg" role="group">${[{ v: "", label: tr("rep.matAll") }, ...items].map((i) =>
+      `<button type="button" data-seg="${k}" data-v="${esc(i.v)}" class="${(i.v ? cur.length === 1 && cur[0] === i.v : !cur.length) ? "on" : ""}">${esc(i.label)}</button>`).join("")}</div>`;
+  };
+  const keys = need.split(",").filter(Boolean);
+  const strip = el(`<div class="card matstrip">
+    <div class="matrow">
+      <label class="f">${esc(tr("rep.matFrom"))}<input type="date" name="mfrom" value="${esc(f.from || "")}"></label>
+      <label class="f">${esc(tr("rep.matTo"))}<input type="date" name="mto" value="${esc(f.to || "")}"></label>
+      <div class="seg" role="group">
+        <button type="button" data-days="0">${esc(tr("bucket.today"))}</button>
+        <button type="button" data-days="1">${esc(tr("bucket.tomorrow"))}</button>
+        <button type="button" data-days="2">${esc(tr("rep.matNext3"))}</button>
+        <button type="button" data-days="6">${esc(tr("rep.matNext7"))}</button>
+      </div>
+    </div>
+    <div class="matrow">
+      <span class="f">${esc(tr("rep.matCity"))}</span>${seg("city", [{ v: "Dubai", label: "Dubai" }, { v: "Abu Dhabi", label: "Abu Dhabi" }])}
+      <span class="f">${esc(tr("rep.matType"))}</span>${seg("flag", ISSUE_FLAGS.map((x) => ({ v: x.value, label: tr(x.key) })))}
+    </div>
+    <div class="matrow">
+      <span class="f">${esc(tr("rep.matOnly"))}</span>
+      <div class="seg" role="group">${MAT_NEEDS.map((n) =>
+        `<button type="button" data-need="${n.k}" class="${keys.includes(n.k) ? "on" : ""}" aria-pressed="${keys.includes(n.k)}">${esc(tr(n.key))}</button>`).join("")}</div>
+    </div>
+  </div>`);
+  const dateChange = () => {
+    const a = strip.querySelector('[name="mfrom"]').value, b = strip.querySelector('[name="mto"]').value;
+    go({ ...f, from: a || b || td, to: b || a || td });
+  };
+  strip.querySelectorAll('input[type="date"]').forEach((i) => i.addEventListener("change", dateChange));
+  strip.querySelectorAll("[data-days]").forEach((b) => b.addEventListener("click", () => range(Number(b.dataset.days))));
+  strip.querySelectorAll("[data-seg]").forEach((b) => b.addEventListener("click", () => {
+    const k = b.dataset.seg, v = b.dataset.v;
+    go({ ...f, [k]: v ? [v] : [] });
+  }));
+  strip.querySelectorAll("[data-need]").forEach((b) => b.addEventListener("click", () => {
+    const k = b.dataset.need;
+    go(f, (keys.includes(k) ? keys.filter((x) => x !== k) : [...keys, k]).join(","));
+  }));
+  return strip;
 }
 
 /* The live sheet for one day. It paints TWICE when it can: first from the copy this device kept
@@ -1040,6 +1150,8 @@ function paintTable(box, page, rows, filters, reload) {
         ` <button type="button" class="btn sm ghost" data-unadhoc="${esc(r.order_id)}" data-date="${esc(r._adhoc)}" title="${esc(tr("rep.removeAdhoc"))}">×</button>`}`;
     }
     if (c.fmt) return c.fmt(v, r);
+    if (c.blank0 && !Number(v)) return "";
+    if (c.big) return `<span class="bigfig">${esc(num(v))}</span>`;
     if (v === null || v === undefined || v === "") return `<span class="muted">—</span>`;
     if (c.date) return esc(fmtDate(v));
     if (c.money) return esc(aed(v));
@@ -1111,9 +1223,24 @@ function paintTable(box, page, rows, filters, reload) {
     </table>`);
   const tb = table.querySelector("tbody");
   const fill = () => {
-    tb.innerHTML = sortRows(page, rows).map((r) => `<tr${rowClass(r)}>${page.cols.map((c) =>
+    const rowHtml = (r) => `<tr${rowClass(r)}>${page.cols.map((c) =>
       `<td${tdAttrs(c, r)}>${c.bold ? "<b>" : ""}${cell(c, r)}${c.bold ? "</b>" : ""}</td>`
-    ).join("")}</tr>`).join("");
+    ).join("")}</tr>`;
+    const sorted = sortRows(page, rows);
+    if (page.groupBy && !SORT[page.id]) {
+      /* One header row per day carrying the day's total under each counting column, so the sheet
+       * reads day by day without a second table. Only while the default order is on: a column sort
+       * mixes the days and the headers would lie. */
+      const lead = Math.max(1, page.cols.findIndex((c) => c.total));
+      const groups = new Map();
+      sorted.forEach((r) => { const g = String(r[page.groupBy] ?? ""); if (!groups.has(g)) groups.set(g, []); groups.get(g).push(r); });
+      tb.innerHTML = Array.from(groups.entries()).map(([g, rs]) => `<tr class="grp"><td colspan="${lead}">${
+        g ? esc(fmtDate(g)) : esc(tr("bucket.nodate"))} <span class="muted">· ${esc(tr("rep.matOrders", { n: rs.length }))}</span></td>${page.cols.slice(lead).map((c) => {
+          if (!c.total) return "<td></td>";
+          const t = rs.reduce((a, r) => a + (Number(r[c.k]) || 0), 0);
+          return `<td class="num${c.big ? " bigfig" : ""}">${t ? esc(num(t)) : ""}</td>`;
+        }).join("")}</tr>${rs.map(rowHtml).join("")}`).join("");
+    } else tb.innerHTML = sorted.map(rowHtml).join("");
     table.querySelectorAll("th[data-sort]").forEach((th) => {
       th.setAttribute("aria-sort", sortState(page, th.dataset.sort));
       th.querySelector(".sarrow").textContent = sortGlyph(page, th.dataset.sort);
