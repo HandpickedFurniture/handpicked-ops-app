@@ -359,7 +359,8 @@ function renderStage2(){
   if (minor) items.push(["soft", `${minor} start${minor > 1 ? "s are" : " is"} up to ${FREE_LATE} min after the appointment (inside the free window).`]);
   $("checks").innerHTML = items.map(([c, x]) => `<li class="${c}">${esc(x)}</li>`).join("");
 
-  $("tray").innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0 0 4px">Not on a team</h2>${sortSel()}</div>` + (q.length
+  $("tray").innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0 0 4px">Not on a team</h2>${sortSel()}</div>
+    <div class="legend"><span class="kit motor">motor</span><span class="kit pelmet">pelmet box</span><span class="kit bend">bend rail</span><span class="kit scaf">scaffolding</span></div>` + (q.length
     ? `<div class="muted" style="font-size:12.5px">Drag onto a team below, or go back to Stage 1 to place them with suggestions.</div><div class="tray">${q.map(i => `<span class="chip" draggable="true" data-id="${i}">${F[i].slot} · ${i} · ${esc(F[i].customer)}</span>`).join("")}</div>`
     : `<span class="muted">✓ Every order is on a team.</span>`);
 
@@ -377,7 +378,7 @@ function renderStage2(){
         <div class="l1"><span class="sheett" title="Time on the 3D sheet"><span>3D</span><b>${esc(f.sheet_slot)}</b></span>${f.slot !== f.sheet_slot ? `<em class="youset" title="You changed the time">→ ${esc(f.slot)}</em>` : ""}<span class="who" title="${esc(s.id + " " + f.customer)}"><span class="oid">${s.id}</span> ${esc(f.customer)}</span></div>
         <div class="pt">Planned <b>${hm(s.start)}–${hm(s.end)}</b> · arr ${hm(s.arrive)}${s.delay > 0 ? ` <span class="chip ${s.late ? "bad" : "warn"}">+${s.delay}</span>` : ""}${s.over ? ` <span class="chip bad">after limit</span>` : ""}</div>
         <div class="ad" title="${esc(f.address)}">${esc(f.address)}</div>
-        <div class="jw2">${f.emaar ? `<span class="chip emaar">EMAAR</span> ` : ""}${esc(workLine(s.id))}</div>
+        <div class="jw2">${f.emaar ? `<span class="chip emaar">EMAAR</span> ` : ""}${workLineHtml(s.id)}</div>
         ${specialsHtml(s.id)}</div>`;
     });
     return `<article class="team" data-team="${t.team}" style="--tc:${tc}">
@@ -604,6 +605,24 @@ function workLine(id){
   if (f.motor || c.motor_windows) p.push(`motor ×${c.motor_windows || 1}`);
   if (c.remote) p.push(`remote ×${c.remote}`);
   if (f.scaffolding) p.push("scaffolding");
+  if (c.removal) p.push(`remove ×${c.removal}`);
+  if (f.villa) p.push("villa");
+  const m = Math.round(f.minutes || 0);
+  p.push(`≈ ${m >= 60 ? Math.floor(m / 60) + " h " : ""}${m % 60 ? (m % 60) + " min" : ""}`.trim());
+  return p.join(" · ");
+}
+function workLineHtml(id){
+  const f = F[id] || {}, c = f.counts || {}, p = [];
+  const tag = (cls, txt) => `<span class="kit ${cls}">${txt}</span>`;
+  if (f.windows) p.push(`${f.windows} win`); else if (f.kind) p.push(esc(f.kind));
+  if (c.curt_2l) p.push(`${c.curt_2l}×2L`);
+  if (c.curt_1l) p.push(`${c.curt_1l}×1L`);
+  if (c.blinds) p.push(`${c.blinds} blind${c.blinds > 1 ? "s" : ""}`);
+  if (f.motor || c.motor_windows) p.push(tag("motor", `motor ×${c.motor_windows || 1}${c.remote ? ` · remote ×${c.remote}` : ""}`));
+  else if (c.remote) p.push(tag("motor", `remote ×${c.remote}`));
+  if (c.pelmet) p.push(tag("pelmet", `pelmet ×${c.pelmet}`));
+  if (c.flex) p.push(tag("bend", `bend rail ×${c.flex}`));
+  if (f.scaffolding) p.push(tag("scaf", "scaffolding"));
   if (c.removal) p.push(`remove ×${c.removal}`);
   if (f.villa) p.push("villa");
   const m = Math.round(f.minutes || 0);
