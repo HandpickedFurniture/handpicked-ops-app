@@ -591,6 +591,24 @@ function waText(t){
   });
   return lines.join("\n");
 }
+// one line of what the job is: windows by kind, then the things that need kit or time
+function workLine(id){
+  const f = F[id] || {}, c = f.counts || {}, p = [];
+  if (f.windows) p.push(`${f.windows} win`); else if (f.kind) p.push(f.kind);
+  if (c.curt_2l) p.push(`${c.curt_2l}×2L`);
+  if (c.curt_1l) p.push(`${c.curt_1l}×1L`);
+  if (c.blinds) p.push(`${c.blinds} blind${c.blinds > 1 ? "s" : ""}`);
+  if (c.pelmet) p.push(`pelmet ×${c.pelmet}`);
+  if (c.flex) p.push(`bend rail ×${c.flex}`);
+  if (f.motor || c.motor_windows) p.push(`motor ×${c.motor_windows || 1}`);
+  if (c.remote) p.push(`remote ×${c.remote}`);
+  if (f.scaffolding) p.push("scaffolding");
+  if (c.removal) p.push(`remove ×${c.removal}`);
+  if (f.villa) p.push("villa");
+  const m = Math.round(f.minutes || 0);
+  p.push(`≈ ${m >= 60 ? Math.floor(m / 60) + " h " : ""}${m % 60 ? (m % 60) + " min" : ""}`.trim());
+  return p.join(" · ");
+}
 const ACT_SHORT = {tookan: "Tookan", groups: "WA groups", messages: "WA schedule", checklist: "Checklists", permits: "Emaar permits", permitwa: "Permits → WA"};
 function renderStage3(){
   const P = payload(), emaarN = P.teams.reduce((a, t) => a + t.orders.filter(o => o.emaar).length, 0);
@@ -611,12 +629,13 @@ function renderStage3(){
     </div>
     <div class="s3teams">${P.teams.map(t => `<div class="tcard" style="--tc:${teamColor(t.team)}">
       <div class="th"><b>${esc(t.name)}</b>${t.members.length && !t.members.every(m => t.name.includes(m)) ? ` <span class="muted">${esc(t.members.join(" & "))}</span>` : t.members.length ? "" : ` <span class="muted">crew not named</span>`}
-        <span class="lv">leave ${t.leave} · ${t.orders.length} job${t.orders.length === 1 ? "" : "s"}</span></div>
+        <span class="lv">leave ${t.leave} · ${t.orders.length} job${t.orders.length === 1 ? "" : "s"} · ${t.orders.reduce((a, o) => a + ((F[o.order_id] || {}).windows || 0), 0)} win · ${(t.orders.reduce((a, o) => a + ((F[o.order_id] || {}).minutes || 0), 0) / 60).toFixed(1)} h</span></div>
       <input class="tnote" data-tnote="${t.team}" value="${esc(t.note)}" placeholder="Note for the team (goes on WhatsApp)">
       <ul class="tjobs">${t.orders.map(o => `<li class="${o.emaar ? "emaar" : ""}">
         <span class="tt ${o.time_edited ? "ed" : ""}" title="${o.time_edited ? "3D sheet " + o.sheet_time : "3D sheet time"}">${o.time}</span>
         <span class="tj">${o.order_id} ${esc(o.customer)}</span>${o.emaar ? `<span class="chip emaar">E</span>` : ""}${o.late_min ? `<span class="chip warn" title="expected to start ${o.late_min} min after the appointment">+${o.late_min}</span>` : ""}
         <button class="lnk" data-noteopen="${o.order_id}" title="Add a note for this job">✎</button>
+        <div class="jd"><div class="ja">${esc(o.address)}</div><div class="jw">${esc(workLine(o.order_id))}</div></div>
         <input class="onote" data-onote="${o.order_id}" data-team="${t.team}" value="${esc(o.note)}" placeholder="Note for this job" ${o.note ? "" : "hidden"}></li>`).join("")}</ul>
       <details><summary>WhatsApp preview</summary><pre class="wa" id="stp-wa-${t.team}">${esc(waText(t))}</pre></details>
     </div>`).join("")}</div>
