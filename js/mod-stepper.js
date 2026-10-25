@@ -468,7 +468,6 @@ function specialsHtml(id){
   const sp = specials(id), f = F[id], cm = (f.comments || []).filter(Boolean);
   return `<div class="specs">${sp.length ? sp.map(s => `<div class="spec"><span class="chip ${s.lvl}">${esc(s.txt)}</span>${s.detail ? `<span class="sd">${esc(s.detail)}</span>` : ""}</div>`).join("")
       : `<span class="muted" style="font-size:12px">No special requirements (checked: motors, pelmet boxes, bend rails, scaffolding, removals)</span>`}
-    ${instAlerts(id).length ? `<div class="iablock"><b>⚠ Installation alert</b><ul>${instAlerts(id).map(a => `<li>${esc(a)}</li>`).join("")}</ul></div>` : ""}
     ${cm.length ? `<details><summary>Supervisor comments (${cm.length})</summary><ul class="cm">${[...new Set(cm)].map(x => `<li>${esc(x)}</li>`).join("")}</ul></details>` : ""}</div>`;
 }
 
@@ -592,47 +591,41 @@ function waText(t){
   });
   return lines.join("\n");
 }
+const ACT_SHORT = {tookan: "Tookan", groups: "WA groups", messages: "WA schedule", checklist: "Checklists", permits: "Emaar permits", permitwa: "Permits → WA"};
 function renderStage3(){
   const P = payload(), emaarN = P.teams.reduce((a, t) => a + t.orders.filter(o => o.emaar).length, 0);
   const q = queue();
   const edited = P.teams.flatMap(t => t.orders.filter(o => o.time_edited).map(o => ({t, o})));
   const late = P.teams.flatMap(t => t.orders.filter(o => o.late_min > 0).map(o => ({t, o})));
+  const jobs = P.teams.reduce((a, t) => a + t.orders.length, 0);
   $("s3").innerHTML = `
-    ${q.length ? `<div class="note" style="margin-bottom:10px"><b>${q.length} order${q.length > 1 ? "s are" : " is"} still not on a team</b> (${q.join(", ")}). They will be left out.</div>` : ""}
-    <div class="stage1grid" style="display:grid">
-      <div class="panel"><h2>What should happen now?</h2>
-        <div class="actions">${ACTIONS.map(a => { const off = a.needs === "emaar" && !emaarN;
-          return `<label class="${off ? "off" : ""}"><input type="checkbox" data-act="${a.id}" ${off ? "disabled" : ""} ${picked.has(a.id) ? "checked" : ""}>
-            <span><span class="t">${esc(a.title)}</span>${a.needs === "emaar" ? ` <span class="chip emaar">${emaarN} Emaar order${emaarN === 1 ? "" : "s"}</span>` : ""}<br><span class="muted">${esc(a.about)}</span></span></label>`; }).join("")}</div>
-        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
-          <button class="btn primary" id="stp-b-run" ${picked.size ? "" : "disabled"}>Run ${picked.size || ""} selected</button>
-          <button class="btn" id="stp-b-dl">Download plan (JSON)</button></div>
-        <p class="muted" style="font-size:12.5px;margin-bottom:0">Prototype: this only previews what would be done. Nothing is sent to Tookan or WhatsApp.</p></div>
-      <div class="panel"><h2>Teams going out</h2>
-        <table><thead><tr><th>Team</th><th class="num">Jobs</th><th class="num">Leave</th><th>Orders (appointment time)</th></tr></thead><tbody>
-        ${P.teams.map(t => `<tr><td><span class="sw" style="background:${teamColor(t.team)}"></span><b>${esc(t.name)}</b><div class="muted" style="font-size:12px">${esc(t.members.join(" & ") || "crew not named")}</div></td>
-          <td class="num">${t.orders.length}</td><td class="num">${t.leave}</td><td>${t.orders.map(o => `<span class="chip ${o.emaar ? "emaar" : ""} ${o.time_edited ? "bad" : ""}">${o.time} ${o.order_id}</span>`).join("")}</td></tr>`).join("")}
-        </tbody></table></div></div>
-
-    <div class="panel" style="margin-top:10px"><h2>Notes for the WhatsApp messages</h2>
-      <div class="muted" style="font-size:12.5px;margin-bottom:6px">A team note goes under the team's header; a job note goes under that job. Installation alerts are added automatically.</div>
-      ${P.teams.map(t => `<div class="notecard" style="--tc:${teamColor(t.team)}">
-        <div class="nh"><span class="sw" style="background:${teamColor(t.team)}"></span><b>${esc(t.name)}</b></div>
-        <textarea data-tnote="${t.team}" rows="2" placeholder="Note for the whole team, e.g. collect the ladder from the store first">${esc(t.note)}</textarea>
-        ${t.orders.map(o => `<div class="onote"><span class="ot"><b>${o.time}</b> ${o.order_id} ${esc(o.customer)}</span>
-          ${o.installation_alert.length ? `<details class="ia"><summary>⚠ Installation alert (${o.installation_alert.length})</summary><ul>${o.installation_alert.map(a => `<li>${esc(a)}</li>`).join("")}</ul></details>` : ""}
-          <input data-onote="${o.order_id}" data-team="${t.team}" value="${esc(o.note)}" placeholder="Note for this job"></div>`).join("")}
-        <details><summary>Preview the message</summary><pre class="wa" id="stp-wa-${t.team}">${esc(waText(t))}</pre></details></div>`).join("")}
+    <div class="panel s3bar">
+      <b>${P.teams.length} teams · ${jobs} jobs</b>
+      ${q.length ? `<span class="chip bad" title="${esc(q.join(", "))}">${q.length} not on a team — left out</span>` : ""}
+      ${edited.length ? `<span class="chip bad">${edited.length} time${edited.length > 1 ? "s" : ""} changed from the 3D sheet ↓</span>` : ""}
+      <span class="acts">${ACTIONS.map(a => { const off = a.needs === "emaar" && !emaarN;
+        return `<label class="act ${off ? "off" : ""}" title="${esc(a.title + ": " + a.about)}"><input type="checkbox" data-act="${a.id}" ${off ? "disabled" : ""} ${picked.has(a.id) ? "checked" : ""}> ${esc(ACT_SHORT[a.id] || a.title)}${a.needs === "emaar" ? ` (${emaarN})` : ""}</label>`; }).join("")}</span>
+      <button class="btn small primary" id="stp-b-run" ${picked.size ? "" : "disabled"}>Run ${picked.size || ""}</button>
+      <button class="btn small" id="stp-b-dl" title="Download plan (JSON)">⬇ JSON</button>
+      <span class="muted" style="font-size:11.5px">Preview only — nothing is sent.</span>
     </div>
-
-    <div class="panel" style="margin-top:10px"><h2>Result</h2><div class="log" id="stp-log">Tick what you want and press Run.</div></div>
-
-    <div class="panel timealert ${edited.length ? "on" : ""}" style="margin-top:10px">
-      <h2>${edited.length ? `⚠ ${edited.length} appointment time${edited.length > 1 ? "s were" : " was"} changed from the 3D sheet` : "✓ Every appointment time is the 3D sheet's"}</h2>
-      ${edited.length ? `<table><thead><tr><th>Order</th><th>Customer</th><th>Team</th><th>3D sheet</th><th>Sent as</th></tr></thead><tbody>
-        ${edited.map(({t, o}) => `<tr><td><b>${o.order_id}</b></td><td>${esc(o.customer)}</td><td>${esc(t.name)}</td><td>${o.sheet_time}</td><td><b style="color:var(--bad)">${o.time}</b></td></tr>`).join("")}
-        </tbody></table><p style="margin:6px 0 0">The messages and Tookan use your time. Confirm it with the customer and update the 3D sheet.</p>` : ""}
-      ${late.length ? `<p class="muted" style="margin:8px 0 0">Expected to arrive after the appointment: ${late.map(({t, o}) => `${o.order_id} (${esc(t.name)}, +${o.late_min} min)`).join(", ")}.</p>` : ""}
+    <div class="s3teams">${P.teams.map(t => `<div class="tcard" style="--tc:${teamColor(t.team)}">
+      <div class="th"><b>${esc(t.name)}</b>${t.members.length && !t.members.every(m => t.name.includes(m)) ? ` <span class="muted">${esc(t.members.join(" & "))}</span>` : t.members.length ? "" : ` <span class="muted">crew not named</span>`}
+        <span class="lv">leave ${t.leave} · ${t.orders.length} job${t.orders.length === 1 ? "" : "s"}</span></div>
+      <input class="tnote" data-tnote="${t.team}" value="${esc(t.note)}" placeholder="Note for the team (goes on WhatsApp)">
+      <ul class="tjobs">${t.orders.map(o => `<li class="${o.emaar ? "emaar" : ""}">
+        <span class="tt ${o.time_edited ? "ed" : ""}" title="${o.time_edited ? "3D sheet " + o.sheet_time : "3D sheet time"}">${o.time}</span>
+        <span class="tj">${o.order_id} ${esc(o.customer)}</span>${o.emaar ? `<span class="chip emaar">E</span>` : ""}${o.late_min ? `<span class="chip warn" title="expected to start ${o.late_min} min after the appointment">+${o.late_min}</span>` : ""}
+        <button class="lnk" data-noteopen="${o.order_id}" title="Add a note for this job">✎</button>
+        <input class="onote" data-onote="${o.order_id}" data-team="${t.team}" value="${esc(o.note)}" placeholder="Note for this job" ${o.note ? "" : "hidden"}></li>`).join("")}</ul>
+      <details><summary>WhatsApp preview</summary><pre class="wa" id="stp-wa-${t.team}">${esc(waText(t))}</pre></details>
+    </div>`).join("")}</div>
+    <div class="log" id="stp-log" ${picked.size ? "" : "hidden"} style="margin-top:8px">Tick what you want and press Run.</div>
+    <div class="panel timealert ${edited.length ? "on" : ""}" style="margin-top:8px">
+      <b>${edited.length ? `⚠ ${edited.length} appointment time${edited.length > 1 ? "s were" : " was"} changed from the 3D sheet` : "✓ Every appointment time is the 3D sheet's"}</b>
+      ${edited.length ? `<div>${edited.map(({t, o}) => `<span class="chip">${o.order_id} ${esc(o.customer)} · ${esc(t.name)} · sheet ${o.sheet_time} → <b style="color:var(--bad)">${o.time}</b></span>`).join(" ")}</div>
+        <div class="muted" style="font-size:12px">The messages and Tookan use your time. Confirm it with the customer and update the 3D sheet.</div>` : ""}
+      ${late.length ? `<div class="muted" style="font-size:12px;margin-top:4px">Expected to start after the appointment: ${late.map(({t, o}) => `${o.order_id} (${esc(t.name)}, +${o.late_min} min)`).join(", ")}.</div>` : ""}
     </div>`;
 }
 function runPreview(){
@@ -652,7 +645,7 @@ function runPreview(){
   }
   const edited = P.teams.flatMap(t => t.orders.filter(o => o.time_edited));
   if (edited.length) L.push(`⚠ ${edited.length} time(s) differ from the 3D sheet: ${edited.map(o => `${o.order_id} ${o.sheet_time}→${o.time}`).join(", ")}. See the box at the bottom.`);
-  $("log").textContent = L.join("\n");
+  $("log").hidden = false; $("log").textContent = L.join("\n");
 }
 
 /* ---------------- map ---------------- */
@@ -860,6 +853,7 @@ on("click", e => {
   if (idOf(b) === "b-addclose") closeAdd();
   if (idOf(b) === "b-addmanual"){ const g = k => $(k).value; const msg = addManual({id: g("na-id"), customer: g("na-cust"), address: g("na-addr"), slot: g("na-slot"), minutes: g("na-min"), windows: g("na-win"), emaar: $("na-emaar").checked, lat: g("na-lat"), lng: g("na-lng")}); if (msg) $("na-msg").textContent = msg; else closeAdd(); }
   if (idOf(b) === "b-run") runPreview();
+  if (b.dataset.noteopen){ const i = b.parentNode.querySelector("input[data-onote]"); if (i){ i.hidden = !i.hidden || false; if (!i.hidden) i.focus(); } }
   if (idOf(b) === "b-play") startPlay();
   if (idOf(b) === "b-pause") stopPlay();
   if (idOf(b) === "b-step"){ haltPlay(); stepOnce(false); }
@@ -890,7 +884,7 @@ on("change", e => {
 // Stage 3 notes: saved as you type and shown in the message preview, without redrawing the page
 on("input", e => {
   const el = e.target, n = notes();
-  if (el.matches("textarea[data-tnote]")) n.team[el.dataset.tnote] = el.value;
+  if (el.matches("[data-tnote]")) n.team[el.dataset.tnote] = el.value;
   else if (el.matches("input[data-onote]")) n.order[el.dataset.onote] = el.value;
   else return;
   save();

@@ -137,6 +137,27 @@
 .stp .iablock ul,.stp details.ia ul{margin:2px 0;padding-left:18px}
 .stp details.ia{font-size:12.5px}
 .stp details.ia summary{cursor:pointer;color:var(--warn);font-weight:600}
+.stp .s3bar{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;padding:8px 12px;position:sticky;top:0;z-index:5}
+.stp .s3bar .acts{display:inline-flex;flex-wrap:wrap;gap:4px}
+.stp .s3bar .act{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:14px;padding:2px 9px;font-size:12.5px;cursor:pointer;background:#fff}
+.stp .s3bar .act.off{opacity:.45;cursor:not-allowed}
+.stp .s3teams{display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:8px;margin-top:8px}
+.stp [hidden]{display:none !important}
+.stp .tcard{background:var(--card);border:1px solid var(--line);border-top:4px solid var(--tc);border-radius:8px;padding:6px 8px;font-size:12.5px}
+.stp .tcard .th{display:flex;flex-wrap:wrap;gap:2px 6px;align-items:baseline}
+.stp .tcard .th .lv{margin-left:auto;color:var(--mute);font-size:11.5px;white-space:nowrap}
+.stp .tcard .tnote{width:100%;border:1px solid var(--line);border-radius:5px;padding:3px 6px;font:inherit;font-size:12px;margin:4px 0}
+.stp .tjobs{list-style:none;margin:0;padding:0}
+.stp .tjobs li{display:flex;flex-wrap:wrap;gap:2px 6px;align-items:center;padding:2px 0;border-top:1px dashed var(--line)}
+.stp .tjobs li.emaar{background:var(--emaarbg)}
+.stp .tjobs .tt{font-weight:700;font-variant-numeric:tabular-nums;min-width:40px}
+.stp .tjobs .tt.ed{color:var(--bad)}
+.stp .tjobs .tj{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stp .tjobs .chip{margin:0;padding:0 5px;font-size:11px}
+.stp .tjobs .onote{flex-basis:100%;border:1px solid var(--line);border-radius:5px;padding:2px 6px;font:inherit;font-size:12px}
+.stp .tcard details summary{cursor:pointer;color:var(--accent);font-size:12px;margin-top:4px}
+.stp .tcard pre.wa{font-size:11.5px;max-height:260px;overflow:auto}
+.stp .timealert b{display:block;margin-bottom:4px}
 .stp /* map pins */
 .pin{position:relative;width:30px;height:30px;border-radius:50%;color:#fff;font-weight:700;font-size:13px;text-align:center;line-height:26px;border:3px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.45)}
 .stp .pin.emaar{box-shadow:0 0 0 4px #ffe066,0 1px 5px rgba(0,0,0,.45)}
