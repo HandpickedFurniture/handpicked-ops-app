@@ -66,7 +66,12 @@ function restart(wave, keepOrders){
 // a two-press confirm on the button itself: the browser's confirm() box is blocked silently in some
 // embedded views, which made the button look dead
 let resetArmed = false, resetTimer = null;
-function applyTimes(){ IDS.forEach(i => F[i].slot = (state.times && state.times[i]) || F[i].sheet_slot); }
+function applyTimes(){
+  IDS.forEach(i => F[i].slot = (state.times && state.times[i]) || F[i].sheet_slot);
+  // Emaar: what the address says (emaar_auto), unless the user switched it for this order
+  IDS.forEach(i => { if (F[i].emaar_auto === undefined) F[i].emaar_auto = !!F[i].emaar;
+    F[i].emaar = state.emaarSet && i in state.emaarSet ? state.emaarSet[i] : F[i].emaar_auto; });
+}
 
 /* ---------------- state ---------------- */
 // assign: team number -> order ids in visit order. history: [{id, team}] so Undo works one step at a time.
@@ -310,7 +315,7 @@ function renderStage1(){
       const endTxt = st ? hm(st.end) : hm(mins(f.slot) + f.minutes);
       const note = st ? (st.late ? `<span class="chip bad">TIME CHANGE +${st.late}</span>` : st.minor ? `<span class="chip warn">starts ${hm(st.start)} (+${st.minor})</span>` : st.wait > 15 ? `<span class="chip">waits ${Math.round(st.wait)} min</span>` : "") + (st.over ? `<span class="chip bad">ends after limit</span>` : "") : "";
       return `<tr class="orow ${f.emaar ? "emaar" : ""} ${oid === id ? "focused" : ""}" data-focus="${oid}" style="${tn ? `border-left:6px solid ${teamColor(tn)}` : "border-left:6px solid transparent"}">
-        <td><b>${esc(oid)}</b> <button class="lnk" data-remove="${oid}" title="Remove from this list" aria-label="Remove ${oid}">✕</button>${f.hold ? ' <span class="chip warn">ISR / odd time</span>' : f.manual ? ' <span class="chip">added</span>' : ""}<div class="muted" style="font-size:12px">${esc(f.city)}${f.emaar ? ' · <span style="color:var(--emaar);font-weight:700">Emaar</span>' : ""}${f.scaffolding ? " · scaffolding" : ""}${f.motor ? " · motor" : ""}</div></td>
+        <td><b>${esc(oid)}</b> <button class="lnk" data-remove="${oid}" title="Remove from this list" aria-label="Remove ${oid}">✕</button>${f.hold ? ' <span class="chip warn">ISR / odd time</span>' : f.manual ? ' <span class="chip">added</span>' : ""}<div class="muted" style="font-size:12px">${esc(f.city)} · <label class="etog ${f.emaar ? "on" : ""}" title="${f.emaar_auto ? "The address looks like Emaar" : "The address does not look like Emaar"}${state.emaarSet && oid in state.emaarSet ? " - you changed it" : ""}"><input type="checkbox" data-emaar="${oid}" ${f.emaar ? "checked" : ""}>Emaar${state.emaarSet && oid in state.emaarSet ? "*" : ""}</label>${f.scaffolding ? " · scaffolding" : ""}${f.motor ? " · motor" : ""}</div></td>
         <td>${esc(f.customer)}<div class="muted" style="font-size:12px">${esc(f.address)}</div></td>
         <td><input type="time" step="300" value="${esc(f.slot)}" data-time="${oid}" aria-label="Start time of ${oid}">${f.slot !== f.sheet_slot ? `<div class="muted" style="font-size:11.5px">sheet ${esc(f.sheet_slot)} <button class="lnk" data-treset="${oid}">reset</button></div>` : ""}</td>
         <td>${winViz(f)}</td>
@@ -359,7 +364,9 @@ function renderStage2(){
   if (minor) items.push(["soft", `${minor} start${minor > 1 ? "s are" : " is"} up to ${FREE_LATE} min after the appointment (inside the free window).`]);
   $("checks").innerHTML = items.map(([c, x]) => `<li class="${c}">${esc(x)}</li>`).join("");
 
-  $("tray").innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0 0 4px">Not on a team</h2>${sortSel()}</div>
+  const gone2 = state.removed.map(i => DAY.facts[i] || DAY.held[i]).filter(f => f && f.city === UI.city);
+  $("tray").innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0 0 4px">Not on a team</h2><span style="display:inline-flex;gap:8px;align-items:center"><button class="btn small" id="stp-b-addorder" title="Add an ISR / odd-time order or a new one; it lands here, then drag it onto a team">+ Add order</button>${sortSel()}</span></div>
+    ${gone2.length ? `<div class="muted" style="font-size:11.5px">Removed: ${gone2.map(f => `<span class="chip">${esc(f.order_id)} ${esc(f.customer)} <button class="lnk" data-restore="${esc(f.order_id)}">restore</button></span>`).join(" ")}</div>` : ""}
     <div class="legend"><span class="kit motor">motor</span><span class="kit pelmet">pelmet box</span><span class="kit bend">bend rail</span><span class="kit scaf">scaffolding</span></div>` + (q.length
     ? `<div class="muted" style="font-size:12.5px">Drag onto a team below, or go back to Stage 1 to place them with suggestions.</div><div class="tray">${q.map(i => `<span class="chip" draggable="true" data-id="${i}">${F[i].slot} · ${i} · ${esc(F[i].customer)}</span>`).join("")}</div>`
     : `<span class="muted">✓ Every order is on a team.</span>`);
@@ -375,7 +382,7 @@ function renderStage2(){
       const f = F[s.id];
       body += `<p class="drv">${i === 0 ? `leave ${hm(r.depart)} · ` : ""}🚐 ${s.travel} min · ${s.km} km</p>
       <div class="stop ${f.emaar ? "emaar" : ""}" draggable="true" data-id="${s.id}" data-team="${t.team}" style="--tc:${tc}">
-        <div class="l1"><span class="sheett" title="Time on the 3D sheet"><span>3D</span><b>${esc(f.sheet_slot)}</b></span>${f.slot !== f.sheet_slot ? `<em class="youset" title="You changed the time">→ ${esc(f.slot)}</em>` : ""}<span class="who" title="${esc(s.id + " " + f.customer)}"><span class="oid">${s.id}</span> ${esc(f.customer)}</span></div>
+        <div class="l1"><span class="sheett" title="Time on the 3D sheet"><span>3D</span><b>${esc(f.sheet_slot)}</b></span>${f.slot !== f.sheet_slot ? `<em class="youset" title="You changed the time">→ ${esc(f.slot)}</em>` : ""}<span class="who" title="${esc(s.id + " " + f.customer)}"><span class="oid">${s.id}</span> ${esc(f.customer)}</span><button class="lnk rmx" data-remove="${s.id}" title="Remove from this day's plan (you can restore it above)" aria-label="Remove ${s.id}">✕</button></div>
         <div class="pt">Planned <b>${hm(s.start)}–${hm(s.end)}</b> · arr ${hm(s.arrive)}${s.delay > 0 ? ` <span class="chip ${s.late ? "bad" : "warn"}">+${s.delay}</span>` : ""}${s.over ? ` <span class="chip bad">after limit</span>` : ""}</div>
         <div class="ad" title="${esc(f.address)}">${esc(f.address)}</div>
         <div class="jw2">${f.emaar ? `<span class="chip emaar">EMAAR</span> ` : ""}${workLineHtml(s.id)}</div>
@@ -908,6 +915,11 @@ on("click", e => {
 });
 on("change", e => {
   const el = e.target;
+  if (el.matches("input[data-emaar]")){
+    const id = el.dataset.emaar; state.emaarSet = state.emaarSet || {};
+    if (el.checked === F[id].emaar_auto) delete state.emaarSet[id]; else state.emaarSet[id] = el.checked;
+    applyTimes(); save(); paint();
+  }
   if (el.matches("input[data-time]")){ if (el.value) state.times[el.dataset.time] = el.value; else delete state.times[el.dataset.time]; applyTimes(); state.cur = el.dataset.time; save(); paint(); }
   if (el.matches("select[data-team-for]")){ if (playing) stopPlay(); assignTo(el.dataset.teamFor, el.value === "" ? "" : Number(el.value)); }
   if (idOf(el) === "wave") restart(el.value, true);
