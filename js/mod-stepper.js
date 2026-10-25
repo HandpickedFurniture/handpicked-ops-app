@@ -476,15 +476,23 @@ function specialsHtml(id){
 let playing = false, playTimer = null, caption = "", playGen = 0;
 const sayId = id => String(id).split("").join(" ");
 const canSpeak = () => "speechSynthesis" in window;
+// spoken times: 13:00 -> "1 pm", 13:30 -> "1:30 pm", 12:00 -> "12 noon" (user, 25 Oct 2026)
+const say12 = m => {
+  m = Math.round(m); const h = Math.floor(m / 60) % 24, mm = m % 60;
+  if (h === 12 && mm === 0) return "12 noon";
+  if (h === 0 && mm === 0) return "midnight";
+  const h12 = h % 12 || 12, ap = h < 12 ? "am" : "pm";
+  return mm ? `${h12}:${String(mm).padStart(2, "0")} ${ap}` : `${h12} ${ap}`;
+};
 function narrate(id, cands){
   const f = F[id], b = cands[0], st = b.st, parts = [];
-  parts.push(`Order ${sayId(id)}, ${f.customer}. Appointment ${f.slot}, about ${f.minutes} minutes on site, ${f.windows} window${f.windows === 1 ? "" : "s"}.`);
+  parts.push(`Order ${sayId(id)}, ${f.customer}. Appointment ${say12(mins(f.slot))}, about ${f.minutes} minutes on site, ${f.windows} window${f.windows === 1 ? "" : "s"}.`);
   parts.push(`Best choice: ${tname(b.team)}.`);
   if (b.prevId){
     const prev = b.after.stops[b.after.stops.findIndex(s => s.id === b.prevId)];
-    parts.push(`It finishes order ${sayId(b.prevId)} at ${hm(prev.end)}, then drives ${st.travel} minutes, ${st.km} kilometres.`);
-  } else parts.push(`It has no job yet and leaves the depot at ${hm(b.after.depart)}.`);
-  parts.push(`Arrives at ${hm(st.arrive)}, starts at ${hm(st.start)}` + (st.late ? `, which is ${st.late} minutes after the appointment, so the customer must be told.` : st.minor ? `, ${st.minor} minutes after the appointment, inside the free hour.` : st.wait > 15 ? `, after waiting ${Math.round(st.wait)} minutes for the appointment.` : ", on time.") + ` It ends at ${hm(st.end)}.`);
+    parts.push(`It finishes order ${sayId(b.prevId)} at ${say12(prev.end)}, then drives ${st.travel} minutes, ${st.km} kilometres.`);
+  } else parts.push(`It has no job yet and leaves the depot at ${say12(b.after.depart)}.`);
+  parts.push(`Arrives at ${say12(st.arrive)}, starts at ${say12(st.start)}` + (st.late ? `, which is ${st.late} minutes after the appointment, so the customer must be told.` : st.minor ? `, ${st.minor} minutes after the appointment, inside the free hour.` : st.wait > 15 ? `, after waiting ${Math.round(st.wait)} minutes for the appointment.` : ", on time.") + ` It ends at ${say12(st.end)}.`);
   if (st.over) parts.push(`Warning: that is after the end of the working day.`);
   if (f.emaar){
     const has = b.why.some(w => /already on an Emaar job/.test(w));
@@ -492,18 +500,21 @@ function narrate(id, cands){
   }
   if (f.scaffolding) parts.push("Scaffolding is needed.");
   const alt = cands[1];
-  if (alt) parts.push(`Next best is ${tname(alt.team)}, ${alt.st.travel} minutes away, starting at ${hm(alt.st.start)}${alt.st.late ? `, ${alt.st.late} minutes late` : ""}.`);
+  if (alt) parts.push(`Next best is ${tname(alt.team)}, ${alt.st.travel} minutes away, starting at ${say12(alt.st.start)}${alt.st.late ? `, ${alt.st.late} minutes late` : ""}.`);
   return parts.join(" ");
 }
 function speak(text, done){
   if (!UI.voice || !canSpeak()){ playTimer = setTimeout(done, Math.max(2500, text.length * 30 / (UI.rate || 1))); return; }
   speechSynthesis.cancel();
+  let fired = false;
+  const once = () => { if (fired) return; fired = true; clearTimeout(watchdog); done(); };
+  const watchdog = setTimeout(() => { speechSynthesis.cancel(); once(); }, text.length * 110 / (UI.rate || 1) + 5000);
   const u = new SpeechSynthesisUtterance(text);
   const v = speechSynthesis.getVoices().find(x => /^en(-|_)(GB|US|IN|AE)/i.test(x.lang)) || speechSynthesis.getVoices().find(x => /^en/i.test(x.lang));
   if (v) u.voice = v;
   u.lang = "en-GB"; u.rate = UI.rate || 1;
-  u.onend = () => { playTimer = setTimeout(done, 600); };
-  u.onerror = () => { playTimer = setTimeout(done, 1500); };
+  u.onend = () => { playTimer = setTimeout(once, 600); };
+  u.onerror = () => { playTimer = setTimeout(once, 1500); };
   speechSynthesis.speak(u);
 }
 function stepOnce(auto){
@@ -522,9 +533,23 @@ function startPlay(){ if (playing) return; playing = true; stepOnce(true); }
 function haltPlay(){ playing = false; playGen++; clearTimeout(playTimer); if (canSpeak()) speechSynthesis.cancel(); }
 function stopPlay(){ haltPlay(); paint(); }
 const captionHtml = () => (playing || caption) ? `<div class="panel caption ${playing ? "live" : ""}"><span class="cl">${playing ? "▶ Playing" : "Last explanation"}</span> ${esc(caption)}</div>` : "";
+function assignAllSuggested(){
+  haltPlay(); caption = "";
+  let n = 0;
+  for (let id = queue()[0]; id && n < 500; id = queue()[0], n++){
+    const best = candidates(id)[0];
+    const was = null;
+    state.assign[best.team] = insertAt(state.assign[best.team] || [], id);
+    state.history.push({id, team: best.team, was});
+  }
+  state.cur = null; hot = null; save();
+  go(2);
+  return n;
+}
 const playCtl = () => `<span class="playctl">
     ${playing ? `<button class="btn small primary" id="stp-b-pause">⏸ Pause</button>` : `<button class="btn small primary" id="stp-b-play" ${queue().length ? "" : "disabled"}>▶ Play</button>`}
     <button class="btn small" id="stp-b-step" ${playing || !queue().length ? "disabled" : ""} title="Place just the next order, with the explanation">⏭ Step</button>
+    <button class="btn small" id="stp-b-allgo" ${!queue().length ? "disabled" : ""} title="Put every remaining order on its suggested team, without the narration, and open Stage 2">⏩ Assign all suggested → Stage 2</button>
     <label class="muted" title="Read the reasoning out loud"><input type="checkbox" id="stp-voice" ${UI.voice ? "checked" : ""}> 🔊 voice</label>
     <select id="stp-rate" aria-label="Speed">${[0.8, 1, 1.2, 1.5].map(r => `<option value="${r}" ${Number(UI.rate || 1) === r ? "selected" : ""}>${r}×</option>`).join("")}</select></span>`;
 
@@ -838,6 +863,7 @@ on("click", e => {
   if (idOf(b) === "b-play") startPlay();
   if (idOf(b) === "b-pause") stopPlay();
   if (idOf(b) === "b-step"){ haltPlay(); stepOnce(false); }
+  if (idOf(b) === "b-allgo") assignAllSuggested();
   if (idOf(b) === "b-dl"){
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(payload(), null, 1)], {type: "application/json"}));
     a.download = `schedule_plan_${UI.date}_${UI.city.replace(/ /g, "")}.json`; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 400);
