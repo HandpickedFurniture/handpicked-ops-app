@@ -557,7 +557,8 @@ function payload(){
 function waText(t){
   const d = new Date(UI.date + "T00:00:00");
   const lines = [`*Installation schedule, ${d.toLocaleDateString("en-GB", {weekday: "short", day: "numeric", month: "short", year: "numeric"})}*`,
-    `*${t.name}*${t.members.length ? " (" + t.members.join(" & ") + ")" : ""}, leave ${t.leave}`];
+    // a crew picked from the list is already named "Team 3 Ikbal & Kaleem": don't repeat the people
+    `*${t.name}*${t.members.length && !t.members.every(m => t.name.includes(m)) ? " (" + t.members.join(" & ") + ")" : ""}, leave ${t.leave}`];
   if (t.note) lines.push(`📝 ${t.note}`);
   t.orders.forEach(o => {
     lines.push("", `*${o.time}*  ${o.order_id}  ${o.customer}, ${o.address}${o.emaar ? "  (EMAAR)" : ""}`);
