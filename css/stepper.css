@@ -184,14 +184,12 @@
 .stp .stop .ad{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .stp .stop .pt{font-size:10.5px;color:var(--mute)}
 .stp .stop .pt b{color:var(--ink)}
-.stp[data-stage="2"] #stp-tray{display:flex;align-items:center;gap:6px 12px;flex-wrap:wrap}
-.stp[data-stage="2"] #stp-tray > div:first-child{flex:1}
-.stp[data-stage="2"] #stp-tray h2{display:inline;margin:0 8px 0 0}
+.stp[data-stage="2"] #stp-tray{display:block;min-width:0}
 .stp .specs .spl{font-size:10.5px;color:var(--warn);line-height:1.3}
 .stp .specs .sp{cursor:help}
 .stp .specs .sp.bad{color:var(--bad);font-weight:700}
 .stp .specs .sp.emaar{color:var(--emaar);font-weight:700}
-.stp[data-stage="2"] .s2{display:grid !important;grid-template-columns:minmax(0,1fr) minmax(220px,auto);gap:0 8px;align-items:stretch}
+.stp[data-stage="2"] .s2{display:grid !important;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 8px;align-items:stretch}
 .stp[data-stage="2"] .s2 > .teams{grid-column:1/-1}
 .stp[data-stage="2"] ul.checks{font-size:11px;margin:0;padding-left:16px}
 .stp[data-stage="2"] ul.checks li{margin:0}
@@ -224,6 +222,23 @@
 .stp .ribbon .btn.small{padding:1px 8px;font-size:11.5px}
 .stp .stop .onote2{width:100%;margin-top:3px;border:1px dashed var(--line);border-radius:4px;padding:2px 5px;font:inherit;font-size:11px;background:#fbfcfd}
 .stp .stop .onote2:focus{outline:none;border-style:solid;border-color:var(--accent);background:#fff}
+.stp #stp-tray .trh{display:flex;justify-content:space-between;align-items:center;gap:4px 10px;flex-wrap:wrap}
+.stp #stp-tray .trh h2{margin:0}
+.stp #stp-tray .trb{display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap}
+.stp #stp-tray label{display:inline-flex;align-items:center;gap:4px;margin:0}
+.stp #stp-tray select{width:auto}
+.stp #stp-tray .trr{display:flex;justify-content:space-between;align-items:flex-start;gap:4px 10px;flex-wrap:wrap;margin-top:3px}
+.stp #stp-tray .trr .tray{flex:1 1 260px;min-width:0;margin:0;gap:4px;align-items:center}
+.stp #stp-tray .legend{margin:0}
+.stp #stp-tray.waiting{background:#fff4f2;border-color:#f3b4ab}
+.stp .qcard{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:grab;background:#fff;border:1px solid #9aa5b3;border-radius:6px;padding:2px 8px;font-size:11.5px}
+.stp .qcard.emaar{background:var(--emaarbg);border-color:var(--emaarln)}
+.stp .qcard.dragging{opacity:.4}
+.stp .team .th{display:flex;align-items:center;gap:2px}
+.stp .team .th .nm{flex:1;min-width:0}
+.stp .team .tdel{color:var(--mute);text-decoration:none;font-size:11px;padding:0 3px;white-space:nowrap}
+.stp .team .tdel:hover{color:var(--bad)}
+.stp .team .tdel.armed{color:#fff;background:var(--bad);border-radius:4px;font-weight:700;padding:1px 5px}
 .stp /* map pins */
 .pin{position:relative;width:30px;height:30px;border-radius:50%;color:#fff;font-weight:700;font-size:13px;text-align:center;line-height:26px;border:3px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.45)}
 .stp .pin.emaar{box-shadow:0 0 0 4px #ffe066,0 1px 5px rgba(0,0,0,.45)}

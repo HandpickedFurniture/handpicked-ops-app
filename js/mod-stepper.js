@@ -222,8 +222,19 @@ function addManual(v){
 }
 function addTeam(){
   const n = Math.max(0, ...state.teams.map(t => t.team)) + 1;
-  state.teams.push({team: n, name: "Team " + n, members: []}); state.assign[n] = []; save(); paint();
+  // named after the first "Team K" no other team is called (crews keep their WhatsApp numbers in the name)
+  let k = 1; while (state.teams.some(t => new RegExp("^team\\s*" + k + "(?!\\d)", "i").test(t.name))) k++;
+  state.teams.push({team: n, name: "Team " + k, members: []}); state.assign[n] = []; save(); paint();
 }
+// its orders go back to "Not on a team"; the last team cannot go (Stage 1 needs one to suggest)
+function deleteTeam(n){
+  n = Number(n); if (state.teams.length <= 1) return;
+  state.teams = state.teams.filter(t => t.team !== n); delete state.assign[n];
+  state.history.forEach(h => { if (Number(h.was) === n) h.was = null; });
+  if (state.notes) delete state.notes.team[n];
+  hiddenTeams.delete(n); delArmed = null; save(); paint();
+}
+let delArmed = null, delTimer = null;            // same two-press confirm as Start again
 
 /* ---------------- render: stage 1 ---------------- */
 let hot = null;                                   // team number under the mouse in the suggestion table
@@ -349,7 +360,7 @@ function renderStage2(){
   const res = {}; state.teams.forEach(t => res[t.team] = simulate(state.assign[t.team] || []));
   const items = [];
   const q = queue();
-  if (q.length) items.push(["bad", `${q.length} order${q.length > 1 ? "s are" : " is"} not on any team yet (tray below).`]);
+  if (q.length) items.push(["bad", `${q.length} order${q.length > 1 ? "s are" : " is"} not on any team yet (see Not on a team).`]);
   for (const t of state.teams){
     for (const s of res[t.team].stops){
       if (s.late) items.push(["bad", `TIME CHANGE: ${s.id} on ${t.name} starts ${hm(s.start)} for a ${F[s.id].slot} appointment (+${s.late} min).`]);
@@ -365,11 +376,14 @@ function renderStage2(){
   $("checks").innerHTML = items.map(([c, x]) => `<li class="${c}">${esc(x)}</li>`).join("");
 
   const gone2 = state.removed.map(i => DAY.facts[i] || DAY.held[i]).filter(f => f && f.city === UI.city);
-  $("tray").innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0 0 4px">Not on a team</h2><span style="display:inline-flex;gap:8px;align-items:center"><button class="btn small" id="stp-b-addorder" title="Add an ISR / odd-time order or a new one; it lands here, then drag it onto a team">+ Add order</button>${sortSel()}</span></div>
+  $("tray").classList.toggle("waiting", q.length > 0);
+  $("tray").innerHTML = `<div class="trh"><h2>Not on a team${q.length ? ` (${q.length})` : ""}</h2>
+      <span class="trb"><button class="btn small" id="stp-b-addteam" title="A new, empty team on the end; drag orders onto it">+ Team</button><button class="btn small" id="stp-b-addorder" title="Add an ISR / odd-time order or a new one; it lands here, then drag it onto a team">+ Add order</button>${sortSel()}</span></div>
     ${gone2.length ? `<div class="muted" style="font-size:11.5px">Removed: ${gone2.map(f => `<span class="chip">${esc(f.order_id)} ${esc(f.customer)} <button class="lnk" data-restore="${esc(f.order_id)}">restore</button></span>`).join(" ")}</div>` : ""}
-    <div class="legend"><span class="kit motor">motor</span><span class="kit pelmet">pelmet box</span><span class="kit bend">bend rail</span><span class="kit scaf">scaffolding</span></div>` + (q.length
-    ? `<div class="muted" style="font-size:12.5px">Drag onto a team below, or go back to Stage 1 to place them with suggestions.</div><div class="tray">${q.map(i => `<span class="chip" draggable="true" data-id="${i}">${F[i].slot} · ${i} · ${esc(F[i].customer)}</span>`).join("")}</div>`
-    : `<span class="muted">✓ Every order is on a team.</span>`);
+    <div class="trr">` + (q.length
+    ? `<div class="tray">${q.map(i => `<span class="qcard ${F[i].emaar ? "emaar" : ""}" draggable="true" data-id="${i}" title="Drag onto a team">${esc(F[i].slot)} · <b>${i}</b> ${esc(F[i].customer)} <span class="muted">· ${F[i].windows} win</span></span>`).join("")}<span class="muted" style="font-size:11px">drag onto a team</span></div>`
+    : `<span class="muted">✓ Every order is on a team.</span>`) +
+    `<div class="legend"><span class="kit motor">motor</span><span class="kit pelmet">pelmet box</span><span class="kit bend">bend rail</span><span class="kit scaf">scaffolding</span></div></div>`;
 
   $("crews").innerHTML = ROSTER.teams.filter(c => c.members.length).map(c => `<option value="${esc(crewLabel(c))}">`).join("") +
     people().map(p => `<option value="${esc(p.name)}">`).join("");
@@ -389,8 +403,9 @@ function renderStage2(){
         ${specialsHtml(s.id)}
         <input class="onote2" data-onote="${s.id}" data-team="${t.team}" draggable="false" value="${esc(notes().order[s.id] || "")}" placeholder="Note (goes on WhatsApp)" aria-label="Note for ${s.id}"></div>`;
     });
+    const armed = delArmed === t.team;
     return `<article class="team" data-team="${t.team}" style="--tc:${tc}">
-      <input class="nm" list="stp-crews" value="${esc(t.name)}" data-tname="${t.team}" aria-label="Name of team ${t.team}" placeholder="Type a name, or pick a crew">
+      <div class="th"><input class="nm" list="stp-crews" value="${esc(t.name)}" data-tname="${t.team}" aria-label="Name of team ${t.team}" placeholder="Type a name, or pick a crew">${state.teams.length > 1 ? `<button class="lnk tdel ${armed ? "armed" : ""}" data-delteam="${t.team}" title="Delete this team${seq.length ? "; its orders go back to Not on a team" : ""}" aria-label="Delete ${esc(t.name)}">${armed ? `Delete? ${seq.length} order${seq.length > 1 ? "s" : ""} go back` : "✕"}</button>` : ""}</div>
       <input class="mem" list="stp-crews" value="${esc((t.members || []).join(" & "))}" data-tmem="${t.team}" aria-label="Members of team ${t.team}" placeholder="Members, e.g. Ikbal & Kaleem">
       <div class="metrics"><span><b>${r.orders}</b> jobs</span><span><b>${r.windows}</b> win</span><span><b>${(r.work / 60).toFixed(1)}</b> h</span>${r.orders ? `<span><b>${hm(r.depart)}</b>–<b>${hm(r.home)}</b></span>` : ""}</div>
       ${rules.map(([lv, tx]) => `<div><span class="chip ${lv === "bad" ? "bad" : "warn"}">${esc(tx)}</span></div>`).join("")}
@@ -438,11 +453,17 @@ function sortedIds(teamOfId, stopOf){
     return byTime(a, b);
   });
 }
+// The column order is worked out when Stage 2 opens or the Sort box changes, then kept: naming a team or
+// moving an order must not make the columns jump (user, 25 Oct 2026). New teams go on the end.
 function sortedTeams(res){
-  const t = state.teams.slice();
-  if ((UI.sort || "time") === "team") return t.sort((a, b) => natural(a.name, b.name));
-  const first = x => res[x.team].stops.length ? res[x.team].stops[0].start : 1e9;
-  return t.sort((a, b) => first(a) - first(b) || natural(a.name, b.name));
+  const sort = UI.sort || "time", nums = state.teams.map(t => t.team);
+  if (!state.colOrder || state.colSort !== sort){
+    const t = state.teams.slice(), first = x => res[x.team].stops.length ? res[x.team].stops[0].start : 1e9;
+    if (sort === "team") t.sort((a, b) => natural(a.name, b.name));
+    else t.sort((a, b) => first(a) - first(b) || natural(a.name, b.name));
+    state.colOrder = t.map(x => x.team); state.colSort = sort; save();
+  }
+  return state.colOrder.filter(n => nums.includes(n)).concat(nums.filter(n => !state.colOrder.includes(n))).map(teamOf);
 }
 const sortSel = () => `<label class="muted">Sort <select id="stp-sortSel"><option value="time" ${UI.sort !== "team" ? "selected" : ""}>by time</option><option value="team" ${UI.sort === "team" ? "selected" : ""}>by team name</option></select></label>`;
 
@@ -894,7 +915,7 @@ function paint(){
   drawMap();
   if (map) setTimeout(() => map.invalidateSize(), 0);
 }
-function go(n){ state.stage = n; fitKey = ""; save(); paint(); window.scrollTo({top: 0}); setTimeout(() => { if (map){ map.invalidateSize(); drawMap(true); } }, 60); }
+function go(n){ if (n === 2 && state.stage !== 2) state.colOrder = null; state.stage = n; fitKey = ""; save(); paint(); window.scrollTo({top: 0}); setTimeout(() => { if (map){ map.invalidateSize(); drawMap(true); } }, 60); }
 
 on("click", e => {
   const row = e.target.closest ? e.target.closest("tr[data-focus]") : null;
@@ -907,6 +928,11 @@ on("click", e => {
   if (b.dataset.shift) shift(b.dataset.team, Number(b.dataset.idx), Number(b.dataset.shift));
   if (idOf(b) === "b-undo") undo();
   if (idOf(b) === "b-addteam") addTeam();
+  if (b.dataset.delteam){
+    const n = Number(b.dataset.delteam);
+    if (!(state.assign[n] || []).length || delArmed === n){ clearTimeout(delTimer); deleteTeam(n); }
+    else { delArmed = n; clearTimeout(delTimer); delTimer = setTimeout(() => { delArmed = null; paint(); }, 4000); paint(); }
+  }
   if (idOf(b) === "b-reset"){
     if (!resetArmed){ resetArmed = true; clearTimeout(resetTimer); resetTimer = setTimeout(() => { resetArmed = false; paint(); }, 4000); paint(); }
     else { clearTimeout(resetTimer); restart(state.wave); }
