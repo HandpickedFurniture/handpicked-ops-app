@@ -386,7 +386,8 @@ function renderStage2(){
         <div class="pt">Planned <b>${hm(s.start)}–${hm(s.end)}</b> · arr ${hm(s.arrive)}${s.delay > 0 ? ` <span class="chip ${s.late ? "bad" : "warn"}">+${s.delay}</span>` : ""}${s.over ? ` <span class="chip bad">after limit</span>` : ""}</div>
         <div class="ad" title="${esc(f.address)}">${esc(f.address)}</div>
         <div class="jw2">${f.emaar ? `<span class="chip emaar">EMAAR</span> ` : ""}${workLineHtml(s.id)}</div>
-        ${specialsHtml(s.id)}</div>`;
+        ${specialsHtml(s.id)}
+        <input class="onote2" data-onote="${s.id}" data-team="${t.team}" draggable="false" value="${esc(notes().order[s.id] || "")}" placeholder="Note (goes on WhatsApp)" aria-label="Note for ${s.id}"></div>`;
     });
     return `<article class="team" data-team="${t.team}" style="--tc:${tc}">
       <input class="nm" list="stp-crews" value="${esc(t.name)}" data-tname="${t.team}" aria-label="Name of team ${t.team}" placeholder="Type a name, or pick a crew">
@@ -661,9 +662,8 @@ function renderStage3(){
       <ul class="tjobs">${t.orders.map(o => `<li class="${o.emaar ? "emaar" : ""}">
         <span class="tt ${o.time_edited ? "ed" : ""}" title="${o.time_edited ? "3D sheet " + o.sheet_time : "3D sheet time"}">${o.time}</span>
         <span class="tj">${o.order_id} ${esc(o.customer)}</span>${o.emaar ? `<span class="chip emaar">E</span>` : ""}${o.late_min ? `<span class="chip warn" title="expected to start ${o.late_min} min after the appointment">+${o.late_min}</span>` : ""}
-        <button class="lnk" data-noteopen="${o.order_id}" title="Add a note for this job">✎</button>
         <div class="jd"><div class="ja">${esc(o.address)}</div><div class="jw">${esc(workLine(o.order_id))}</div></div>
-        <input class="onote" data-onote="${o.order_id}" data-team="${t.team}" value="${esc(o.note)}" placeholder="Note for this job" ${o.note ? "" : "hidden"}></li>`).join("")}</ul>
+        <input class="onote" data-onote="${o.order_id}" data-team="${t.team}" value="${esc(o.note)}" placeholder="Note (goes on WhatsApp)" aria-label="Note for ${o.order_id}"></li>`).join("")}</ul>
       <details><summary>WhatsApp preview</summary><pre class="wa" id="stp-wa-${t.team}">${esc(waText(t))}</pre></details>
     </div>`).join("")}</div>
     <div class="log" id="stp-log" ${picked.size ? "" : "hidden"} style="margin-top:8px">Tick what you want and press Run.</div>
@@ -863,12 +863,30 @@ function wireSplit(){
 }
 
 /* ---------------- main ---------------- */
+// everything the 3D sheet has for this date + city that the plan does not: held ISR / odd-time rows and
+// orders removed here. One click puts it back; it then waits under "Not on a team" / in the table.
+function renderRibbon(){
+  const rb = $("ribbon"); if (!rb) return;
+  const held = Object.values(DAY.held).filter(h => h.city === UI.city && !state.added.includes(h.key || h.order_id));
+  const gone = state.removed.map(i => DAY.facts[i] || DAY.held[i]).filter(f => f && f.city === UI.city);
+  const canRefresh = typeof loadDay === "function";
+  if (!held.length && !gone.length){
+    rb.innerHTML = `<span class="rbt">✓ Every ${esc(UI.city)} order on the 3D sheet for this day is in the plan.</span>${canRefresh ? ` <button class="lnk" data-refresh="1">↻ Check the 3D sheet again</button>` : ""}`;
+    return;
+  }
+  const item = (f, act, key, kind) => `<span class="rbi" title="${esc((f.address || "") + (f.note ? " — " + f.note : ""))}"><b>${esc(f.order_id)}</b> <span class="muted">${esc(kind)} · sheet ${esc(f.slot || "—")}</span> ${esc(f.customer)} <button class="btn small" ${act}="${esc(key)}">+ Add</button></span>`;
+  rb.innerHTML = `<span class="rbt">On the 3D sheet, not in this plan (${held.length + gone.length}):</span>` +
+    held.map(h => item(h, "data-addheld", h.key || h.order_id, h.kind || "held")).join("") +
+    gone.map(f => item(f, "data-restore", f.order_id, "removed here")).join("") +
+    (canRefresh ? ` <button class="lnk" data-refresh="1">↻ Check the 3D sheet again</button>` : "");
+}
 function paint(){
   ROOT.dataset.stage = state.stage;
   ROOT.querySelectorAll(".steps button").forEach(b => b.classList.toggle("on", Number(b.dataset.stage) === state.stage));
   const heldN = Object.values(DAY.held).filter(h => h.city === UI.city && !state.added.includes(h.key)).length;
   $("sub").textContent = `${DAY.date_label} · ${UI.city} · ${IDS.length} orders · ${heldN} ISR / odd-time held back · leave ${BASE.name} from ${BASE.depart_earliest}`;
   renderHeader();
+  renderRibbon();
   renderMapBar();
   if (state.stage === 1) renderStage1();
   if (state.stage === 2) renderStage2();
@@ -898,7 +916,8 @@ on("click", e => {
   if (b.dataset.setcity){ haltPlay(); caption = ""; UI.city = b.dataset.setcity; saveUI(); enterScope(); paint(); }
   if (b.dataset.remove) removeOrder(b.dataset.remove);
   if (b.dataset.restore) restoreOrder(b.dataset.restore);
-  if (b.dataset.addheld) { addHeld(b.dataset.addheld); closeAdd(); }
+  if (b.dataset.addheld) { addHeld(b.dataset.addheld); closeAdd(); toast && typeof toast === "function" && toast(`Added ${b.dataset.addheld} - it is in the plan, not on a team yet`); }
+  if (b.dataset.refresh && typeof loadDay === "function"){ delete DAYS[UI.date]; save(); loadDay(UI.date).then(() => { enterScope(); paint(); }); }
   if (idOf(b) === "b-addorder") openAdd();
   if (idOf(b) === "b-addclose") closeAdd();
   if (idOf(b) === "b-addmanual"){ const g = k => $(k).value; const msg = addManual({id: g("na-id"), customer: g("na-cust"), address: g("na-addr"), slot: g("na-slot"), minutes: g("na-min"), windows: g("na-win"), emaar: $("na-emaar").checked, lat: g("na-lat"), lng: g("na-lng")}); if (msg) $("na-msg").textContent = msg; else closeAdd(); }
@@ -986,6 +1005,7 @@ const SKELETON = `<div class="stp" data-stage="1">
     <button data-stage="3"><span class="n">3</span>Dispatch</button>
   </nav>
 </div>
+<div id="stp-ribbon" class="ribbon"></div>
 <div class="stp-main" id="stp-main">
   <div id="stp-mapwrap">
     <div class="mapbar" id="stp-mapbar"></div>

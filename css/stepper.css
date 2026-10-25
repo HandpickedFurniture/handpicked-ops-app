@@ -218,6 +218,12 @@
 .stp .etog.on{color:var(--emaar);font-weight:700}
 .stp .stop .rmx{margin-left:auto;color:var(--mute);text-decoration:none;font-size:11px;padding:0 2px}
 .stp .stop .rmx:hover{color:var(--bad)}
+.stp .ribbon{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;background:#fff8e6;border-bottom:1px solid #f0d29a;padding:6px 16px;font-size:12px}
+.stp .ribbon .rbt{font-weight:700;color:#7a5200}
+.stp .ribbon .rbi{display:inline-flex;gap:5px;align-items:center;background:#fff;border:1px solid #f0d29a;border-radius:14px;padding:1px 4px 1px 9px}
+.stp .ribbon .btn.small{padding:1px 8px;font-size:11.5px}
+.stp .stop .onote2{width:100%;margin-top:3px;border:1px dashed var(--line);border-radius:4px;padding:2px 5px;font:inherit;font-size:11px;background:#fbfcfd}
+.stp .stop .onote2:focus{outline:none;border-style:solid;border-color:var(--accent);background:#fff}
 .stp /* map pins */
 .pin{position:relative;width:30px;height:30px;border-radius:50%;color:#fff;font-weight:700;font-size:13px;text-align:center;line-height:26px;border:3px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.45)}
 .stp .pin.emaar{box-shadow:0 0 0 4px #ffe066,0 1px 5px rgba(0,0,0,.45)}
