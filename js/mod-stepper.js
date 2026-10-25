@@ -361,7 +361,7 @@ function renderStage2(){
 
   $("tray").innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0 0 4px">Not on a team</h2>${sortSel()}</div>` + (q.length
     ? `<div class="muted" style="font-size:12.5px">Drag onto a team below, or go back to Stage 1 to place them with suggestions.</div><div class="tray">${q.map(i => `<span class="chip" draggable="true" data-id="${i}">${F[i].slot} · ${i} · ${esc(F[i].customer)}</span>`).join("")}</div>`
-    : `<span class="muted">Nothing — every order is on a team.</span>`);
+    : `<span class="muted">✓ Every order is on a team.</span>`);
 
   $("crews").innerHTML = ROSTER.teams.filter(c => c.members.length).map(c => `<option value="${esc(crewLabel(c))}">`).join("") +
     people().map(p => `<option value="${esc(p.name)}">`).join("");
@@ -369,27 +369,21 @@ function renderStage2(){
   const teamsHtml = sortedTeams(res).map(t => {
     const r = res[t.team], seq = state.assign[t.team] || [], tc = teamColor(t.team);
     const rules = crewRules(t, seq);
-    const opts = state.teams.filter(x => x.team !== t.team).map(x => `<option value="${x.team}">${esc(x.name)}</option>`).join("");
     let body = seq.length ? "" : `<div class="empty">No orders. Drag one here.</div>`;
     r.stops.forEach((s, i) => {
       const f = F[s.id];
-      body += `<p class="drv">${i === 0 ? `leave ${hm(r.depart)} · ` : ""}drive ${s.travel} min · ${s.km} km</p>
+      body += `<p class="drv">${i === 0 ? `leave ${hm(r.depart)} · ` : ""}🚐 ${s.travel} min · ${s.km} km</p>
       <div class="stop ${f.emaar ? "emaar" : ""}" draggable="true" data-id="${s.id}" data-team="${t.team}" style="--tc:${tc}">
-        <div class="top2">
-          <div class="sheett"><span>3D sheet</span><b>${esc(f.sheet_slot)}</b>${f.slot !== f.sheet_slot ? `<em>you set ${esc(f.slot)}</em>` : ""}</div>
-          <div class="plan"><div><span class="oid">${s.id}</span> ${esc(f.customer)}</div>
-            <div class="pt">Planned <b>${hm(s.start)}–${hm(s.end)}</b> · arrives ${hm(s.arrive)}${s.delay > 0 ? ` <span class="chip ${s.late ? "bad" : "warn"}">+${s.delay} min</span>` : ""}${s.over ? ` <span class="chip bad">ends after limit</span>` : ""}</div>
-            <div class="ad">${esc(f.address)}</div></div></div>
-        <div>${chipsFor(f)}</div>
-        ${specialsHtml(s.id)}
-        <div class="ctl"><select data-move="${s.id}" data-from="${t.team}" aria-label="Move ${s.id}"><option value="">Move to…</option>${opts}<option value="un">Take off the schedule</option></select>
-          <button class="btn small" data-shift="-1" data-team="${t.team}" data-idx="${i}" title="Visit earlier">↑</button>
-          <button class="btn small" data-shift="1" data-team="${t.team}" data-idx="${i}" title="Visit later">↓</button></div></div>`;
+        <div class="l1"><span class="sheett" title="Time on the 3D sheet"><span>3D</span><b>${esc(f.sheet_slot)}</b></span>${f.slot !== f.sheet_slot ? `<em class="youset" title="You changed the time">→ ${esc(f.slot)}</em>` : ""}<span class="who" title="${esc(s.id + " " + f.customer)}"><span class="oid">${s.id}</span> ${esc(f.customer)}</span></div>
+        <div class="pt">Planned <b>${hm(s.start)}–${hm(s.end)}</b> · arr ${hm(s.arrive)}${s.delay > 0 ? ` <span class="chip ${s.late ? "bad" : "warn"}">+${s.delay}</span>` : ""}${s.over ? ` <span class="chip bad">after limit</span>` : ""}</div>
+        <div class="ad" title="${esc(f.address)}">${esc(f.address)}</div>
+        <div class="jw2">${f.emaar ? `<span class="chip emaar">EMAAR</span> ` : ""}${esc(workLine(s.id))}</div>
+        ${specialsHtml(s.id)}</div>`;
     });
     return `<article class="team" data-team="${t.team}" style="--tc:${tc}">
       <input class="nm" list="stp-crews" value="${esc(t.name)}" data-tname="${t.team}" aria-label="Name of team ${t.team}" placeholder="Type a name, or pick a crew">
       <input class="mem" list="stp-crews" value="${esc((t.members || []).join(" & "))}" data-tmem="${t.team}" aria-label="Members of team ${t.team}" placeholder="Members, e.g. Ikbal & Kaleem">
-      <div class="metrics"><span><b>${r.orders}</b> orders</span><span><b>${r.windows}</b> windows</span><span><b>${(r.work / 60).toFixed(1)}</b> h install</span>${r.orders ? `<span>out <b>${hm(r.depart)}</b> – back <b>${hm(r.home)}</b></span>` : ""}</div>
+      <div class="metrics"><span><b>${r.orders}</b> jobs</span><span><b>${r.windows}</b> win</span><span><b>${(r.work / 60).toFixed(1)}</b> h</span>${r.orders ? `<span><b>${hm(r.depart)}</b>–<b>${hm(r.home)}</b></span>` : ""}</div>
       ${rules.map(([lv, tx]) => `<div><span class="chip ${lv === "bad" ? "bad" : "warn"}">${esc(tx)}</span></div>`).join("")}
       ${body}</article>`;
   }).join("");
@@ -464,11 +458,18 @@ function specials(id){
   if (f.sheet_notes && !/not captured/i.test(f.sheet_notes)) add("", "Sheet note", f.sheet_notes);
   return out;
 }
+// shown on the Stage 2 card under the work line, so only what that line does not already say -
+// motor / remote / removal / scaffolding appear here only when there is detail worth hovering for
+const IN_WORKLINE = /^(Pelmet box|Bend \/ flexible rail|Villa)/;
 function specialsHtml(id){
-  const sp = specials(id), f = F[id], cm = (f.comments || []).filter(Boolean);
-  return `<div class="specs">${sp.length ? sp.map(s => `<div class="spec"><span class="chip ${s.lvl}">${esc(s.txt)}</span>${s.detail ? `<span class="sd">${esc(s.detail)}</span>` : ""}</div>`).join("")
-      : `<span class="muted" style="font-size:12px">No special requirements (checked: motors, pelmet boxes, bend rails, scaffolding, removals)</span>`}
-    ${cm.length ? `<details><summary>Supervisor comments (${cm.length})</summary><ul class="cm">${[...new Set(cm)].map(x => `<li>${esc(x)}</li>`).join("")}</ul></details>` : ""}</div>`;
+  const sp = specials(id).filter(x => !IN_WORKLINE.test(x.txt) && (!/^(Motor|Remote|Remove existing|Scaffolding)/.test(x.txt) || x.detail));
+  const f = F[id], cm = [...new Set((f.comments || []).filter(Boolean))];
+  if (!sp.length && !cm.length) return "";
+  const short = t => t.replace(/^Tall window/, "tall").replace(/^Wide window/, "wide").replace(/^Location to confirm$/, "location?")
+    .replace(/^Client's existing motorised track$/, "existing motor track").replace(/^Emaar permit needed$/, "Emaar permit").replace(/^Remove existing/, "remove")
+    .replace(/^Sheet note$/, "sheet note").replace(/^Cassette/, "cassette").replace(/^Motor/, "motor").replace(/^Remote/, "remote");
+  return `<div class="specs">${sp.length ? `<span class="spl">⚠ ${sp.map(x => `<span class="sp ${x.lvl}" title="${esc(x.detail || x.txt)}">${esc(short(x.txt))}${x.detail ? "ⓘ" : ""}</span>`).join(" · ")}</span>` : ""}
+    ${cm.length ? `<details><summary>PO comments (${cm.length})</summary><ul class="cm">${cm.map(x => `<li>${esc(x)}</li>`).join("")}</ul></details>` : ""}</div>`;
 }
 
 /* ---------------- Play: place every order on the suggested team, explained out loud ---------------- */
@@ -755,13 +756,17 @@ function drawMap(force){
 const hiddenTeams = new Set();
 
 function renderMapBar(){
+  setTimeout(() => { const a = $("maptoggleall"); if (a) a.indeterminate = state.teams.some(t => hiddenTeams.has(t.team)) && !state.teams.every(t => hiddenTeams.has(t.team)); }, 0);
   if (state.stage === 1){
     $("mapbar").innerHTML = `<b style="color:var(--ink)">Latest order of each team</b>
       <label title="Pans to the order you click if it is off screen. It never changes your zoom."><input type="checkbox" id="stp-autozoom" ${state.autoZoom ? "checked" : ""}>follow the order in hand</label>
       <label><input type="checkbox" id="stp-showrest" ${state.showRest ? "checked" : ""}>show orders still to place</label>
       <button class="btn small" id="stp-b-fit">Fit ${esc(UI.city)}</button>`;
   } else {
-    $("mapbar").innerHTML = state.teams.map(t => `<label><input type="checkbox" data-maptoggle="${t.team}" ${hiddenTeams.has(t.team) ? "" : "checked"}><span class="sw" style="background:${teamColor(t.team)}"></span>${esc(t.name)}</label>`).join("") +
+    // one box to show or hide every team on the map (user, 25 Oct 2026); half-ticked when some are hidden
+    const allOn = !state.teams.some(t => hiddenTeams.has(t.team));
+    $("mapbar").innerHTML = `<label class="allteams"><input type="checkbox" id="stp-maptoggleall" ${allOn ? "checked" : ""}><b>All teams</b></label>` +
+      state.teams.map(t => `<label><input type="checkbox" data-maptoggle="${t.team}" ${hiddenTeams.has(t.team) ? "" : "checked"}><span class="sw" style="background:${teamColor(t.team)}"></span>${esc(t.name)}</label>`).join("") +
       `<button class="btn small" id="stp-b-fit">Fit ${esc(UI.city)}</button>`;
   }
 }
@@ -897,7 +902,8 @@ on("change", e => {
   if (el.matches("select[data-move]") && el.value) moveOrder(el.dataset.move, el.value === "un" ? "un" : Number(el.value));
   if (el.matches("input[data-tname]")) setName(el.dataset.tname, el.value);
   if (el.matches("input[data-tmem]")) setMembers(el.dataset.tmem, el.value);
-  if (el.matches("input[data-maptoggle]")){ const n = Number(el.dataset.maptoggle); el.checked ? hiddenTeams.delete(n) : hiddenTeams.add(n); fitKey = ""; drawMap(); }
+  if (el.matches("input[data-maptoggle]")){ const n = Number(el.dataset.maptoggle); el.checked ? hiddenTeams.delete(n) : hiddenTeams.add(n); fitKey = ""; renderMapBar(); drawMap(); }
+  if (idOf(el) === "maptoggleall"){ if (el.checked) hiddenTeams.clear(); else state.teams.forEach(t => hiddenTeams.add(t.team)); fitKey = ""; renderMapBar(); drawMap(); }
   if (el.matches("input[data-act]")){ el.checked ? picked.add(el.dataset.act) : picked.delete(el.dataset.act); renderStage3(); }
 });
 // Stage 3 notes: saved as you type and shown in the message preview, without redrawing the page
