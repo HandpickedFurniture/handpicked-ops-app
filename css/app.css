@@ -1000,3 +1000,7 @@ input.pickbox{width:17px;height:17px;margin:0;cursor:pointer;accent-color:var(--
 table.dense.report tr.grp td{background:#dfe8f2;font-weight:700;border-top:2px solid var(--line);}
 .bigfig{font-size:20px;font-weight:800;color:#a03a00;line-height:1;}
 table.dense.report td.num .bigfig{display:inline-block;}
+
+/* "Express" pill beside an order number - added by js/express.js */
+.xtag{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;background:#c2410c;color:#fff;
+  font:800 10px/1.5 system-ui,sans-serif;letter-spacing:.04em;text-transform:uppercase;vertical-align:middle;white-space:nowrap;}
