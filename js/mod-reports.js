@@ -296,14 +296,20 @@ function filterSummary(f) {
 
 /* The CSV and PDF buttons under a table. The PDF is the table as drawn - chips, heat shading, totals
  * - printed through the browser (see printSheet in ui.js), so it needs the table's HTML, not the rows. */
-function downloadRow(pageId, title, rows, csvRows, tableHtml, f, printOpts) {
+/* clearHtml, when given, adds a second PDF: the same sheet with every tick box empty, to mark by
+ * hand on the workshop floor (Planning, user 26 Oct 2026). */
+function downloadRow(pageId, title, rows, csvRows, tableHtml, f, printOpts, clearHtml) {
   const row = el(`<div class="row" style="justify-content:flex-end;margin-top:8px;gap:8px">
     <button class="btn sm" data-csv>${esc(tr("dash.csv"))}</button>
-    <button class="btn sm" data-pdf>${esc(tr("dash.pdf"))}</button></div>`);
+    <button class="btn sm" data-pdf>${esc(tr("dash.pdf"))}</button>
+    ${clearHtml ? `<button class="btn sm" data-pdfclear>${esc(tr("dash.pdfClear"))}</button>` : ""}</div>`);
+  const sub = () => `${filterSummary(f)} · ${rows} ${tr("rep.rows")} · ${fmtDateTime(new Date().toISOString())}`;
   row.querySelector("[data-csv]").addEventListener("click", () => downloadCsv(`${pageId}_${today()}.csv`, csvRows()));
   row.querySelector("[data-pdf]").addEventListener("click", () => {
-    const sub = `${filterSummary(f)} · ${rows} ${tr("rep.rows")} · ${fmtDateTime(new Date().toISOString())}`;
-    if (!printSheet(title, sub, tableHtml(), printOpts)) toast(tr("rep.pdfBlocked"), "bad");
+    if (!printSheet(title, sub(), tableHtml(), printOpts)) toast(tr("rep.pdfBlocked"), "bad");
+  });
+  if (clearHtml) row.querySelector("[data-pdfclear]").addEventListener("click", () => {
+    if (!printSheet(title, sub(), clearHtml(), printOpts)) toast(tr("rep.pdfBlocked"), "bad");
   });
   return row;
 }
@@ -1299,13 +1305,15 @@ function paintTable(box, page, rows, filters, reload) {
       return o;
     }),
     () => printableTable(wrap.querySelector("table")),
-    filters, page.print));
+    filters, page.print,
+    page.live ? () => printableTable(wrap.querySelector("table"), { clear: true }) : null));
   return table;
 }
 
 /* The sheet as it prints: a comment box becomes its text, a tick button a plain box, the ad hoc
- * remove button disappears. The screen keeps its controls; the paper gets the state. */
-function printableTable(table) {
+ * remove button disappears. The screen keeps its controls; the paper gets the state - or, with
+ * clear, every tick box empty, ticked by the team or locked by the app alike. */
+function printableTable(table, { clear = false } = {}) {
   const t = table.cloneNode(true);
   // what is in the box NOW, read off the screen's table: a cloned textarea carries only the text
   // it was drawn with, not what was typed since
@@ -1316,6 +1324,7 @@ function printableTable(table) {
   t.querySelectorAll("button.tick,button.prio").forEach((b) => {
     const span = document.createElement("span"); span.className = b.className; span.textContent = b.textContent; b.replaceWith(span);
   });
+  if (clear) t.querySelectorAll(".tick").forEach((s) => { s.classList.remove("on", "sys"); s.textContent = ""; });
   t.querySelectorAll("[data-unadhoc]").forEach((b) => b.remove());
   if (t.querySelector(".selcol")) {
     t.querySelectorAll(".selcol").forEach((c) => c.remove());
