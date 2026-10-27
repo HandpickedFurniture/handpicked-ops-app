@@ -277,7 +277,7 @@ function winViz(f){
   const blinds = Math.min(n, c.blinds || 0), glyphs = Math.min(n, 12);
   let g = "";
   for (let k = 0; k < glyphs; k++) g += `<i class="wg ${k < blinds ? "bl" : ""}"></i>`;
-  return `<div class="wins"><b>${n}</b><span class="wgs">${g}${n > 12 ? "+" : ""}</span></div>
+  return `<div class="wins"><b class="nwin">${n}</b><span class="wgs">${g}${n > 12 ? "+" : ""}</span></div>
     <div class="muted" style="font-size:11px">${[c.curt_2l ? c.curt_2l + "×2L" : "", c.curt_1l ? c.curt_1l + "×1L" : "", c.blinds ? c.blinds + " blind" : ""].filter(Boolean).join(" · ")}</div>`;
 }
 // day bar: grey = drive, hatched = waiting at the door, solid = on site (team colour), black tick = the appointment
@@ -420,7 +420,7 @@ function renderStage2(){
     return `<article class="team" data-team="${t.team}" style="--tc:${tc}">
       <div class="th"><input class="nm" list="stp-crews" value="${esc(t.name)}" data-tname="${t.team}" aria-label="Name of team ${t.team}" placeholder="Type a name, or pick a crew">${state.teams.length > 1 ? `<button class="lnk tdel ${armed ? "armed" : ""}" data-delteam="${t.team}" title="Delete this team${seq.length ? "; its orders go back to Not on a team" : ""}" aria-label="Delete ${esc(t.name)}">${armed ? `Delete? ${seq.length} order${seq.length > 1 ? "s" : ""} go back` : "✕"}</button>` : ""}</div>
       <input class="mem" list="stp-crews" value="${esc((t.members || []).join(" & "))}" data-tmem="${t.team}" aria-label="Members of team ${t.team}" placeholder="Members, e.g. Ikbal & Kaleem">
-      <div class="metrics"><span><b>${r.orders}</b> jobs</span><span><b>${r.windows}</b> win</span><span><b>${(r.work / 60).toFixed(1)}</b> h</span>${r.orders ? `<span><b>${hm(r.depart)}</b>–<b>${hm(r.home)}</b></span>` : ""}</div>
+      <div class="metrics"><span><b>${r.orders}</b> jobs</span><span><b class="nwin">${r.windows}</b> win</span><span><b>${(r.work / 60).toFixed(1)}</b> h</span>${r.orders ? `<span><b>${hm(r.depart)}</b>–<b>${hm(r.home)}</b></span>` : ""}</div>
       ${rules.map(([lv, tx]) => `<div><span class="chip ${lv === "bad" ? "bad" : "warn"}">${esc(tx)}</span></div>`).join("")}
       ${body}</article>`;
   }).join("");
@@ -659,7 +659,7 @@ function workLine(id){
 function workLineHtml(id){
   const f = F[id] || {}, c = f.counts || {}, p = [];
   const tag = (cls, txt) => `<span class="kit ${cls}">${txt}</span>`;
-  if (f.windows) p.push(`${f.windows} win`); else if (f.kind) p.push(esc(f.kind));
+  if (f.windows) p.push(`<span class="nwin">${f.windows} win</span>`); else if (f.kind) p.push(esc(f.kind));
   if (c.curt_2l) p.push(`${c.curt_2l}×2L`);
   if (c.curt_1l) p.push(`${c.curt_1l}×1L`);
   if (c.blinds) p.push(`${c.blinds} blind${c.blinds > 1 ? "s" : ""}`);
@@ -697,12 +697,12 @@ function renderStage3(){
     </div>
     <div class="s3teams">${P.teams.map(t => `<div class="tcard" style="--tc:${teamColor(t.team)}">
       <div class="th"><b>${esc(t.name)}</b>${t.members.length && !t.members.every(m => t.name.includes(m)) ? ` <span class="muted">${esc(t.members.join(" & "))}</span>` : t.members.length ? "" : ` <span class="muted">crew not named</span>`}
-        <span class="lv">leave ${t.leave} · ${t.orders.length} job${t.orders.length === 1 ? "" : "s"} · ${t.orders.reduce((a, o) => a + ((F[o.order_id] || {}).windows || 0), 0)} win · ${(t.orders.reduce((a, o) => a + ((F[o.order_id] || {}).minutes || 0), 0) / 60).toFixed(1)} h</span></div>
+        <span class="lv">leave ${t.leave} · ${t.orders.length} job${t.orders.length === 1 ? "" : "s"} · <span class="nwin">${t.orders.reduce((a, o) => a + ((F[o.order_id] || {}).windows || 0), 0)} win</span> · ${(t.orders.reduce((a, o) => a + ((F[o.order_id] || {}).minutes || 0), 0) / 60).toFixed(1)} h</span></div>
       <input class="tnote" data-tnote="${t.team}" value="${esc(t.note)}" placeholder="Note for the team (goes on WhatsApp)">
       <ul class="tjobs">${t.orders.map(o => `<li class="${o.emaar ? "emaar" : ""} ${(F[o.order_id] || {}).kind === "ISR" ? "isr" : ""}">
         <span class="tt ${o.time_edited ? "ed" : ""}" title="${o.time_edited ? "3D sheet " + o.sheet_time : "3D sheet time"}"><input type="time" step="300" class="tin" value="${esc(o.time)}" data-time="${o.order_id}" aria-label="Start time of ${o.order_id}"></span>
         <span class="tj">${o.order_id} ${esc(o.customer)}</span>${o.emaar ? `<span class="chip emaar">E</span>` : ""}${o.late_min ? `<span class="chip warn" title="expected to start ${o.late_min} min after the appointment">+${o.late_min}</span>` : ""}
-        <div class="jd"><div class="ja">${esc(o.address)}</div><div class="jw">${esc(workLine(o.order_id))}</div></div>
+        <div class="jd"><div class="ja">${esc(o.address)}</div><div class="jw">${workLineHtml(o.order_id)}</div></div>
         <input class="onote" data-onote="${o.order_id}" data-team="${t.team}" value="${esc(o.note)}" placeholder="Note (goes on WhatsApp)" aria-label="Note for ${o.order_id}"></li>`).join("")}</ul>
       <details><summary>WhatsApp preview</summary><pre class="wa" id="stp-wa-${t.team}">${esc(waText(t))}</pre></details>
     </div>`).join("")}</div>

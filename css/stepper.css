@@ -318,3 +318,7 @@
 .stp .tjobs .tt input.tin{width:92px}
 .stp .isrtog{font-size:11px;font-weight:700;white-space:nowrap;cursor:pointer}
 .stp .isrtog input{margin:0 2px 0 0}
+/* 28 Oct 2026: the window count is what the crew plans the day around - make it stand out on every card */
+.stp .nwin{display:inline-block;background:#ffe14d;color:#0b2a6f;font-weight:800;border-radius:4px;padding:0 5px;line-height:1.35;box-shadow:0 0 0 1px #e0b800}
+.stp b.nwin{font-size:1.15em}
+.stp[data-stage="2"] .stop .nwin,.stp[data-stage="2"] .team .nwin{background:#ffe14d;color:#0b2a6f}
