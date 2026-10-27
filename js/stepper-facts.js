@@ -116,7 +116,12 @@ function orderWork(ls, R) {
   }
   const existingMotor = ls.some((l) => /motori[sz]ed/i.test(l.cmt || "")) && !c.motor_windows;
   const poScaffold = ls.some((l) => (l.scaffolding || 0) > 0 || lower(l).includes("scaffold"));
-  const scaf = c.h_over_scaffold > 0 || poScaffold;
+  /* Scaffolding is shown ONLY when a window is taller than scaffold_height_cm (400, user 28 Oct 2026),
+   * whatever the PO says; a tall window with no scaffolding on the PO is tagged "Follow up accounts -
+   * charge for scaffolding" by fn_auto_accounts_followups (called when the day loads). Windows over
+   * tall_flag_cm (350) only need the tall ladder. */
+  const scaf = c.h_over_scaffold > 0;
+  const scafMissing = scaf && !poScaffold;
   const extraTall = Math.max(c.h_over_scaffold - 1, 0);
   const bd = { windows: wins.reduce((a, w) => a + w.minutes, 0), flex_track: R.flex_track_min * c.flex, pelmet: R.pelmet_min * c.pelmet,
                cassette: R.cassette_min * c.cassette, motor: R.motor_per_window_min * c.motor_windows,
@@ -124,13 +129,14 @@ function orderWork(ls, R) {
                removal: R.removal_min * c.removal };
   return { counts: c, windows: wins.filter((w) => w.kind !== "sample").length, window_detail: wins, breakdown: bd,
            minutes: Object.values(bd).reduce((a, b) => a + b, 0), scaffolding: scaf, po_scaffolding: poScaffold,
+           scaffold_missing: scafMissing, tall_ladder: c.h_over_tall > 0,
            motor: c.motor_windows > 0, existing_motor_track: existingMotor, removal_notes: rmNotes,
            extras: [...new Set(ls.filter((l) => !isCurtain(l) && !isBlind(l)).map((l) => l.commercial_name || ""))].sort(),
            comments: [...new Set(ls.map((l) => (l.cmt || "").trim()).filter(Boolean))].sort() };
 }
 
 const EMPTY_WORK = { counts: null, windows: 0, window_detail: [], breakdown: null, minutes: null, scaffolding: false,
-                     po_scaffolding: false, motor: false, existing_motor_track: false, removal_notes: [], extras: [], comments: [] };
+                     po_scaffolding: false, scaffold_missing: false, tall_ladder: false, motor: false, existing_motor_track: false, removal_notes: [], extras: [], comments: [] };
 const FLAT = /\b(apt|apartment|unit|flat|tower|residences?|building|bldg|floor)\b|\bap\s?\d/i;
 const MAPQ = /https?:\/\/\S*?[?&](?:q|query)=(-?\d+\.\d+)(?:,|%2C)(-?\d+\.\d+)\S*/i;
 

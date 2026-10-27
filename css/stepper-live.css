@@ -1,0 +1,40 @@
+/* Stage 4 of the Step scheduler (#/stepper): the live day. Scoped under .stp like stepper.css. */
+.stp .s4{display:none}
+.stp[data-stage="4"] .s4{display:block}
+.stp[data-stage="4"] #stp-mapwrap,.stp[data-stage="4"] #stp-split{display:none}
+.stp[data-stage="4"] .stp-main{display:block}
+.stp .lbar{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;padding:8px 12px}
+.stp .lbar .lspacer{flex:1}
+.stp .lteams{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:10px;margin-top:8px;align-items:start}
+.stp .lcard{padding:8px 10px;font-size:13px}
+.stp .ljobs{list-style:none;margin:6px 0 0;padding:0}
+.stp .lo{border:1px solid var(--line);border-left:5px solid #b9c2cf;border-radius:8px;padding:6px 8px;margin-bottom:7px;background:#fff}
+.stp .lo.st-in_progress{border-left-color:#e0a21c;background:#fffaf0}
+.stp .lo.st-completed{border-left-color:var(--good);background:#f3faf6}
+.stp .lo.st-partial{border-left-color:#e0a21c;background:#fff8ea}
+.stp .lo.st-failed,.stp .lo.st-rescheduled{border-left-color:var(--bad);background:#fff4f4}
+.stp .lo.st-removed{opacity:.6}
+.stp .lo-top{display:flex;flex-wrap:wrap;gap:2px 6px;align-items:baseline}
+.stp .lo .lt{font-weight:700;font-variant-numeric:tabular-nums;min-width:90px}
+.stp .lo .lj{flex:1 1 140px}
+.stp .lo .ja{font-size:12px;color:var(--mute);margin-top:1px}
+.stp .lo .jw{font-size:12px;margin-top:1px}
+.stp .lo .lreason{font-size:12px;margin-top:3px;color:#8a2a2a}
+.stp .lo .ladj{margin-top:4px;font-size:12px;border-top:1px dashed var(--line);padding-top:3px}
+.stp .lo .lnote input{width:100%;border:1px solid var(--line);border-radius:5px;padding:3px 6px;font-size:12px;margin-top:4px}
+.stp .lo .lacts{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px;align-items:center}
+.stp .lo .lacts .sep{flex:1}
+.stp .lo .lacts .btn.okb{border-color:var(--good);color:var(--good);font-weight:600}
+.stp .llog{margin-top:8px;max-height:220px;overflow:auto;font-size:12.5px}
+.stp .llog ul{margin:4px 0 0;padding-left:16px}
+.stp .lf{display:block;margin:8px 0;font-size:13px}
+.stp .lf input,.stp .lf select{display:block;width:100%;margin-top:3px;padding:6px 8px;border:1px solid var(--line);border-radius:6px}
+.stp .lchk{display:flex;gap:6px;align-items:center;margin:8px 0;font-size:13px}
+.stp .lbtns{display:flex;gap:8px;align-items:center;margin-top:10px}
+.stp .lquick{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.stp .lnk{background:none;border:0;color:var(--accent);cursor:pointer;padding:0;font:inherit}
+@media (max-width:640px){
+  .stp .lteams{grid-template-columns:1fr}
+  .stp .lo .lacts .btn{padding:7px 10px}
+}
+.stp[data-stage="4"] #stp-ribbon{display:none}

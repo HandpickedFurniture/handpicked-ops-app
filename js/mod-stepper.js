@@ -14,8 +14,9 @@
  */
 import { rpc, api, isSignedIn } from "./api.js";
 import { STORAGE_PREFIX } from "./config.js";
-import { el, loading, toast } from "./ui.js";
+import { el, loading, toast, downloadXlsx } from "./ui.js";
 import { buildDay, CITY_CENTRE } from "./stepper-facts.js";
+import * as live from "./mod-stepper-live.js";   // Stage 4: the live day
 
 let R = null, BASE = null, ROSTER = null;                    // sched_settings stepper_rules / stepper_roster
 const DAYS = {};                                              // date -> {facts, held, inst, date_label, synced_at}
@@ -249,6 +250,7 @@ function chipsFor(f){
   if (c.pelmet) o.push(`<span class="chip hot">${c.pelmet} pelmet</span>`);
   if (c.flex) o.push(`<span class="chip hot">${c.flex} flex track</span>`);
   if (f.scaffolding) o.push(`<span class="chip bad">scaffolding</span>`);
+  if (c.h_over_tall) o.push(`<span class="chip ladder" title="${c.h_over_tall} window(s) taller than ${R.tall_flag_cm / 100} m, tallest ${Math.round(c.max_h)} cm">🪜 TALL LADDER ×${c.h_over_tall}</span>`);
   if (f.motor) o.push(`<span class="chip hot">motor ×${c.motor_windows}</span>`);
   if (c.removal) o.push(`<span class="chip hot">${c.removal} removal${c.removal > 1 ? "s" : ""}</span>`);
   if (c.w_over_std) o.push(`<span class="chip hot">W&gt;${R.standard_width_cm} (max ${Math.round(c.max_w)})</span>`);
@@ -325,7 +327,7 @@ function renderStage1(){
     ${rows.map(oid => { const f = F[oid], st = stopOf[oid], tn = teamOfId[oid];
       const endTxt = st ? hm(st.end) : hm(mins(f.slot) + f.minutes);
       const note = st ? (st.late ? `<span class="chip bad">TIME CHANGE +${st.late}</span>` : st.minor ? `<span class="chip warn">starts ${hm(st.start)} (+${st.minor})</span>` : st.wait > 15 ? `<span class="chip">waits ${Math.round(st.wait)} min</span>` : "") + (st.over ? `<span class="chip bad">ends after limit</span>` : "") : "";
-      return `<tr class="orow ${f.emaar ? "emaar" : ""} ${oid === id ? "focused" : ""}" data-focus="${oid}" style="${tn ? `border-left:6px solid ${teamColor(tn)}` : "border-left:6px solid transparent"}">
+      return `<tr class="orow ${f.emaar ? "emaar" : ""} ${f.kind === "ISR" ? "isr" : ""} ${oid === id ? "focused" : ""}" data-focus="${oid}" style="${tn ? `border-left:6px solid ${teamColor(tn)}` : "border-left:6px solid transparent"}">
         <td><b>${esc(oid)}</b> <button class="lnk" data-remove="${oid}" title="Remove from this list" aria-label="Remove ${oid}">✕</button>${f.hold ? ' <span class="chip warn">ISR / odd time</span>' : f.manual ? ' <span class="chip">added</span>' : ""}<div class="muted" style="font-size:12px">${esc(f.city)} · <label class="etog ${f.emaar ? "on" : ""}" title="${f.emaar_auto ? "The address looks like Emaar" : "The address does not look like Emaar"}${state.emaarSet && oid in state.emaarSet ? " - you changed it" : ""}"><input type="checkbox" data-emaar="${oid}" ${f.emaar ? "checked" : ""}>Emaar${state.emaarSet && oid in state.emaarSet ? "*" : ""}</label>${f.scaffolding ? " · scaffolding" : ""}${f.motor ? " · motor" : ""}</div></td>
         <td>${esc(f.customer)}<div class="muted" style="font-size:12px">${esc(f.address)}</div></td>
         <td><input type="time" step="300" value="${esc(f.slot)}" data-time="${oid}" aria-label="Start time of ${oid}">${f.slot !== f.sheet_slot ? `<div class="muted" style="font-size:11.5px">sheet ${esc(f.sheet_slot)} <button class="lnk" data-treset="${oid}">reset</button></div>` : ""}</td>
@@ -381,9 +383,9 @@ function renderStage2(){
       <span class="trb"><button class="btn small" id="stp-b-addteam" title="A new, empty team on the end; drag orders onto it">+ Team</button><button class="btn small" id="stp-b-addorder" title="Add an ISR / odd-time order or a new one; it lands here, then drag it onto a team">+ Add order</button>${sortSel()}</span></div>
     ${gone2.length ? `<div class="muted" style="font-size:11.5px">Removed: ${gone2.map(f => `<span class="chip">${esc(f.order_id)} ${esc(f.customer)} <button class="lnk" data-restore="${esc(f.order_id)}">restore</button></span>`).join(" ")}</div>` : ""}
     <div class="trr">` + (q.length
-    ? `<div class="tray">${q.map(i => `<span class="qcard ${F[i].emaar ? "emaar" : ""}" draggable="true" data-id="${i}" title="Drag onto a team">${esc(F[i].slot)} · <b>${i}</b> ${esc(F[i].customer)} <span class="muted">· ${F[i].windows} win</span></span>`).join("")}<span class="muted" style="font-size:11px">drag onto a team</span></div>`
+    ? `<div class="tray">${q.map(i => `<span class="qcard ${F[i].emaar ? "emaar" : ""} ${F[i].kind === "ISR" ? "isr" : ""}" draggable="true" data-id="${i}" title="Drag onto a team">${esc(F[i].slot)} · <b>${i}</b> ${esc(F[i].customer)} <span class="muted">· ${F[i].windows} win</span></span>`).join("")}<span class="muted" style="font-size:11px">drag onto a team</span></div>`
     : `<span class="muted">✓ Every order is on a team.</span>`) +
-    `<div class="legend"><span class="kit motor">motor</span><span class="kit pelmet">pelmet box</span><span class="kit bend">bend rail</span><span class="kit scaf">scaffolding</span></div></div>`;
+    `<div class="legend"><span class="kit motor">motor</span><span class="kit pelmet">pelmet box</span><span class="kit bend">bend rail</span><span class="kit scaf">scaffolding (&gt;4 m)</span><span class="kit ladder">tall ladder (&gt;3.5 m)</span><span class="kit isrkey">ISR</span></div></div>`;
 
   $("crews").innerHTML = ROSTER.teams.filter(c => c.members.length).map(c => `<option value="${esc(crewLabel(c))}">`).join("") +
     people().map(p => `<option value="${esc(p.name)}">`).join("");
@@ -395,7 +397,7 @@ function renderStage2(){
     r.stops.forEach((s, i) => {
       const f = F[s.id];
       body += `<p class="drv">${i === 0 ? `leave ${hm(r.depart)} · ` : ""}🚐 ${s.travel} min · ${s.km} km</p>
-      <div class="stop ${f.emaar ? "emaar" : ""}" draggable="true" data-id="${s.id}" data-team="${t.team}" style="--tc:${tc}">
+      <div class="stop ${f.emaar ? "emaar" : ""} ${f.kind === "ISR" ? "isr" : ""}" draggable="true" data-id="${s.id}" data-team="${t.team}" style="--tc:${tc}">
         <div class="l1"><span class="sheett" title="Time on the 3D sheet"><span>3D</span><b>${esc(f.sheet_slot)}</b></span>${f.slot !== f.sheet_slot ? `<em class="youset" title="You changed the time">→ ${esc(f.slot)}</em>` : ""}<span class="who" title="${esc(s.id + " " + f.customer)}"><span class="oid">${s.id}</span> ${esc(f.customer)}</span><button class="lnk rmx" data-remove="${s.id}" title="Remove from this day's plan (you can restore it above)" aria-label="Remove ${s.id}">✕</button></div>
         <div class="pt">Planned <b>${hm(s.start)}–${hm(s.end)}</b> · arr ${hm(s.arrive)}${s.delay > 0 ? ` <span class="chip ${s.late ? "bad" : "warn"}">+${s.delay}</span>` : ""}${s.over ? ` <span class="chip bad">after limit</span>` : ""}</div>
         <div class="ad" title="${esc(f.address)}">${esc(f.address)}</div>
@@ -479,7 +481,8 @@ function specials(id){
   if (c.flex) add("hot", `Bend / flexible rail ×${c.flex}`);
   if (c.cassette) add("", `Cassette ×${c.cassette}`);
   if (f.scaffolding) add("bad", "Scaffolding", c.max_h ? `tallest window ${Math.round(c.max_h)} cm` : "");
-  else if (c.h_over_tall) add("", `Tall window ×${c.h_over_tall}`, `max ${Math.round(c.max_h)} cm`);
+  if (f.scaffold_missing) add("bad", "Scaffolding not in PO", "tagged Follow up accounts: charge for scaffolding");
+  if (c.h_over_tall) add("hot", `Tall ladder ×${c.h_over_tall}`, `windows over ${R.tall_flag_cm / 100} m, tallest ${Math.round(c.max_h)} cm`);
   if (c.w_over_std) add("", `Wide window ×${c.w_over_std}`, `max ${Math.round(c.max_w)} cm, extra time added`);
   if (c.removal) add("hot", `Remove existing ×${c.removal}`, (f.removal_notes || []).join(" · "));
   if (f.emaar) add("emaar", "Emaar permit needed");
@@ -593,6 +596,7 @@ const ACTIONS = [
   {id: "checklist",title: "Send the checklist", about: "The checklist bucket PDFs for each team's jobs, posted after the schedule."},
   {id: "permits",  title: "Create Emaar permits", about: "One permit request for every Emaar order, using the crew's names.", needs: "emaar"},
   {id: "permitwa", title: "Send the Emaar permits to WhatsApp", about: "Each permit goes to the group of the team doing that order.", needs: "emaar"},
+  {id: "pdf",      title: "Generate the one-page schedule PDF", about: "A single A4 landscape page with every team's jobs, times, addresses and scope; ISR jobs have a dotted border. Runs last."},
 ];
 let picked = new Set();
 const notes = () => (state.notes = state.notes || {team: {}, order: {}});
@@ -604,7 +608,7 @@ function teamPayload(t){
       order_id: s.id, customer: f.customer, phone: f.phone, address: f.address, city: f.city,
       time: f.slot, sheet_time: f.sheet_slot, time_edited: f.slot !== f.sheet_slot,
       planned_start: hm(s.start), planned_end: hm(s.end), late_min: s.delay > 0 ? s.delay : 0, emaar: !!f.emaar,
-      installation_alert: instAlerts(s.id), note: notes().order[s.id] || "", lat: f.lat, lng: f.lng}; })};
+      installation_alert: instAlerts(s.id), note: notes().order[s.id] || "", lat: f.lat, lng: f.lng, est_min: Math.round(f.minutes || 0), scope: workLine(s.id)}; })};
 }
 function payload(){
   return {date: UI.date, city: UI.city, teams: state.teams.filter(t => (state.assign[t.team] || []).length).map(teamPayload)};
@@ -634,6 +638,7 @@ function workLine(id){
   if (f.motor || c.motor_windows) p.push(`motor ×${c.motor_windows || 1}`);
   if (c.remote) p.push(`remote ×${c.remote}`);
   if (f.scaffolding) p.push("scaffolding");
+  if (c.h_over_tall) p.push(`TALL LADDER ×${c.h_over_tall}`);
   if (c.removal) p.push(`remove ×${c.removal}`);
   if (f.villa) p.push("villa");
   const m = Math.round(f.minutes || 0);
@@ -652,13 +657,14 @@ function workLineHtml(id){
   if (c.pelmet) p.push(tag("pelmet", `pelmet ×${c.pelmet}`));
   if (c.flex) p.push(tag("bend", `bend rail ×${c.flex}`));
   if (f.scaffolding) p.push(tag("scaf", "scaffolding"));
+  if (c.h_over_tall) p.push(tag("ladder", `🪜 tall ladder ×${c.h_over_tall}`));
   if (c.removal) p.push(`remove ×${c.removal}`);
   if (f.villa) p.push("villa");
   const m = Math.round(f.minutes || 0);
   p.push(`≈ ${m >= 60 ? Math.floor(m / 60) + " h " : ""}${m % 60 ? (m % 60) + " min" : ""}`.trim());
   return p.join(" · ");
 }
-const ACT_SHORT = {tookan: "Tookan", groups: "WA groups", messages: "WA schedule", checklist: "Checklists", permits: "Emaar permits", permitwa: "Permits → WA"};
+const ACT_SHORT = {tookan: "Tookan", groups: "WA groups", messages: "WA schedule", checklist: "Checklists", permits: "Emaar permits", permitwa: "Permits → WA", pdf: "One-page PDF"};
 function renderStage3(){
   const P = payload(), emaarN = P.teams.reduce((a, t) => a + t.orders.filter(o => o.emaar).length, 0);
   const q = queue();
@@ -674,13 +680,15 @@ function renderStage3(){
         return `<label class="act ${off ? "off" : ""}" title="${esc(a.title + ": " + a.about)}"><input type="checkbox" data-act="${a.id}" ${off ? "disabled" : ""} ${picked.has(a.id) ? "checked" : ""}> ${esc(ACT_SHORT[a.id] || a.title)}${a.needs === "emaar" ? ` (${emaarN})` : ""}</label>`; }).join("")}</span>
       <button class="btn small primary" id="stp-b-run" ${picked.size ? "" : "disabled"}>Run ${picked.size || ""}</button>
       <button class="btn small" id="stp-b-dl" title="Download plan (JSON)">⬇ JSON</button>
-      <span class="muted" style="font-size:11.5px">Preview only — nothing is sent.</span>
+      <button class="btn small" id="stp-b-pdf" title="One A4 page: every team's jobs, times, addresses and scope">📄 One-page PDF</button>
+      <button class="btn small primary" id="stp-b-publish" title="Save this plan as the final schedule and open Stage 4 (live tracking)">📌 Publish → Stage 4</button>
+      <span class="muted" style="font-size:11.5px">Senders below only preview; Publish saves the schedule for live tracking.</span>
     </div>
     <div class="s3teams">${P.teams.map(t => `<div class="tcard" style="--tc:${teamColor(t.team)}">
       <div class="th"><b>${esc(t.name)}</b>${t.members.length && !t.members.every(m => t.name.includes(m)) ? ` <span class="muted">${esc(t.members.join(" & "))}</span>` : t.members.length ? "" : ` <span class="muted">crew not named</span>`}
         <span class="lv">leave ${t.leave} · ${t.orders.length} job${t.orders.length === 1 ? "" : "s"} · ${t.orders.reduce((a, o) => a + ((F[o.order_id] || {}).windows || 0), 0)} win · ${(t.orders.reduce((a, o) => a + ((F[o.order_id] || {}).minutes || 0), 0) / 60).toFixed(1)} h</span></div>
       <input class="tnote" data-tnote="${t.team}" value="${esc(t.note)}" placeholder="Note for the team (goes on WhatsApp)">
-      <ul class="tjobs">${t.orders.map(o => `<li class="${o.emaar ? "emaar" : ""}">
+      <ul class="tjobs">${t.orders.map(o => `<li class="${o.emaar ? "emaar" : ""} ${(F[o.order_id] || {}).kind === "ISR" ? "isr" : ""}">
         <span class="tt ${o.time_edited ? "ed" : ""}" title="${o.time_edited ? "3D sheet " + o.sheet_time : "3D sheet time"}">${o.time}</span>
         <span class="tj">${o.order_id} ${esc(o.customer)}</span>${o.emaar ? `<span class="chip emaar">E</span>` : ""}${o.late_min ? `<span class="chip warn" title="expected to start ${o.late_min} min after the appointment">+${o.late_min}</span>` : ""}
         <div class="jd"><div class="ja">${esc(o.address)}</div><div class="jw">${esc(workLine(o.order_id))}</div></div>
@@ -701,6 +709,7 @@ function runPreview(){
   const hooks = window.STEPPER_HOOKS;                  // the app plugs its real senders in here
   for (const a of ACTIONS) if (picked.has(a.id)){
     L.push(`> ${a.title}`);
+    if (a.id === "pdf") { L.push("  generating the one-page PDF…"); pdfOnePager(); L.push(""); continue; }
     if (hooks && hooks[a.id]) { L.push("  calling the app hook…"); hooks[a.id](P); continue; }
     if (a.id === "tookan") P.teams.forEach(t => L.push(`  [preview] ${t.orders.length} task(s) for ${t.name}: ${t.orders.map(o => o.order_id + "@" + o.time).join(", ")}`));
     if (a.id === "groups") P.teams.forEach(t => L.push(`  [preview] create group "${t.name}"`));
@@ -713,6 +722,70 @@ function runPreview(){
   const edited = P.teams.flatMap(t => t.orders.filter(o => o.time_edited));
   if (edited.length) L.push(`⚠ ${edited.length} time(s) differ from the 3D sheet: ${edited.map(o => `${o.order_id} ${o.sheet_time}→${o.time}`).join(", ")}. See the box at the bottom.`);
   $("log").hidden = false; $("log").textContent = L.join("\n");
+}
+
+/* ---------------- downloads: Excel (every stage) and the one-page PDF (end of Stage 3) ---------------- */
+const kindOf = id => (F[id] || {}).kind === "ISR" ? "ISR" : (F[id] || {}).hold ? ((F[id] || {}).kind || "Odd time") : "";
+
+function xlsxPlan(){
+  const P = payload(), stops = [];
+  P.teams.forEach(t => t.orders.forEach((o, i) => { const f = F[o.order_id] || {}; stops.push({
+    "Team": t.name, "Crew": (t.members || []).join(" & "), "Leave": t.leave, "Stop": i + 1, "Order": o.order_id, "Type": kindOf(o.order_id) || "Installation",
+    "Customer": o.customer, "Phone": o.phone || "", "City": o.city, "Address": o.address, "Appointment": o.time, "3D sheet time": o.sheet_time,
+    "Planned start": o.planned_start, "Planned end": o.planned_end, "Late (min)": o.late_min || 0, "Windows": f.windows || 0, "Scope": o.scope,
+    "Emaar": o.emaar ? "Yes" : "", "Scaffolding (>4 m)": f.scaffolding ? "Yes" : "", "Tall ladder (>3.5 m)": f.tall_ladder ? "Yes" : "",
+    "Installation alert": (o.installation_alert || []).join(" | "), "Note": o.note || "", "Team note": t.note || ""}); }));
+  const unassigned = queue().map(id => { const f = F[id] || {}; return {"Order": id, "Type": kindOf(id) || "Installation", "Customer": f.customer, "City": f.city,
+    "Address": f.address, "Appointment": f.slot, "Windows": f.windows || 0, "Scope": workLine(id)}; });
+  const teams = P.teams.map(t => { const r = simulate(state.assign[t.team] || []); return {"Team": t.name, "Crew": (t.members || []).join(" & "),
+    "Jobs": t.orders.length, "Windows": r.windows, "Work hours": Number((r.work / 60).toFixed(1)), "Leave": t.leave, "Back": r.orders ? hm(r.home) : ""}; });
+  const sheets = [{name: "Schedule", rows: stops}, {name: "Not on a team", rows: unassigned}, {name: "Teams", rows: teams}].filter(s => s.rows.length);
+  if (!sheets.length){ toast("Nothing to export yet - no orders on this day.", ""); return; }
+  downloadXlsx(`schedule_${UI.date}_${UI.city.replace(/ /g, "")}_stage${state.stage}.xlsx`, sheets)
+    .catch(e => toast("Excel export failed: " + e.message, "bad"));
+}
+
+/* The one-page PDF uses the browser's print engine like every other PDF in this app (see printSheet in
+ * ui.js): it lays out Arabic customer names and addresses, which an embedded-font PDF library cannot
+ * without shipping fonts. A script shrinks the type until everything fits ONE landscape A4 page, then
+ * calls print(); the person picks "Save as PDF". ISR jobs get a dotted border. */
+function pdfOnePager(){
+  const P = payload();
+  if (!P.teams.length){ toast("No team has any orders yet.", ""); return; }
+  const w = window.open("", "_blank");
+  if (!w){ toast("The browser blocked the pop-up. Allow pop-ups for this site and try again.", "bad"); return; }
+  const d = new Date(UI.date + "T00:00:00"), jobs = P.teams.reduce((a, t) => a + t.orders.length, 0);
+  const perRow = P.teams.length <= 4 ? P.teams.length : Math.ceil(P.teams.length / 2);
+  const job = (o) => { const k = kindOf(o.order_id); return `<div class="job${k === "ISR" ? " isr" : ""}${o.emaar ? " emaar" : ""}">
+      <div class="l1"><b>${esc(o.time)}</b> <b>${esc(o.order_id)}</b> ${esc(o.customer)}${o.emaar ? ' <span class="tg">EMAAR</span>' : ""}${k ? ` <span class="tg">${esc(k)}</span>` : ""}</div>
+      <div class="ad">${esc(o.address)}</div><div class="sc">${esc(o.scope)}</div>${o.note ? `<div class="sc">Note: ${esc(o.note)}</div>` : ""}</div>`; };
+  const team = (t) => `<section class="team"><h2><span>${esc(t.name)}${t.members.length && !t.members.every(m => t.name.includes(m)) ? " (" + esc(t.members.join(" & ")) + ")" : ""}</span><small>leave ${esc(t.leave)}</small></h2>${t.orders.map(job).join("")}</section>`;
+  w.document.open();
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Schedule ${esc(UI.date)} ${esc(UI.city)}</title><style>
+    @page{size:A4 landscape;margin:6mm}
+    *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    html,body{margin:0}
+    body{font:11px/1.25 -apple-system,"Segoe UI",Roboto,"Noto Sans","Noto Sans Arabic",Arial,sans-serif;color:#14202e;width:285mm}
+    h1{font-size:1.5em;margin:0 0 1px}.sub{color:#5f7480;font-size:.85em;margin-bottom:5px}
+    .grid{display:grid;grid-template-columns:repeat(${perRow},minmax(0,1fr));gap:5px;align-items:start}
+    .team h2{margin:0 0 3px;padding:3px 6px;background:#202e3e;color:#fff;font-size:1em;display:flex;justify-content:space-between;gap:6px}
+    .team h2 small{font-weight:400;white-space:nowrap}
+    .job{border:1px solid #96a0ac;padding:2px 5px;margin-bottom:3px;break-inside:avoid}
+    .job.isr{border:2px dotted #14202e}
+    .job.emaar{background:#fff4b3}
+    .l1{font-size:1em}.ad,.sc{font-size:.9em;color:#33414f;overflow-wrap:anywhere}.sc{color:#5f7480}
+    .tg{font-size:.8em;font-weight:700;border:1px solid #14202e;border-radius:3px;padding:0 3px}
+  </style></head><body>
+    <h1>Installation schedule - ${esc(UI.city)} - ${esc(d.toLocaleDateString("en-GB", {weekday: "long", day: "numeric", month: "long", year: "numeric"}))}</h1>
+    <div class="sub">${P.teams.length} teams, ${jobs} jobs. Dotted border = ISR. Yellow = Emaar.</div>
+    <div class="grid" id="g">${P.teams.map(team).join("")}</div>
+    <script>
+      var fs = 12, max = 190 * 3.7795; // 190 mm of usable height, in CSS px
+      function fit(){ document.body.style.fontSize = fs + "px";
+        if (document.documentElement.scrollHeight > max && fs > 4){ fs -= 0.25; fit(); } }
+      fit(); setTimeout(function(){ window.print(); }, 350);
+    <\/script></body></html>`);
+  w.document.close();
 }
 
 /* ---------------- map ---------------- */
@@ -839,6 +912,9 @@ async function loadDay(date){
     }
     day.date_label = new Date(date + "T00:00:00").toLocaleDateString("en-GB", {weekday: "short", day: "2-digit", month: "short", year: "numeric"});
     DAYS[date] = day;
+    // tall-motor / tall-window-without-scaffolding orders get "Follow up accounts" in the PO module;
+    // the 10-minute cron does it too, this just makes it immediate. A failure must never block planning.
+    rpc("fn_auto_accounts_followups", {}).catch(() => {});
     return day;
   } finally { loading(false); }
 }
@@ -901,6 +977,15 @@ function renderRibbon(){
     gone.map(f => item(f, "data-restore", f.order_id, "removed here")).join("") +
     (canRefresh ? ` <button class="lnk" data-refresh="1">↻ Check the 3D sheet again</button>` : "");
 }
+function renderStage4(){
+  live.render({root: ROOT, day: UI.date, city: UI.city, payload,
+    held: () => Object.values(DAY.held).filter(h => h.city === UI.city),
+    active: () => !!state && state.stage === 4 && /^#\/stepper/.test(location.hash)});
+}
+async function publishAndOpen(){
+  try { const r = await live.publish(payload()); toast(`Published: ${r && r.new || 0} new, ${r && r.updated || 0} refreshed`); go(4); }
+  catch (e) { toast((e && e.message) || "Could not publish the schedule", "bad"); }
+}
 function paint(){
   ROOT.dataset.stage = state.stage;
   ROOT.querySelectorAll(".steps button").forEach(b => b.classList.toggle("on", Number(b.dataset.stage) === state.stage));
@@ -912,12 +997,14 @@ function paint(){
   if (state.stage === 1) renderStage1();
   if (state.stage === 2) renderStage2();
   if (state.stage === 3) renderStage3();
+  if (state.stage === 4) renderStage4(); else live.stop();
   drawMap();
   if (map) setTimeout(() => map.invalidateSize(), 0);
 }
 function go(n){ if (n === 2 && state.stage !== 2) state.colOrder = null; state.stage = n; fitKey = ""; save(); paint(); window.scrollTo({top: 0}); setTimeout(() => { if (map){ map.invalidateSize(); drawMap(true); } }, 60); }
 
 on("click", e => {
+  if (state && state.stage === 4 && live.onClick(e)) return;
   const row = e.target.closest ? e.target.closest("tr[data-focus]") : null;
   if (row && !e.target.closest("select,input,button") && state.stage === 1){ state.cur = row.dataset.focus; hot = null; save(); paint(); return; }
   const b = e.target.closest("button"); if (!b) return;
@@ -948,11 +1035,14 @@ on("click", e => {
   if (idOf(b) === "b-addclose") closeAdd();
   if (idOf(b) === "b-addmanual"){ const g = k => $(k).value; const msg = addManual({id: g("na-id"), customer: g("na-cust"), address: g("na-addr"), slot: g("na-slot"), minutes: g("na-min"), windows: g("na-win"), emaar: $("na-emaar").checked, lat: g("na-lat"), lng: g("na-lng")}); if (msg) $("na-msg").textContent = msg; else closeAdd(); }
   if (idOf(b) === "b-run") runPreview();
+  if (idOf(b) === "b-publish") publishAndOpen();
   if (b.dataset.noteopen){ const i = b.parentNode.querySelector("input[data-onote]"); if (i){ i.hidden = !i.hidden || false; if (!i.hidden) i.focus(); } }
   if (idOf(b) === "b-play") startPlay();
   if (idOf(b) === "b-pause") stopPlay();
   if (idOf(b) === "b-step"){ haltPlay(); stepOnce(false); }
   if (idOf(b) === "b-allgo") assignAllSuggested();
+  if (idOf(b) === "b-xlsx") xlsxPlan();
+  if (idOf(b) === "b-pdf") pdfOnePager();
   if (idOf(b) === "b-dl"){
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(payload(), null, 1)], {type: "application/json"}));
     a.download = `schedule_plan_${UI.date}_${UI.city.replace(/ /g, "")}.json`; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 400);
@@ -960,6 +1050,7 @@ on("click", e => {
 });
 on("change", e => {
   const el = e.target;
+  if (state && state.stage === 4 && live.onChange(e)) return;
   if (el.matches("input[data-emaar]")){
     const id = el.dataset.emaar; state.emaarSet = state.emaarSet || {};
     if (el.checked === F[id].emaar_auto) delete state.emaarSet[id]; else state.emaarSet[id] = el.checked;
@@ -1025,10 +1116,12 @@ const SKELETON = `<div class="stp" data-stage="1">
   <span class="datebox"><button class="dbtn" data-dshift="-1" aria-label="Previous day">◀</button><input type="date" id="stp-dateSel" class="hsel" aria-label="Date"><button class="dbtn" data-dshift="1" aria-label="Next day">▶</button></span>
   <div class="cityseg" id="stp-citySeg" role="group" aria-label="City"></div>
   <span class="sub" id="stp-sub"></span>
+  <button class="btn small" id="stp-b-xlsx" title="Download this day's plan as an Excel workbook (works in every stage)">⬇ Excel</button>
   <nav class="steps" aria-label="Stages">
     <button data-stage="1"><span class="n">1</span>Assign orders</button>
     <button data-stage="2"><span class="n">2</span>Review &amp; adjust</button>
     <button data-stage="3"><span class="n">3</span>Dispatch</button>
+    <button data-stage="4"><span class="n">4</span>Live</button>
   </nav>
 </div>
 <div id="stp-ribbon" class="ribbon"></div>
@@ -1047,6 +1140,7 @@ const SKELETON = `<div class="stp" data-stage="1">
     <datalist id="stp-crews"></datalist>
   </section>
   <section class="s3" id="stp-s3" style="margin-top:12px"></section>
+  <section class="s4" id="stp-s4" style="margin-top:12px"></section>
 </div>
 <div id="stp-addpanel" class="smodal" hidden><div class="modalbox" id="stp-addbody"></div></div>
 </div>`;
@@ -1072,7 +1166,7 @@ function ensureLibs(){
   })), Promise.resolve());
   return libsReady;
 }
-window.addEventListener("hashchange", () => { if (!/^#\/stepper/.test(location.hash)) haltPlay(); });
+window.addEventListener("hashchange", () => { if (!/^#\/stepper/.test(location.hash)){ haltPlay(); live.stop(); } });
 
 export async function render(mount, state){
   if (!isSignedIn()) return;

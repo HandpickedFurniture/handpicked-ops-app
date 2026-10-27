@@ -20,7 +20,7 @@
 .stp .panel h2{margin:0 0 8px;font-size:15px}
 .stp #stp-mapwrap{position:relative}
 .stp #stp-map{height:560px;border-radius:10px;border:1px solid var(--line)}
-.stp[data-stage="2"] #stp-map{height:340px}
+.stp[data-stage="2"] #stp-map{height:calc(100vh - 90px);min-height:640px}
 .stp[data-stage="3"] #stp-mapwrap{display:none}
 .stp .mapbar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:8px 0;font-size:13px;color:var(--mute)}
 .stp .mapbar label{display:flex;align-items:center;gap:5px;cursor:pointer}
@@ -301,3 +301,13 @@
 .stp .dbtn{background:#243449;color:#fff;border:1px solid #33475f;border-radius:8px;padding:5px 9px;cursor:pointer;font:inherit}
 .stp .btn{min-height:0}
 .stp .chip{display:inline-block}
+
+/* 28 Oct 2026: ISR = dotted border everywhere an order is drawn; tall ladder (>3.5 m) is loud */
+.stp tr.orow.isr td{border-top:2px dotted var(--ink);border-bottom:2px dotted var(--ink)}
+.stp .stop.isr{border:2px dotted var(--ink) !important}
+.stp .qcard.isr{border:2px dotted var(--ink)}
+.stp .tjobs li.isr{border:2px dotted var(--ink);padding:2px 4px}
+.stp .chip.ladder,.stp[data-stage] .stop .chip.ladder{background:#ffedd5;color:#9a3412;border:1px solid #fb923c;font-weight:800}
+.stp .kit.ladder{background:#ffedd5;color:#9a3412;border-color:#fb923c}
+.stp .kit.isrkey{background:#fff;color:var(--ink);border:2px dotted var(--ink)}
+.stp-hdr #stp-b-xlsx{margin-left:auto}

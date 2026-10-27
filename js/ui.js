@@ -121,6 +121,30 @@ export function downloadCsv(filename, rows) {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
+/* Download a real .xlsx built client-side. SheetJS is fetched from cdnjs the first time it is needed
+ * (the app has no bundler), so an Excel button costs nothing until somebody presses it.
+ * sheets = [{ name, rows: [{column: value}] }]; resolves once the file has been handed to the browser. */
+let xlsxLoad = null;
+export function downloadXlsx(filename, sheets) {
+  xlsxLoad = xlsxLoad || (window.XLSX ? Promise.resolve() : new Promise((ok, bad) => {
+    const s = Object.assign(document.createElement("script"), {
+      src: "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" });
+    s.onload = ok;
+    s.onerror = () => { xlsxLoad = null; bad(new Error("the Excel library could not load - check the connection")); };
+    document.head.appendChild(s);
+  }));
+  return xlsxLoad.then(() => {
+    const wb = window.XLSX.utils.book_new();
+    sheets.forEach((sh) => {
+      const ws = window.XLSX.utils.json_to_sheet(sh.rows);
+      const cols = Object.keys(sh.rows[0] || {});
+      ws["!cols"] = cols.map((c) => ({ wch: Math.min(60, Math.max(c.length, ...sh.rows.map((r) => String(r[c] ?? "").length)) + 2) }));
+      window.XLSX.utils.book_append_sheet(wb, ws, sh.name.slice(0, 31));
+    });
+    window.XLSX.writeFile(wb, filename);
+  });
+}
+
 /* A PDF of a table, without a PDF library.
  *
  * The browser's own print engine is the PDF writer: it already lays out every script this business

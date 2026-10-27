@@ -1000,3 +1000,15 @@ input.pickbox{width:17px;height:17px;margin:0;cursor:pointer;accent-color:var(--
 table.dense.report tr.grp td{background:#dfe8f2;font-weight:700;border-top:2px solid var(--line);}
 .bigfig{font-size:20px;font-weight:800;color:#a03a00;line-height:1;}
 table.dense.report td.num .bigfig{display:inline-block;}
+
+/* "Express" pill beside an order number - added by js/express.js */
+.xtag{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;background:#c2410c;color:#fff;
+  font:800 10px/1.5 system-ui,sans-serif;letter-spacing:.04em;text-transform:uppercase;vertical-align:middle;white-space:nowrap;}
+/* "Repeat" pill: the same customer (name + address) has another order */
+.xtag.rtag{background:#6d28d9;cursor:help;}
+
+/* PO module: expandable orders, remarks column */
+table.rev tr.collapsed{display:none;}
+.revtoggle{border:0;background:none;cursor:pointer;font-size:13px;padding:0 4px 0 0;color:var(--brand);}
+table.rev td.remarkcell{min-width:170px;}
+table.rev td.remarkcell textarea{width:100%;min-height:34px;font:inherit;font-size:12px;resize:vertical;box-sizing:border-box;}

@@ -29,7 +29,7 @@ import { syncBar } from "./sync.js";
  * fabric_recv_state carried onto every line (25 Sep 2026), so it answers for the whole order. */
 const CAPS = { prodstate: true, procurement: true, review: true, poversion: true, fabstatus: true };
 
-/* The 21 columns the coordinators asked for, in the order they read them - which is the order of
+/* The 22 columns the coordinators asked for, in the order they read them - which is the order of
  * the order form itself, not of the database. `wide` marks the free-text ones that need room. */
 const COLS = [
   { k: "issue_flag", key: "rev.issueFlag",
@@ -40,6 +40,7 @@ const COLS = [
   { k: "commercial_name", key: "f.commercial", wide: 1 },
   { k: "window_name", key: "rev.windowName" },
   { k: "optional_comment", key: "f.comment", wide: 1 },
+  { k: "remark", key: "rev.remarks", remark: 1 },        // free text per line, typed here (28 Oct 2026)
   { k: "installation_notes", key: "col.installNotes", wide: 1 },
   { k: "fabric_1_bottom_stitch", key: "rev.f1Bottom" },
   { k: "fabric_2_bottom_stitch", key: "rev.f2Bottom" },
@@ -77,7 +78,7 @@ let SHOWN = 300;     // rows drawn at once; the rest come on demand - see the Sh
  * minutes of round trips. Still queued like every other write, so it survives a van with no signal. */
 const MARK_CHUNK = 1000;
 
-function markSheet(targetRows, after) {
+function markSheet(targetRows, after, syncRows) {
   const n = targetRows.length;
   if (!n) return;
   const m = modal(`
@@ -99,7 +100,7 @@ function markSheet(targetRows, after) {
     const on = !m.sheet.querySelector('[name="bulkoff"]').checked;
     m.close();
     if (!await confirmSheet(tr("rev.markAll", { n }), tr("rev.markAllConfirm", { n }))) return;
-    await applyMark(targetRows, status, on, after);
+    await applyMark(targetRows, status, on, after, syncRows ? () => syncRows(targetRows, status, on) : null);
   };
 }
 
@@ -107,7 +108,7 @@ function markSheet(targetRows, after) {
  * requested count, never checked against submit()'s answer - so a Mark all that changed nothing, or
  * one the server parked, read exactly like success. It now says how many lines actually move (from
  * the marks the rows already carry) and says so plainly when a chunk queued or failed. */
-async function applyMark(targetRows, status, on, after) {
+async function applyMark(targetRows, status, on, after, local) {
   const n = targetRows.length;
   const changes = targetRows.filter((r) => (r.marks || []).includes(status) !== on).length;
   const results = [];
@@ -128,7 +129,11 @@ async function applyMark(targetRows, status, on, after) {
   else if (results.some((r) => r.status === "queued")) toast(tr("t.queued"), "");
   else if (!changes) toast(tr("rev.linesNoop", { n }), "");
   else toast(tr("rev.linesDone", { c: changes, n }), "ok");
-  window.dispatchEvent(new CustomEvent("ops:rerender"));
+  /* A full re-render refetches 4,000 lines and puts the page back at the top, which is where the
+   * coordinator was NOT working (28 Oct 2026). When the page can update the rows it already holds,
+   * it does so in place; a failed chunk still re-renders so the screen shows what the server holds. */
+  if (local && !failed.length) local();
+  else window.dispatchEvent(new CustomEvent("ops:rerender"));
 }
 
 export async function render(mount, state, setFilters) {
@@ -188,6 +193,8 @@ export async function render(mount, state, setFilters) {
       <span class="row" style="gap:6px">
         ${isViewer() ? "" : `<button class="btn sm primary" data-markall
              >${esc(tr("rev.markAll", { n: rows.length }))}</button>`}
+        <button class="btn sm" data-expand>${esc(tr("rev.expandAll"))}</button>
+        <button class="btn sm" data-collapse>${esc(tr("rev.collapseAll"))}</button>
         <button class="btn sm" data-csv>${esc(tr("dash.csv"))}</button>
       </span>
     </div>`);
@@ -200,7 +207,7 @@ export async function render(mount, state, setFilters) {
    * read an order they never saw. The count in the button is the real number, and the confirmation
    * repeats it. */
   const markAllBtn = head.querySelector("[data-markall]");
-  if (markAllBtn) markAllBtn.addEventListener("click", () => markSheet(rows));
+  if (markAllBtn) markAllBtn.addEventListener("click", () => markSheet(rows, null, syncRows));
 
   const refreshHead = () => {
     head.querySelector("[data-progress]").textContent =
@@ -263,7 +270,7 @@ export async function render(mount, state, setFilters) {
     toast(tr("rev.selectedMatching", { n: rows.length }), "");
   });
   selbar.querySelector('[data-act="mark"]').addEventListener("click", () =>
-    markSheet(wholeFilter ? rows : rows.filter((r) => selected.has(String(r.line_id))), clearSel));
+    markSheet(wholeFilter ? rows : rows.filter((r) => selected.has(String(r.line_id))), clearSel, syncRows));
 
   const wrap = el(`<div class="card revwrap" style="padding:0"></div>`);
   const table = el(`
@@ -328,7 +335,53 @@ export async function render(mount, state, setFilters) {
            >${esc(tr("rev.markOrder"))}</button>`;
   };
 
+  /* ---- expand / collapse. An order's first row always shows; collapsing hides the rest of its lines. */
+  const collapsed = new Set();
+  const paintOrder = (o) => {
+    const closed = collapsed.has(o);
+    tb.querySelectorAll(`tr[data-order="${CSS.escape(o)}"]`).forEach((t) => {
+      if (!t.classList.contains("firstofblock")) t.classList.toggle("collapsed", closed);
+      const tg = t.querySelector("[data-toggle]");
+      if (tg) { tg.textContent = closed ? "▸" : "▾"; tg.setAttribute("aria-expanded", closed ? "false" : "true"); }
+    });
+  };
+  head.querySelector("[data-collapse]").addEventListener("click", () => {
+    orderRows.forEach((l, o) => { if (l.length > 1) collapsed.add(o); });
+    orderRows.forEach((l, o) => paintOrder(o));
+  });
+  head.querySelector("[data-expand]").addEventListener("click", () => {
+    collapsed.clear();
+    orderRows.forEach((l, o) => paintOrder(o));
+  });
+
+  /* ---- in-place update after a bulk mark, so the page stays where the coordinator is working */
+  function syncRows(targetRows, status, on) {
+    const touched = new Set();
+    targetRows.forEach((r) => {
+      const m = new Set(r.marks || []), a = new Set(r.marks_actioned || []);
+      if (on) m.add(status); else { m.delete(status); a.delete(status); }
+      r.marks = Array.from(m); r.marks_actioned = Array.from(a);
+      r.is_read = m.has("read");
+      r.open_follow_ups = r.marks.filter((x) => x !== "read" && !a.has(x)).length;
+      touched.add(r.order_id);
+      const t = tb.querySelector(`tr[data-line="${CSS.escape(String(r.line_id))}"]`);
+      if (t && t.sync) t.sync();
+    });
+    touched.forEach((o) => {
+      const cell = tb.querySelector(`tr[data-order="${CSS.escape(o)}"] [data-ordmark]`);
+      if (cell) cell.innerHTML = orderMarkHtml(o);
+    });
+    refreshHead();
+  }
+
   wrap.addEventListener("click", async (e) => {
+    const tg = e.target.closest("[data-toggle]");
+    if (tg) {
+      const o = tg.dataset.toggle;
+      if (collapsed.has(o)) collapsed.delete(o); else collapsed.add(o);
+      paintOrder(o);
+      return;
+    }
     const b = e.target.closest("[data-markorder]");
     if (!b) return;
     const o = b.dataset.markorder;
@@ -336,7 +389,7 @@ export async function render(mount, state, setFilters) {
     const u = lines.filter((x) => !x.is_read).length;
     if (!await confirmSheet(tr("rev.markOrder"),
         tr("rev.markOrderConfirm", { n: lines.length, o, u }))) return;
-    await applyMark(lines, "read", true);
+    await applyMark(lines, "read", true, null, () => syncRows(lines, "read", true));
   });
 
   function drawRow(r, isFirstOfOrder) {
@@ -344,21 +397,30 @@ export async function render(mount, state, setFilters) {
     const actioned = new Set(r.marks_actioned || []);
     const tr1 = el(`
       <tr class="ord${bandOf.get(r.line_id) ? "B" : "A"}${r.is_read ? " isread" : ""}${
-          isFirstOfOrder ? " firstofblock" : ""}" data-line="${esc(r.line_id)}">
+          isFirstOfOrder ? " firstofblock" : collapsed.has(r.order_id) ? " collapsed" : ""}"
+          data-line="${esc(r.line_id)}" data-order="${esc(r.order_id)}">
         ${isViewer() ? "" : `<td class="selcol"><input type="checkbox" data-sel
               value="${esc(r.line_id)}" aria-label="${esc(r.window_ref || r.line_id)}"></td>`}
         <td>${isFirstOfOrder
-              ? `<b>${esc(r.order_id)}</b>${
+              ? `${(orderRows.get(r.order_id) || []).length > 1
+                    ? `<button class="revtoggle" data-toggle="${esc(r.order_id)}" aria-expanded="${collapsed.has(r.order_id) ? "false" : "true"}"
+                         title="${esc(tr("rev.collapseAll"))} / ${esc(tr("rev.expandAll"))}">${collapsed.has(r.order_id) ? "▸" : "▾"}</button>` : ""}<b>${esc(r.order_id)}</b>${
                   // a revised PO is the one worth re-reading, so it is called out rather than left
                   // to the filter; v1 is every other order and would be noise on 4,000 rows
                   Number(r.version_no) > 1 ? " " + chip("v" + r.version_no, "warn") : ""
-                }<div class="muted">${esc(r.customer_name || "")}</div>${fabChip(r)}${orderMarkHtml(r.order_id)}`
+                }<div class="muted">${esc(r.customer_name || "")}</div>${fabChip(r)}<div data-ordmark>${orderMarkHtml(r.order_id)}</div>`
               : `<span class="muted">${esc(r.order_id)}</span>`}</td>
         ${isViewer() ? "" : `<td><input type="checkbox" data-read${marks.has("read") ? " checked" : ""}
               aria-label="${esc(tr("rev.read"))} ${esc(r.window_ref || r.line_id)}"
               style="width:19px;height:19px;accent-color:var(--brand);cursor:pointer"></td>`}
         <td><span class="revmarks" data-markcell></span></td>
         ${COLS.map((c) => {
+          if (c.remark) {
+            return `<td class="remarkcell">${isViewer()
+              ? esc(r.remark || "")
+              : `<textarea data-remark rows="1" placeholder="${esc(tr("rev.remarks"))}"
+                   aria-label="${esc(tr("rev.remarks"))} ${esc(r.window_ref || r.line_id)}">${esc(r.remark || "")}</textarea>`}</td>`;
+          }
           const hit = (PROC_COL[c.k] || []).filter((p) => (r.procurement_req || []).includes(p));
           return `<td class="${c.wide ? "wide " : ""}${hit.length ? "procreq" : ""}">${
             c.bold ? "<b>" : ""}${cellValue(c, r)}${c.bold ? "</b>" : ""}${
@@ -400,6 +462,25 @@ export async function render(mount, state, setFilters) {
         if (queueDepth()) toast(tr("t.queued"), "");
       });
     }
+
+    /* A bulk mark changes r.marks from outside; this redraws the row from r so nothing here is stale. */
+    tr1.sync = () => {
+      marks.clear(); (r.marks || []).forEach((s) => marks.add(s));
+      actioned.clear(); (r.marks_actioned || []).forEach((s) => actioned.add(s));
+      if (readBox) readBox.checked = marks.has("read");
+      tr1.classList.toggle("isread", marks.has("read"));
+      paintMarks();
+    };
+
+    // the remark is saved when the box loses focus with a changed value, through the same offline queue
+    const remarkBox = tr1.querySelector("[data-remark]");
+    if (remarkBox) remarkBox.addEventListener("change", async () => {
+      r.remark = remarkBox.value;
+      await submit("fn_ops_set_line_remark", {
+        p_line_id: r.line_id, p_remark: remarkBox.value, p_actor: currentActor(), p_op: crypto.randomUUID(),
+      });
+      toast(queueDepth() ? tr("t.queued") : tr("t.saved"), "ok");
+    });
 
     // tapping a follow-up chip toggles whether it has been actioned; the ⋯ button adds and removes
     markCell.addEventListener("click", async (e) => {

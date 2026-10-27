@@ -12,6 +12,7 @@ import {
 import { tr, getLang, setLang, LANGS } from "./i18n.js";
 import { $, esc, el, toast, modal, loading, confirmSheet, copyText } from "./ui.js";
 import { renderLogin } from "./auth.js";
+import { startExpressTags } from "./express.js";
 import { readHash, writeHash } from "./filters.js";
 import { logoSvg, installFavicon } from "./brand.js";
 import * as home from "./mod-home.js";
@@ -344,6 +345,7 @@ function boot() {
   onFailed(() => { paintQueue(); toast(tr("q.failedToast"), "bad"); });
   onSession(() => paintHeader());
 
+  startExpressTags();
   window.addEventListener("hashchange", route);
   window.addEventListener("ops:rerender", route);
   if (!location.hash) location.hash = "#/home";
