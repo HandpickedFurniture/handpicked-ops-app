@@ -311,3 +311,6 @@
 .stp .kit.ladder{background:#ffedd5;color:#9a3412;border-color:#fb923c}
 .stp .kit.isrkey{background:#fff;color:var(--ink);border:2px dotted var(--ink)}
 .stp-hdr #stp-b-xlsx{margin-left:auto}
+
+.stp input.tin{width:84px;padding:1px 2px;border:1px solid var(--line);border-radius:5px;font:inherit;font-size:12px;font-weight:700}
+.stp .stop .l1 input.tin{flex:none}
