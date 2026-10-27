@@ -69,6 +69,15 @@ function restart(wave, keepOrders){
 let resetArmed = false, resetTimer = null;
 function applyTimes(){
   IDS.forEach(i => F[i].slot = (state.times && state.times[i]) || F[i].sheet_slot);
+  /* ISR tick box (28 Oct 2026): the user can tag any order ISR, or untag one. A tagged installation takes
+   * the flat ISR time; untagging puts back what the order had. An order the sheet already calls ISR keeps
+   * its (flat) minutes when untagged - the real install time is not known for it. */
+  IDS.forEach(i => { const f = F[i];
+    if (f.kind_base === undefined){ f.kind_base = f.kind || ""; f.minutes_base = f.minutes; }
+    const want = state.isr && i in state.isr ? state.isr[i] : f.kind_base === "ISR";
+    if (want){ f.kind = "ISR"; f.minutes = f.kind_base === "ISR" ? f.minutes_base : R.isr_flat_min; }
+    else { f.kind = f.kind_base === "ISR" ? "" : f.kind_base; f.minutes = f.minutes_base; }
+  });
   // Emaar: what the address says (emaar_auto), unless the user switched it for this order
   IDS.forEach(i => { if (F[i].emaar_auto === undefined) F[i].emaar_auto = !!F[i].emaar;
     F[i].emaar = state.emaarSet && i in state.emaarSet ? state.emaarSet[i] : F[i].emaar_auto; });
@@ -126,11 +135,13 @@ function simulate(seq){
   const depart = clock;
   for (const id of seq){
     const f = F[id], [tr, dkm] = drive(prev, id); travel += tr; km += dkm;
-    const arrive = clock + tr, start = Math.max(arrive, earliest(id));
+    /* ETA typed by the user: the team is on site at that time, whatever the drive and appointment say */
+    const eo = state.eta && state.eta[id], arrive0 = clock + tr;
+    const start = eo ? mins(eo) : Math.max(arrive0, earliest(id)), arrive = eo ? start : arrive0;
     const delay = f.slot && !f.flex ? start - mins(f.slot) : 0;          // + = later than the appointment
     const late = delay > FREE_LATE ? delay : 0, minor = delay > 0 && !late ? delay : 0;
     const end = start + f.minutes, limit = f.villa ? mins(R.villa_work_end) : mins(R.work_end);
-    stops.push({id, from: prev, travel: tr, km: dkm, arrive, start, end, wait: start - arrive, delay, late, minor, over: Math.max(0, end - limit)});
+    stops.push({id, eta_set: !!eo, from: prev, travel: tr, km: dkm, arrive, start, end, wait: start - arrive, delay, late, minor, over: Math.max(0, end - limit)});
     clock = end; prev = id;
   }
   const back = seq.length ? drive(prev, "BASE")[0] : 0;
@@ -328,9 +339,9 @@ function renderStage1(){
       const endTxt = st ? hm(st.end) : hm(mins(f.slot) + f.minutes);
       const note = st ? (st.late ? `<span class="chip bad">TIME CHANGE +${st.late}</span>` : st.minor ? `<span class="chip warn">starts ${hm(st.start)} (+${st.minor})</span>` : st.wait > 15 ? `<span class="chip">waits ${Math.round(st.wait)} min</span>` : "") + (st.over ? `<span class="chip bad">ends after limit</span>` : "") : "";
       return `<tr class="orow ${f.emaar ? "emaar" : ""} ${f.kind === "ISR" ? "isr" : ""} ${oid === id ? "focused" : ""}" data-focus="${oid}" style="${tn ? `border-left:6px solid ${teamColor(tn)}` : "border-left:6px solid transparent"}">
-        <td><b>${esc(oid)}</b> <button class="lnk" data-remove="${oid}" title="Remove from this list" aria-label="Remove ${oid}">✕</button>${f.hold ? ' <span class="chip warn">ISR / odd time</span>' : f.manual ? ' <span class="chip">added</span>' : ""}<div class="muted" style="font-size:12px">${esc(f.city)} · <label class="etog ${f.emaar ? "on" : ""}" title="${f.emaar_auto ? "The address looks like Emaar" : "The address does not look like Emaar"}${state.emaarSet && oid in state.emaarSet ? " - you changed it" : ""}"><input type="checkbox" data-emaar="${oid}" ${f.emaar ? "checked" : ""}>Emaar${state.emaarSet && oid in state.emaarSet ? "*" : ""}</label>${f.scaffolding ? " · scaffolding" : ""}${f.motor ? " · motor" : ""}</div></td>
+        <td><b>${esc(oid)}</b> <button class="lnk" data-remove="${oid}" title="Remove from this list" aria-label="Remove ${oid}">✕</button>${f.hold ? ' <span class="chip warn">ISR / odd time</span>' : f.manual ? ' <span class="chip">added</span>' : ""}<div class="muted" style="font-size:12px">${esc(f.city)} · <label class="etog ${f.emaar ? "on" : ""}" title="${f.emaar_auto ? "The address looks like Emaar" : "The address does not look like Emaar"}${state.emaarSet && oid in state.emaarSet ? " - you changed it" : ""}"><input type="checkbox" data-emaar="${oid}" ${f.emaar ? "checked" : ""}>Emaar${state.emaarSet && oid in state.emaarSet ? "*" : ""}</label> · <label class="etog ${f.kind === "ISR" ? "on" : ""}" title="Tag this order as an ISR (issue resolution): flat ${R.isr_flat_min} min, dotted border"><input type="checkbox" data-isr="${oid}" ${f.kind === "ISR" ? "checked" : ""}>ISR</label>${f.scaffolding ? " · scaffolding" : ""}${f.motor ? " · motor" : ""}</div></td>
         <td>${esc(f.customer)}<div class="muted" style="font-size:12px">${esc(f.address)}</div></td>
-        <td><input type="time" step="300" value="${esc(f.slot)}" data-time="${oid}" aria-label="Start time of ${oid}">${f.slot !== f.sheet_slot ? `<div class="muted" style="font-size:11.5px">sheet ${esc(f.sheet_slot)} <button class="lnk" data-treset="${oid}">reset</button></div>` : ""}</td>
+        <td><input type="time" step="300" value="${esc(f.slot)}" data-time="${oid}" aria-label="Start time of ${oid}">${st ? `<div class="muted" style="font-size:11px;white-space:nowrap">ETA <input type="time" step="300" class="tin" value="${hm(st.arrive)}" data-eta="${oid}" aria-label="ETA of ${oid}" title="Change when the team arrives and starts">${st.eta_set ? ` <button class="lnk" data-etareset="${oid}">reset</button>` : ""}</div>` : ""}${f.slot !== f.sheet_slot ? `<div class="muted" style="font-size:11.5px">sheet ${esc(f.sheet_slot)} <button class="lnk" data-treset="${oid}">reset</button></div>` : ""}</td>
         <td>${winViz(f)}</td>
         <td>${etaViz(oid, st, tn)}</td>
         <td><b>${endTxt}</b>${st ? "" : ' <span class="muted" style="font-size:11.5px">if on time</span>'}<div>${note}</div></td>
@@ -399,7 +410,7 @@ function renderStage2(){
       body += `<p class="drv">${i === 0 ? `leave ${hm(r.depart)} · ` : ""}🚐 ${s.travel} min · ${s.km} km</p>
       <div class="stop ${f.emaar ? "emaar" : ""} ${f.kind === "ISR" ? "isr" : ""}" draggable="true" data-id="${s.id}" data-team="${t.team}" style="--tc:${tc}">
         <div class="l1"><span class="sheett" title="Time on the 3D sheet"><span>3D</span><b>${esc(f.sheet_slot)}</b></span>${f.slot !== f.sheet_slot ? `<em class="youset" title="You changed the time">→ ${esc(f.slot)}</em>` : ""}<span class="who" title="${esc(s.id + " " + f.customer)}"><span class="oid">${s.id}</span> ${esc(f.customer)}</span><button class="lnk rmx" data-remove="${s.id}" title="Remove from this day's plan (you can restore it above)" aria-label="Remove ${s.id}">✕</button></div>
-        <div class="pt">Appt <input type="time" step="300" class="tin" value="${esc(f.slot)}" data-time="${s.id}" draggable="false" title="Change the appointment time" aria-label="Start time of ${s.id}"> · Planned <b>${hm(s.start)}–${hm(s.end)}</b> · arr ${hm(s.arrive)}${s.delay > 0 ? ` <span class="chip ${s.late ? "bad" : "warn"}">+${s.delay}</span>` : ""}${s.over ? ` <span class="chip bad">after limit</span>` : ""}</div>
+        <div class="pt">Appt <input type="time" step="300" class="tin" value="${esc(f.slot)}" data-time="${s.id}" draggable="false" title="Change the appointment time" aria-label="Start time of ${s.id}"> · Planned <b>${hm(s.start)}–${hm(s.end)}</b> · ETA <input type="time" step="300" class="tin" value="${hm(s.arrive)}" data-eta="${s.id}" draggable="false" title="Change when the team arrives and starts" aria-label="ETA of ${s.id}">${s.eta_set ? ` <button class="lnk" data-etareset="${s.id}" draggable="false">reset</button>` : ""} <label class="isrtog"><input type="checkbox" data-isr="${s.id}" draggable="false" ${f.kind === "ISR" ? "checked" : ""}>ISR</label>${s.delay > 0 ? ` <span class="chip ${s.late ? "bad" : "warn"}">+${s.delay}</span>` : ""}${s.over ? ` <span class="chip bad">after limit</span>` : ""}</div>
         <div class="ad" title="${esc(f.address)}">${esc(f.address)}</div>
         <div class="jw2">${f.emaar ? `<span class="chip emaar">EMAAR</span> ` : ""}${workLineHtml(s.id)}</div>
         ${specialsHtml(s.id)}
@@ -607,7 +618,7 @@ function teamPayload(t){
     orders: r.stops.map(s => { const f = F[s.id]; return {
       order_id: s.id, customer: f.customer, phone: f.phone, address: f.address, city: f.city,
       time: f.slot, sheet_time: f.sheet_slot, time_edited: f.slot !== f.sheet_slot,
-      planned_start: hm(s.start), planned_end: hm(s.end), late_min: s.delay > 0 ? s.delay : 0, emaar: !!f.emaar,
+      eta: hm(s.arrive), planned_start: hm(s.start), planned_end: hm(s.end), late_min: s.delay > 0 ? s.delay : 0, emaar: !!f.emaar,
       installation_alert: instAlerts(s.id), note: notes().order[s.id] || "", lat: f.lat, lng: f.lng, est_min: Math.round(f.minutes || 0), scope: workLine(s.id)}; })};
 }
 function payload(){
@@ -732,7 +743,7 @@ function xlsxPlan(){
   P.teams.forEach(t => t.orders.forEach((o, i) => { const f = F[o.order_id] || {}; stops.push({
     "Team": t.name, "Crew": (t.members || []).join(" & "), "Leave": t.leave, "Stop": i + 1, "Order": o.order_id, "Type": kindOf(o.order_id) || "Installation",
     "Customer": o.customer, "Phone": o.phone || "", "City": o.city, "Address": o.address, "Appointment": o.time, "3D sheet time": o.sheet_time,
-    "Planned start": o.planned_start, "Planned end": o.planned_end, "Late (min)": o.late_min || 0, "Windows": f.windows || 0, "Scope": o.scope,
+    "ETA": o.eta, "Planned start": o.planned_start, "Planned end": o.planned_end, "Late (min)": o.late_min || 0, "Windows": f.windows || 0, "Scope": o.scope,
     "Emaar": o.emaar ? "Yes" : "", "Scaffolding (>4 m)": f.scaffolding ? "Yes" : "", "Tall ladder (>3.5 m)": f.tall_ladder ? "Yes" : "",
     "Installation alert": (o.installation_alert || []).join(" | "), "Note": o.note || "", "Team note": t.note || ""}); }));
   const unassigned = queue().map(id => { const f = F[id] || {}; return {"Order": id, "Type": kindOf(id) || "Installation", "Customer": f.customer, "City": f.city,
@@ -1012,6 +1023,7 @@ on("click", e => {
   if (b.dataset.go) go(Number(b.dataset.go));
   if (b.dataset.assign) assignTo(curId(), Number(b.dataset.assign));
   if (b.dataset.treset){ delete state.times[b.dataset.treset]; applyTimes(); save(); paint(); }
+  if (b.dataset.etareset){ delete (state.eta || {})[b.dataset.etareset]; save(); paint(); }
   if (b.dataset.shift) shift(b.dataset.team, Number(b.dataset.idx), Number(b.dataset.shift));
   if (idOf(b) === "b-undo") undo();
   if (idOf(b) === "b-addteam") addTeam();
@@ -1055,6 +1067,16 @@ on("change", e => {
     const id = el.dataset.emaar; state.emaarSet = state.emaarSet || {};
     if (el.checked === F[id].emaar_auto) delete state.emaarSet[id]; else state.emaarSet[id] = el.checked;
     applyTimes(); save(); paint();
+  }
+  if (el.matches("input[data-isr]")){
+    const id = el.dataset.isr; state.isr = state.isr || {};
+    if (el.checked === (F[id].kind_base === "ISR")) delete state.isr[id]; else state.isr[id] = el.checked;
+    applyTimes(); save(); paint();
+  }
+  if (el.matches("input[data-eta]")){
+    const id = el.dataset.eta; state.eta = state.eta || {};
+    if (el.value) state.eta[id] = el.value; else delete state.eta[id];
+    save(); paint();
   }
   if (el.matches("input[data-time]")){ if (el.value) state.times[el.dataset.time] = el.value; else delete state.times[el.dataset.time]; applyTimes(); state.cur = el.dataset.time; save(); paint(); }
   if (el.matches("select[data-team-for]")){ if (playing) stopPlay(); assignTo(el.dataset.teamFor, el.value === "" ? "" : Number(el.value)); }
