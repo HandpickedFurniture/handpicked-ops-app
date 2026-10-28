@@ -101,6 +101,18 @@ function inScope(node) {
   return true;
 }
 
+/* Backstop for the rule above: whatever path put a second pill on the same order in the same screen
+ * or sheet, the extras are removed here (the first in document order stays). */
+function dedupe() {
+  const seen = new Map();
+  document.querySelectorAll(".xtag[data-o]").forEach((p) => {
+    const scope = p.closest(".modal") || document.body;
+    const slot = seen.get(scope) || seen.set(scope, new Set()).get(scope);
+    const key = (p.classList.contains("rtag") ? "r" : "x") + p.dataset.o;
+    if (slot.has(key)) p.remove(); else slot.add(key);
+  });
+}
+
 function scan(root) {
   if (!express.size && !repeat.size) return;
   const base = root.nodeType === 3 ? root.parentNode : root;
@@ -121,6 +133,7 @@ export function startExpressTags() {
         if (m.type === "characterData") scan(m.target);
         else m.addedNodes.forEach((n) => { if (n.nodeType === 1 || n.nodeType === 3) scan(n); });
       }
+      dedupe();
     } finally {
       obs.observe(document.body, { childList: true, subtree: true, characterData: true });
     }
@@ -131,6 +144,7 @@ export function startExpressTags() {
     await loading;
     obs.disconnect();
     scan(document.body);
+    dedupe();
     obs.observe(document.body, { childList: true, subtree: true, characterData: true });
   };
   obs.observe(document.body, { childList: true, subtree: true, characterData: true });
