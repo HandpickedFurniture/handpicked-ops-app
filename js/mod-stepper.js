@@ -79,8 +79,9 @@ function applyTimes(){
     else { f.kind = f.kind_base === "ISR" ? "" : f.kind_base; f.minutes = f.minutes_base; }
   });
   // Emaar: what the address says (emaar_auto), unless the user switched it for this order
-  IDS.forEach(i => { if (F[i].emaar_auto === undefined) F[i].emaar_auto = !!F[i].emaar;
-    F[i].emaar = state.emaarSet && i in state.emaarSet ? state.emaarSet[i] : F[i].emaar_auto; });
+  IDS.forEach(i => { if (F[i].emaar_auto === undefined) F[i].emaar_auto = !!F[i].emaar || !!F[i].emaar_maybe;
+    F[i].emaar = state.emaarSet && i in state.emaarSet ? state.emaarSet[i] : F[i].emaar_auto;
+    F[i].maybe = !!F[i].emaar_maybe && !(state.emaarSet && i in state.emaarSet); });
 }
 
 /* ---------------- state ---------------- */
@@ -252,7 +253,7 @@ let delArmed = null, delTimer = null;            // same two-press confirm as St
 let hot = null;                                   // team number under the mouse in the suggestion table
 function chipsFor(f){
   const c = f.counts || {}, o = [];
-  if (f.emaar) o.push(`<span class="chip emaar">EMAAR</span>`);
+  if (f.emaar) o.push(f.maybe ? `<span class="chip emaar maybe" title="The address might be Emaar">EMAAR?</span>` : `<span class="chip emaar">EMAAR</span>`);
   if (f.villa) o.push(`<span class="chip">villa · to ${esc(R.villa_work_end)}</span>`);
   o.push(`<span class="chip">${f.windows} win</span>`);
   if (c.blinds) o.push(`<span class="chip">${c.blinds} blind${c.blinds > 1 ? "s" : ""}</span>`);
@@ -338,8 +339,8 @@ function renderStage1(){
     ${rows.map(oid => { const f = F[oid], st = stopOf[oid], tn = teamOfId[oid];
       const endTxt = st ? hm(st.end) : hm(mins(f.slot) + f.minutes);
       const note = st ? (st.late ? `<span class="chip bad">TIME CHANGE +${st.late}</span>` : st.minor ? `<span class="chip warn">starts ${hm(st.start)} (+${st.minor})</span>` : st.wait > 15 ? `<span class="chip">waits ${Math.round(st.wait)} min</span>` : "") + (st.over ? `<span class="chip bad">ends after limit</span>` : "") : "";
-      return `<tr class="orow ${f.emaar ? "emaar" : ""} ${f.kind === "ISR" ? "isr" : ""} ${oid === id ? "focused" : ""}" data-focus="${oid}" style="${tn ? `border-left:6px solid ${teamColor(tn)}` : "border-left:6px solid transparent"}">
-        <td><b>${esc(oid)}</b> <button class="lnk" data-remove="${oid}" title="Remove from this list" aria-label="Remove ${oid}">✕</button>${f.hold ? ' <span class="chip warn">ISR / odd time</span>' : f.manual ? ' <span class="chip">added</span>' : ""}<div class="muted" style="font-size:12px">${esc(f.city)} · <label class="etog ${f.emaar ? "on" : ""}" title="${f.emaar_auto ? "The address looks like Emaar" : "The address does not look like Emaar"}${state.emaarSet && oid in state.emaarSet ? " - you changed it" : ""}"><input type="checkbox" data-emaar="${oid}" ${f.emaar ? "checked" : ""}>Emaar${state.emaarSet && oid in state.emaarSet ? "*" : ""}</label> · <label class="etog ${f.kind === "ISR" ? "on" : ""}" title="Tag this order as an ISR (issue resolution): flat ${R.isr_flat_min} min, dotted border"><input type="checkbox" data-isr="${oid}" ${f.kind === "ISR" ? "checked" : ""}>ISR</label>${f.scaffolding ? " · scaffolding" : ""}${f.motor ? " · motor" : ""}</div></td>
+      return `<tr class="orow ${f.emaar ? (f.maybe ? "emaar maybe" : "emaar") : ""} ${f.kind === "ISR" ? "isr" : ""} ${oid === id ? "focused" : ""}" data-focus="${oid}" style="${tn ? `border-left:6px solid ${teamColor(tn)}` : "border-left:6px solid transparent"}">
+        <td><b>${esc(oid)}</b> <button class="lnk" data-remove="${oid}" title="Remove from this list" aria-label="Remove ${oid}">✕</button>${f.hold ? ' <span class="chip warn">ISR / odd time</span>' : f.manual ? ' <span class="chip">added</span>' : ""}<div class="muted" style="font-size:12px">${esc(f.city)} · <label class="etog ${f.emaar ? "on" : ""}" title="${f.maybe ? "The address MIGHT be Emaar: tick or untick to decide" : f.emaar_auto ? "The address looks like Emaar" : "The address does not look like Emaar"}${state.emaarSet && oid in state.emaarSet ? " - you changed it" : ""}"><input type="checkbox" data-emaar="${oid}" ${f.emaar ? "checked" : ""}>Emaar${state.emaarSet && oid in state.emaarSet ? "*" : ""}</label> · <label class="etog ${f.kind === "ISR" ? "on" : ""}" title="Tag this order as an ISR (issue resolution): flat ${R.isr_flat_min} min, dotted border"><input type="checkbox" data-isr="${oid}" ${f.kind === "ISR" ? "checked" : ""}>ISR</label>${f.scaffolding ? " · scaffolding" : ""}${f.motor ? " · motor" : ""}</div></td>
         <td>${esc(f.customer)}<div class="muted" style="font-size:12px">${esc(f.address)}</div></td>
         <td><input type="time" step="300" value="${esc(f.slot)}" data-time="${oid}" aria-label="Start time of ${oid}">${st ? `<div class="muted" style="font-size:11px;white-space:nowrap">ETA <input type="time" step="300" class="tin" value="${hm(st.arrive)}" data-eta="${oid}" aria-label="ETA of ${oid}" title="Change when the team arrives and starts">${st.eta_set ? ` <button class="lnk" data-etareset="${oid}">reset</button>` : ""}</div>` : ""}${f.slot !== f.sheet_slot ? `<div class="muted" style="font-size:11.5px">sheet ${esc(f.sheet_slot)} <button class="lnk" data-treset="${oid}">reset</button></div>` : ""}</td>
         <td>${winViz(f)}</td>
@@ -394,7 +395,7 @@ function renderStage2(){
       <span class="trb"><button class="btn small" id="stp-b-addteam" title="A new, empty team on the end; drag orders onto it">+ Team</button><button class="btn small" id="stp-b-addorder" title="Add an ISR / odd-time order or a new one; it lands here, then drag it onto a team">+ Add order</button>${sortSel()}</span></div>
     ${gone2.length ? `<div class="muted" style="font-size:11.5px">Removed: ${gone2.map(f => `<span class="chip">${esc(f.order_id)} ${esc(f.customer)} <button class="lnk" data-restore="${esc(f.order_id)}">restore</button></span>`).join(" ")}</div>` : ""}
     <div class="trr">` + (q.length
-    ? `<div class="tray">${q.map(i => `<span class="qcard ${F[i].emaar ? "emaar" : ""} ${F[i].kind === "ISR" ? "isr" : ""}" draggable="true" data-id="${i}" title="Drag onto a team">${esc(F[i].slot)} · <b>${i}</b> ${esc(F[i].customer)} <span class="muted">· ${F[i].windows} win</span></span>`).join("")}<span class="muted" style="font-size:11px">drag onto a team</span></div>`
+    ? `<div class="tray">${q.map(i => `<span class="qcard ${F[i].emaar ? (F[i].maybe ? "emaar maybe" : "emaar") : ""} ${F[i].kind === "ISR" ? "isr" : ""}" draggable="true" data-id="${i}" title="Drag onto a team">${esc(F[i].slot)} · <b>${i}</b> ${esc(F[i].customer)} <span class="muted">· ${F[i].windows} win</span></span>`).join("")}<span class="muted" style="font-size:11px">drag onto a team</span></div>`
     : `<span class="muted">✓ Every order is on a team.</span>`) +
     `<div class="legend"><span class="kit motor">motor</span><span class="kit pelmet">pelmet box</span><span class="kit bend">bend rail</span><span class="kit scaf">scaffolding (&gt;4 m)</span><span class="kit ladder">tall ladder (&gt;3.5 m)</span><span class="kit isrkey">ISR</span></div></div>`;
 
@@ -408,11 +409,11 @@ function renderStage2(){
     r.stops.forEach((s, i) => {
       const f = F[s.id];
       body += `<p class="drv">${i === 0 ? `leave ${hm(r.depart)} · ` : ""}🚐 ${s.travel} min · ${s.km} km</p>
-      <div class="stop ${f.emaar ? "emaar" : ""} ${f.kind === "ISR" ? "isr" : ""}" draggable="true" data-id="${s.id}" data-team="${t.team}" style="--tc:${tc}">
+      <div class="stop ${f.emaar ? (f.maybe ? "emaar maybe" : "emaar") : ""} ${f.kind === "ISR" ? "isr" : ""}" draggable="true" data-id="${s.id}" data-team="${t.team}" style="--tc:${tc}">
         <div class="l1"><span class="sheett" title="Time on the 3D sheet"><span>3D</span><b>${esc(f.sheet_slot)}</b></span>${f.slot !== f.sheet_slot ? `<em class="youset" title="You changed the time">→ ${esc(f.slot)}</em>` : ""}<span class="who" title="${esc(s.id + " " + f.customer)}"><span class="oid">${s.id}</span> ${esc(f.customer)}</span><button class="lnk rmx" data-remove="${s.id}" title="Remove from this day's plan (you can restore it above)" aria-label="Remove ${s.id}">✕</button></div>
         <div class="pt">Appt <input type="time" step="300" class="tin" value="${esc(f.slot)}" data-time="${s.id}" draggable="false" title="Change the appointment time" aria-label="Start time of ${s.id}"> · Planned <b>${hm(s.start)}–${hm(s.end)}</b> · ETA <input type="time" step="300" class="tin" value="${hm(s.arrive)}" data-eta="${s.id}" draggable="false" title="Change when the team arrives and starts" aria-label="ETA of ${s.id}">${s.eta_set ? ` <button class="lnk" data-etareset="${s.id}" draggable="false">reset</button>` : ""} <label class="isrtog"><input type="checkbox" data-isr="${s.id}" draggable="false" ${f.kind === "ISR" ? "checked" : ""}>ISR</label>${s.delay > 0 ? ` <span class="chip ${s.late ? "bad" : "warn"}">+${s.delay}</span>` : ""}${s.over ? ` <span class="chip bad">after limit</span>` : ""}</div>
         <div class="ad" title="${esc(f.address)}">${esc(f.address)}</div>
-        <div class="jw2">${f.emaar ? `<span class="chip emaar">EMAAR</span> ` : ""}${workLineHtml(s.id)}</div>
+        <div class="jw2">${f.emaar ? (f.maybe ? `<span class="chip emaar maybe">EMAAR?</span> ` : `<span class="chip emaar">EMAAR</span> `) : ""}${workLineHtml(s.id)}</div>
         ${specialsHtml(s.id)}
         <input class="onote2" data-onote="${s.id}" data-team="${t.team}" draggable="false" value="${esc(notes().order[s.id] || "")}" placeholder="Note (goes on WhatsApp)" aria-label="Note for ${s.id}"></div>`;
     });
@@ -631,7 +632,7 @@ function waText(t){
     `*${t.name}*${t.members.length && !t.members.every(m => t.name.includes(m)) ? " (" + t.members.join(" & ") + ")" : ""}, leave ${t.leave}`];
   if (t.note) lines.push(`📝 ${t.note}`);
   t.orders.forEach(o => {
-    lines.push("", `*${o.time}*  ${o.order_id}  ${o.customer}, ${o.address}${o.emaar ? "  (EMAAR)" : ""}`);
+    lines.push("", `*${o.time}*  ${o.order_id}  ${o.customer}, ${o.address}${o.emaar ? ((F[o.order_id] || {}).maybe ? "  (EMAAR?)" : "  (EMAAR)") : ""}`);
     if (o.installation_alert.length){ lines.push(`   ⚠ *Installation alert*`); o.installation_alert.forEach(a => lines.push(`   • ${a}`)); }
     if (o.note) lines.push(`   📝 ${o.note}`);
   });
@@ -699,9 +700,9 @@ function renderStage3(){
       <div class="th"><b>${esc(t.name)}</b>${t.members.length && !t.members.every(m => t.name.includes(m)) ? ` <span class="muted">${esc(t.members.join(" & "))}</span>` : t.members.length ? "" : ` <span class="muted">crew not named</span>`}
         <span class="lv">leave ${t.leave} · ${t.orders.length} job${t.orders.length === 1 ? "" : "s"} · <span class="nwin">${t.orders.reduce((a, o) => a + ((F[o.order_id] || {}).windows || 0), 0)} win</span> · ${(t.orders.reduce((a, o) => a + ((F[o.order_id] || {}).minutes || 0), 0) / 60).toFixed(1)} h</span></div>
       <input class="tnote" data-tnote="${t.team}" value="${esc(t.note)}" placeholder="Note for the team (goes on WhatsApp)">
-      <ul class="tjobs">${t.orders.map(o => `<li class="${o.emaar ? "emaar" : ""} ${(F[o.order_id] || {}).kind === "ISR" ? "isr" : ""}">
+      <ul class="tjobs">${t.orders.map(o => `<li class="${o.emaar ? ((F[o.order_id] || {}).maybe ? "emaar maybe" : "emaar") : ""} ${(F[o.order_id] || {}).kind === "ISR" ? "isr" : ""}">
         <span class="tt ${o.time_edited ? "ed" : ""}" title="${o.time_edited ? "3D sheet " + o.sheet_time : "3D sheet time"}"><input type="time" step="300" class="tin" value="${esc(o.time)}" data-time="${o.order_id}" aria-label="Start time of ${o.order_id}"></span>
-        <span class="tj">${o.order_id} ${esc(o.customer)}</span>${o.emaar ? `<span class="chip emaar">E</span>` : ""}${o.late_min ? `<span class="chip warn" title="expected to start ${o.late_min} min after the appointment">+${o.late_min}</span>` : ""}
+        <span class="tj">${o.order_id} ${esc(o.customer)}</span>${o.emaar ? ((F[o.order_id] || {}).maybe ? `<span class="chip emaar maybe">E?</span>` : `<span class="chip emaar">E</span>`) : ""}${o.late_min ? `<span class="chip warn" title="expected to start ${o.late_min} min after the appointment">+${o.late_min}</span>` : ""}
         <div class="jd"><div class="ja">${esc(o.address)}</div><div class="jw">${workLineHtml(o.order_id)}</div></div>
         <input class="onote" data-onote="${o.order_id}" data-team="${t.team}" value="${esc(o.note)}" placeholder="Note (goes on WhatsApp)" aria-label="Note for ${o.order_id}"></li>`).join("")}</ul>
       <details><summary>WhatsApp preview</summary><pre class="wa" id="stp-wa-${t.team}">${esc(waText(t))}</pre></details>
@@ -767,8 +768,8 @@ function pdfOnePager(){
   if (!w){ toast("The browser blocked the pop-up. Allow pop-ups for this site and try again.", "bad"); return; }
   const d = new Date(UI.date + "T00:00:00"), jobs = P.teams.reduce((a, t) => a + t.orders.length, 0);
   const perRow = P.teams.length <= 4 ? P.teams.length : Math.ceil(P.teams.length / 2);
-  const job = (o) => { const k = kindOf(o.order_id); return `<div class="job${k === "ISR" ? " isr" : ""}${o.emaar ? " emaar" : ""}">
-      <div class="l1"><b>${esc(o.time)}</b> <b>${esc(o.order_id)}</b> ${esc(o.customer)}${o.emaar ? ' <span class="tg">EMAAR</span>' : ""}${k ? ` <span class="tg">${esc(k)}</span>` : ""}</div>
+  const job = (o) => { const k = kindOf(o.order_id); return `<div class="job${k === "ISR" ? " isr" : ""}${o.emaar ? ((F[o.order_id] || {}).maybe ? " emaar maybe" : " emaar") : ""}">
+      <div class="l1"><b>${esc(o.time)}</b> <b>${esc(o.order_id)}</b> ${esc(o.customer)}${o.emaar ? ((F[o.order_id] || {}).maybe ? ' <span class="tg">EMAAR?</span>' : ' <span class="tg">EMAAR</span>') : ""}${k ? ` <span class="tg">${esc(k)}</span>` : ""}</div>
       <div class="ad">${esc(o.address)}</div><div class="sc">${esc(o.scope)}</div>${o.note ? `<div class="sc">Note: ${esc(o.note)}</div>` : ""}</div>`; };
   const team = (t) => `<section class="team"><h2><span>${esc(t.name)}${t.members.length && !t.members.every(m => t.name.includes(m)) ? " (" + esc(t.members.join(" & ")) + ")" : ""}</span><small>leave ${esc(t.leave)}</small></h2>${t.orders.map(job).join("")}</section>`;
   w.document.open();
@@ -783,7 +784,7 @@ function pdfOnePager(){
     .team h2 small{font-weight:400;white-space:nowrap}
     .job{border:1px solid #96a0ac;padding:2px 5px;margin-bottom:3px;break-inside:avoid}
     .job.isr{border:2px dotted #14202e}
-    .job.emaar{background:#fff4b3}
+    .job.emaar{background:#fff4b3}.job.emaar.maybe{background:#e3f3ff}
     .l1{font-size:1em}.ad,.sc{font-size:.9em;color:#33414f;overflow-wrap:anywhere}.sc{color:#5f7480}
     .tg{font-size:.8em;font-weight:700;border:1px solid #14202e;border-radius:3px;padding:0 3px}
   </style></head><body>
@@ -847,7 +848,7 @@ function drawMap(force){
       const seq = state.assign[t.team] || []; if (!seq.length) continue;
       const last = seq[seq.length - 1], p = ll(last); if (!p){ noPin.push(last); continue; }
       const r = simulate(seq), c = rankOf[t.team], isHot = hot === t.team;
-      L.marker(p, {icon: pinIcon(t.team, teamColor(t.team), (F[last].emaar ? "emaar " : "") + (isHot ? "hot" : ""), plab(last, r.stops[r.stops.length - 1].start, "free " + hm(r.free))), zIndexOffset: isHot ? 900 : 300}).addTo(layer)
+      L.marker(p, {icon: pinIcon(t.team, teamColor(t.team), (F[last].emaar ? (F[last].maybe ? "emaar maybe " : "emaar ") : "") + (isHot ? "hot" : ""), plab(last, r.stops[r.stops.length - 1].start, "free " + hm(r.free))), zIndexOffset: isHot ? 900 : 300}).addTo(layer)
         .bindPopup(`<b>${esc(t.name)}</b> · last order <b>${last}</b><br>${esc(F[last].customer)}<br>${esc(F[last].address)}<br>Appointment ${F[last].slot} · finishes ${hm(r.free)} · ${seq.length} job(s)`);
       if (id && ll(id) && c){
         const best = c.rank === 1;
@@ -873,7 +874,7 @@ function drawMap(force){
         line.push(p); all.push(p);
         if (last) legLabel(last, p, `${s.travel}m · ${s.km}km`, teamColor(t.team));
         last = p;
-        L.marker(p, {icon: pinIcon(i + 1, teamColor(t.team), F[s.id].emaar ? "emaar" : "", plab(s.id, s.start)), zIndexOffset: 400}).addTo(layer)
+        L.marker(p, {icon: pinIcon(i + 1, teamColor(t.team), F[s.id].emaar ? (F[s.id].maybe ? "emaar maybe" : "emaar") : "", plab(s.id, s.start)), zIndexOffset: 400}).addTo(layer)
           .bindPopup(`<b>${esc(t.name)} · stop ${i + 1}</b><br><b>${s.id}</b> ${esc(F[s.id].customer)}<br>${esc(F[s.id].address)}<br>${F[s.id].slot} → ${hm(s.start)}–${hm(s.end)}<br>
             <select onchange="moveOrder('${s.id}', this.value==='un'?'un':Number(this.value))"><option value="">Move to team…</option>${state.teams.filter(x => x.team !== t.team).map(x => `<option value="${x.team}">${esc(x.name)}</option>`).join("")}<option value="un">Take off the schedule</option></select>`);
       });

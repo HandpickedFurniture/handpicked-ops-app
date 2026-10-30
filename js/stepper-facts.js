@@ -183,7 +183,7 @@ export function buildDay(raw, R) {
     const ls = lines.get(oid) || [];
     const w = ls.length ? orderWork(ls, R) : { ...EMPTY_WORK };
     const rec = { order_id: oid, city: row.city, slot, customer: (row.customer_name || "").trim(), phone: row.phone,
-                  address: addr, lat, lng, loc_note: locNote, loc_confidence: conf, emaar: !!row.emaar_db, villa,
+                  address: addr, lat, lng, loc_note: locNote, loc_confidence: conf, emaar: !!row.emaar_db, emaar_maybe: !!row.emaar_maybe && !row.emaar_db, villa,
                   entry_type: et, status: row.status, sheet_notes: row.notes, sheet_duration: row.sheet_duration_min, ...w };
     const odd = row.time_unscheduled || t === null || t < oddLo || t >= oddHi;
     if (et !== "installation" || odd) {
