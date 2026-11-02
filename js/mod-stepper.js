@@ -47,6 +47,11 @@ function buildF(){
   Object.entries(state.extra || {}).forEach(([i, f]) => { F[i] = clone(f); F[i].manual = true; });
   Object.keys(F).forEach(i => { F[i].sheet_slot = F[i].slot; });
   IDS = Object.keys(F).filter(i => F[i].city === UI.city && !(state.removed || []).includes(i));
+  // a saved plan can name an order the refreshed 3D sheet no longer has; drop it instead of crashing on F[id]
+  if (state.assign){
+    for (const t in state.assign) state.assign[t] = state.assign[t].filter(i => F[i]);
+    state.waveIds = (state.waveIds || []).filter(i => F[i]); state.history = (state.history || []).filter(h => F[h.id]);
+  }
 }
 function enterScope(){
   DAY = DAYS[UI.date]; T = {}; KM = {};
