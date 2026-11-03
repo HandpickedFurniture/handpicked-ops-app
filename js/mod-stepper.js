@@ -60,6 +60,7 @@ function enterScope(){
   state.added = state.added || []; state.extra = state.extra || {}; state.removed = state.removed || [];
   buildF();
   if (!saved) { state = fresh(); buildF(); }
+  else if (!(state.teams || []).length){ state.teams = [{team: 1, name: "Team 1", members: []}]; state.assign[1] = state.assign[1] || []; }   // plan saved by the crashing build
   applyTimes(); fitKey = ""; hiddenTeams.clear(); hot = null;
 }
 function restart(wave, keepOrders){
@@ -97,6 +98,9 @@ function fresh(wave){
     .sort((a, b) => (F[a].city === "Dubai" ? 0 : 1) - (F[b].city === "Dubai" ? 0 : 1) || a.localeCompare(b));
   const s = {stage: 1, wave, waveIds: first, times: {}, added: [], extra: {}, removed: [], teams: [], assign: {}, history: [], cur: null, allowEarly: false, autoZoom: true, showAll: false, showRest: false};
   first.forEach((id, i) => { s.teams.push({team: i + 1, name: "Team " + (i + 1), members: []}); s.assign[i + 1] = [id]; });
+  // no order in the first wave (e.g. a day whose orders all start later): still open with one empty team,
+  // otherwise candidates() is empty and the page crashes on best.team
+  if (!s.teams.length){ s.teams.push({team: 1, name: "Team 1", members: []}); s.assign[1] = []; }
   return s;
 }
 function load(){ try{ const s = JSON.parse(localStorage.getItem(KEY()) || "null"); return s && s.assign ? s : null; }catch(e){ return null; } }
@@ -323,7 +327,8 @@ function renderStage1(){
     <button class="btn small ${q.length ? "" : "primary"}" data-go="2" style="margin-left:auto">Stage 2 →</button></div>`;
 
   let focus = "";
-  if (id){
+  if (id && !best) focus = `<div class="panel focus"><b>No team yet.</b> Press + Team, then place the orders.</div>`;
+  else if (id){
     const f = F[id];
     focus = `<div class="panel focus"><div style="display:flex;flex-wrap:wrap;gap:6px 12px;align-items:baseline">
       <span class="muted">${teamOfId[id] ? "Re-checking" : "Placing next"}:</span><b style="font-size:16px">${esc(id)}</b> ${esc(f.customer)}
