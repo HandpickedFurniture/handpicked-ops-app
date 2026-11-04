@@ -777,30 +777,51 @@ function pdfOnePager(){
   const w = window.open("", "_blank");
   if (!w){ toast("The browser blocked the pop-up. Allow pop-ups for this site and try again.", "bad"); return; }
   const d = new Date(UI.date + "T00:00:00"), jobs = P.teams.reduce((a, t) => a + t.orders.length, 0);
-  const perRow = P.teams.length <= 4 ? P.teams.length : Math.ceil(P.teams.length / 2);
-  const job = (o) => { const k = kindOf(o.order_id); return `<div class="job${k === "ISR" ? " isr" : ""}${o.emaar ? ((F[o.order_id] || {}).maybe ? " emaar maybe" : " emaar") : ""}">
-      <div class="l1"><b>${esc(o.time)}</b> <b>${esc(o.order_id)}</b> ${esc(o.customer)}${o.emaar ? ((F[o.order_id] || {}).maybe ? ' <span class="tg">EMAAR?</span>' : ' <span class="tg">EMAAR</span>') : ""}${k ? ` <span class="tg">${esc(k)}</span>` : ""}</div>
-      <div class="ad">${esc(o.address)}</div><div class="sc">${esc(o.scope)}</div>${o.note ? `<div class="sc">Note: ${esc(o.note)}</div>` : ""}</div>`; };
-  const team = (t) => `<section class="team"><h2><span>${esc(t.name)}${t.members.length && !t.members.every(m => t.name.includes(m)) ? " (" + esc(t.members.join(" & ")) + ")" : ""}</span><small>leave ${esc(t.leave)}</small></h2>${t.orders.map(job).join("")}</section>`;
+  /* Layout: ONE table, a row per job, grouped by team (the format the user picked from Team_Schedule_2026-11-04_v2.pdf):
+   * Team | Time (start big, end small, "est N min") | Order | Job pill | Scope | Customer | Address (map link) | Notes */
+  const JOB = {New: "j-new", Visit: "j-visit", Hanging: "j-hang", Partial: "j-part"};
+  // the stepper has no job-type field, so read it from what the coordinator wrote, then from the order itself
+  const jobType = (o) => { const txt = ((o.note || "") + " " + (o.installation_alert || []).join(" ")).toLowerCase(), f = F[o.order_id] || {};
+    if (/\bvisit\b/.test(txt)) return "Visit";
+    if (/\bpartial\b/.test(txt)) return "Partial"; if (/\bhanging\b/.test(txt) || f.kind === "ISR") return "Hanging";
+    if (!/^\d+$/.test(String(o.order_id))) return "Visit"; return "New"; };
+  const hmOnly = (s) => String(s || "").slice(0, 5);
+  const row = (o, first, span, t) => {
+    const f = F[o.order_id] || {}, est = o.est_min || 0, jt = jobType(o), st = hmOnly(o.planned_start) || String(o.time || "").split(/\s*[-–]\s*/)[0];
+    const timeCell = `<span class="t1">${esc(st)}</span>${est ? `<span class="t2"> – ${esc(hmOnly(o.planned_end))}</span><div class="t3">est ${est} min</div>` : ""}`;
+    const pin = o.lat != null && o.lng != null, addr = esc(o.address || "");
+    const addrCell = pin ? `<a href="https://www.google.com/maps?q=${o.lat},${o.lng}">${addr}</a>` : `${addr} <span class="np">(no pin)</span>`;
+    const notes = [o.note, o.emaar ? (f.maybe ? "EMAAR?" : "EMAAR") : "", o.late_min > 0 ? `plan ETA ${hmOnly(o.eta)} (+${o.late_min} min)` : ""].filter(Boolean).map(esc).join(" · ");
+    const mem = t.members.length ? t.members.join(" & ") : "";
+    let label = t.name; t.members.forEach(m => { label = label.split(m).join(""); }); label = label.replace(/\s*&\s*/g, " ").replace(/\s{2,}/g, " ").trim() || t.name;
+    const teamCell = first ? `<td class="tm" rowspan="${span}"><b>${esc(label)}</b><div>${esc(mem)}</div><span class="city">${esc(UI.city)}</span></td>` : "";
+    return `<tr class="${first ? "first" : ""}">${teamCell}<td class="tc">${timeCell}</td><td class="oid">${esc(o.order_id)}</td><td><span class="pill ${JOB[jt] || "j-new"}">${jt}</span></td>
+      <td class="sc">${o.scope && /^\d/.test(String(o.order_id)) ? esc(o.scope) : ""}</td><td>${esc(o.customer || "")}${o.phone ? " " + esc(o.phone) : ""}</td><td>${addrCell}</td><td>${notes}</td></tr>`; };
+  const rows = P.teams.map(t => t.orders.map((o, i) => row(o, i === 0, t.orders.length, t)).join("")).join("");
+  const planDate = d.toLocaleDateString("en-GB", {day: "numeric", month: "short", year: "2-digit"});
   w.document.open();
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Schedule ${esc(UI.date)} ${esc(UI.city)}</title><style>
     @page{size:A4 landscape;margin:6mm}
     *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
     html,body{margin:0}
-    body{font:11px/1.25 -apple-system,"Segoe UI",Roboto,"Noto Sans","Noto Sans Arabic",Arial,sans-serif;color:#14202e;width:285mm}
-    h1{font-size:1.5em;margin:0 0 1px}.sub{color:#5f7480;font-size:.85em;margin-bottom:5px}
-    .grid{display:grid;grid-template-columns:repeat(${perRow},minmax(0,1fr));gap:5px;align-items:start}
-    .team h2{margin:0 0 3px;padding:3px 6px;background:#202e3e;color:#fff;font-size:1em;display:flex;justify-content:space-between;gap:6px}
-    .team h2 small{font-weight:400;white-space:nowrap}
-    .job{border:1px solid #96a0ac;padding:2px 5px;margin-bottom:3px;break-inside:avoid}
-    .job.isr{border:2px dotted #14202e}
-    .job.emaar{background:#fff4b3}.job.emaar.maybe{background:#e3f3ff}
-    .l1{font-size:1em}.ad,.sc{font-size:.9em;color:#33414f;overflow-wrap:anywhere}.sc{color:#5f7480}
-    .tg{font-size:.8em;font-weight:700;border:1px solid #14202e;border-radius:3px;padding:0 3px}
+    body{font:11px/1.25 "Noto Sans","Segoe UI",-apple-system,Roboto,"Noto Sans Arabic",Arial,sans-serif;color:#14202e;width:285mm}
+    .hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #14202e;padding-bottom:4px;margin-bottom:4px}
+    h1{font-size:1.7em;margin:0}.sub{color:#5f7480;font-size:.85em;text-align:right}
+    table{width:100%;border-collapse:collapse}
+    th{background:#14181c;color:#fff;text-align:left;font-size:.85em;padding:4px 5px;font-weight:600}
+    td{padding:3px 5px;border-bottom:1px solid #cfd4da;vertical-align:middle;overflow-wrap:anywhere}
+    tr.first td{border-top:2px solid #14181c}
+    td.tm{background:#f1eee8;border-right:1px solid #cfd4da;vertical-align:top;width:11%}
+    td.tm b{font-size:1em}.city{display:inline-block;background:#2e6f9e;color:#fff;border-radius:3px;font-size:.75em;padding:0 5px;margin-top:2px}
+    td.tc{width:12%;white-space:nowrap}.t1{font-size:1.9em;font-weight:800}.t2{font-size:.85em;font-weight:700}.t3{color:#5f7480;font-size:1.05em}
+    td.oid{font-weight:700;width:5%}td.sc{color:#33414f;font-size:.85em}
+    .pill{display:inline-block;border-radius:3px;font-size:.85em;padding:0 6px}
+    .j-new{background:#d7efdb;color:#1f5130}.j-visit{background:#fbe7c0;color:#6b4a0c}.j-hang{background:#dcdcf2;color:#33337a}.j-part{background:#e4d6f3;color:#5a2a86}
+    td a{color:#14202e}.np{color:#c0392b}
   </style></head><body>
-    <h1>Installation schedule - ${esc(UI.city)} - ${esc(d.toLocaleDateString("en-GB", {weekday: "long", day: "numeric", month: "long", year: "numeric"}))}</h1>
-    <div class="sub">${P.teams.length} teams, ${jobs} jobs. Dotted border = ISR. Yellow = Emaar.</div>
-    <div class="grid" id="g">${P.teams.map(team).join("")}</div>
+    <div class="hd"><h1>Installation schedule · ${esc(d.toLocaleDateString("en-GB", {weekday: "long", day: "2-digit", month: "long", year: "numeric"}))}</h1>
+      <div class="sub">${P.teams.length} teams · ${jobs} jobs<br>Team Board plan ${esc(planDate)} (${esc(UI.city)}) + 3D sheet details; end times are estimates</div></div>
+    <table id="g"><thead><tr><th>Team</th><th>Time</th><th>Order</th><th>Job</th><th>Scope (database)</th><th>Customer</th><th>Address</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>
     <script>
       var fs = 12, max = 190 * 3.7795; // 190 mm of usable height, in CSS px
       function fit(){ document.body.style.fontSize = fs + "px";
