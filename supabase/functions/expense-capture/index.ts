@@ -3,9 +3,9 @@
  * Called by pg_cron through fn_exp_run_capture(), and by the Refresh button on the same path. Reads
  * WhatsApp only, never posts. Three jobs, in order, inside one time budget:
  *   1. copy new messages from "Bills to be uploaded" into exp_message;
- *   2. copy the coordinators' day posts from the Team N groups into exp_team_post;
- *   3. for each bill not done yet, store the file in the private team-bills bucket and have the
- *      model read it into exp_message.ocr.
+ *   2. for each bill not done yet, store the file in the private team-bills bucket and have the
+ *      model read it into exp_message.ocr;
+ *   3. copy the coordinators' day posts from the Team N groups into exp_team_post.
  * Then fn_exp_after_capture() rebuilds everything derived. A run that runs out of time just leaves
  * the rest for the next one, which is why cron fires several times in a row each morning.
  *
@@ -59,7 +59,10 @@ const sameSecret = (a: string, b: string) => {
 
 let whapiToken = "";
 async function whapi(path: string) {
-  const r = await fetch(`${WHAPI}${path}`, { headers: { Authorization: `Bearer ${whapiToken}`, Accept: "application/json" } });
+  const r = await fetch(`${WHAPI}${path}`, {
+    headers: { Authorization: `Bearer ${whapiToken}`, Accept: "application/json" },
+    signal: AbortSignal.timeout(20_000),
+  });
   if (!r.ok) throw new Error(`whapi ${r.status} ${path.slice(0, 40)}`);
   return r;
 }
@@ -188,35 +191,13 @@ Deno.serve(async (req) => {
       stats.bills_new = (done ?? []).length;
     }
 
-    // 2. the coordinators' day posts
-    const gr = await (await whapi("/groups?count=500")).json();
-    // deno-lint-ignore no-explicit-any
-    const groups = (gr.groups ?? []).filter((g: any) => TEAM_RE.test(g.name ?? ""));
-    for (const g of groups) {
-      if (left() < 60_000) break;
-      const posts = (await listMessages(g.id, since))
-        .filter((m) => m.type === "text" || m.type === "document")
-        .map((m) => ({
-          wa_id: m.id, group_id: g.id, group_name: g.name,
-          at: new Date(m.timestamp * 1000).toISOString(), msg_type: m.type,
-          body: m.text?.body ?? m.document?.filename ?? null,
-        }));
-      stats.groups++;
-      if (posts.length) {
-        const done = await sb("exp_team_post?on_conflict=wa_id", {
-          method: "POST", body: JSON.stringify(posts),
-          headers: { Prefer: "resolution=ignore-duplicates,return=representation" },
-        });
-        stats.team_posts += (done ?? []).length;
-      }
-    }
-
-    // 3. files and readings
+    // 2. files and readings come before the Team groups: they are what people are waiting for, and a
+    // slow group must never stop them. A file Whapi could not fetch arrives with size 0 and no type.
     const todo = await sb(
-      "exp_message?select=wa_id,day,media_id,media_mime&media_id=not.is.null&ocr_at=is.null" +
+      "exp_message?select=wa_id,day,media_id,media_mime&media_id=not.is.null&ocr_at=is.null&media_size=gt.0" +
       "&or=(fetch_error.is.null,fetched_at.is.null)&order=at.asc&limit=60");
     for (const row of todo ?? []) {
-      if (left() < 12_000) break;
+      if (left() < 45_000) break;
       try {
         const read = await doBill(row);
         stats.files++; if (read) stats.read++; else stats.unread = (stats.unread ?? 0) + 1;
@@ -225,6 +206,34 @@ Deno.serve(async (req) => {
         await sb(`exp_message?wa_id=eq.${encodeURIComponent(row.wa_id)}`, {
           method: "PATCH", body: JSON.stringify({ fetch_error: String(e).slice(0, 300) }),
         }).catch(() => {});
+      }
+    }
+
+    // 3. the coordinators' day posts. One group timing out skips that group until the next run.
+    const gr = await (await whapi("/groups?count=500")).json();
+    // deno-lint-ignore no-explicit-any
+    const groups = (gr.groups ?? []).filter((g: any) => TEAM_RE.test(g.name ?? ""));
+    for (const g of groups) {
+      if (left() < 8_000) break;
+      try {
+        const posts = (await listMessages(g.id, since))
+          .filter((m) => m.type === "text" || m.type === "document")
+          .map((m) => ({
+            wa_id: m.id, group_id: g.id, group_name: g.name,
+            at: new Date(m.timestamp * 1000).toISOString(), msg_type: m.type,
+            body: m.text?.body ?? m.document?.filename ?? null,
+          }));
+        stats.groups++;
+        if (posts.length) {
+          const done = await sb("exp_team_post?on_conflict=wa_id", {
+            method: "POST", body: JSON.stringify(posts),
+            headers: { Prefer: "resolution=ignore-duplicates,return=representation" },
+          });
+          stats.team_posts += (done ?? []).length;
+        }
+      } catch (e) {
+        stats.group_errors = (stats.group_errors ?? 0) + 1;
+        console.error(String(e));
       }
     }
 

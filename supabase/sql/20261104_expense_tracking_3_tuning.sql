@@ -81,3 +81,15 @@ where not (f.flag_type = 'no_statement' and f.day <
 grant select on public.v_exp_flags, public.v_exp_flags_raw to authenticated;
 
 select public.fn_exp_after_capture();
+
+-- A model reads a two-digit year as a past year (26 -> 2024). A receipt whose day and month sit within
+-- a week of when it was posted belongs to the posting year; a really old bill keeps its printed date.
+create or replace function public.fn_exp_fix_year(p_date date, p_posted date)
+returns date language sql immutable as $$
+  select case
+    when p_date is null then null
+    when abs((p_date + make_interval(years => extract(year from p_posted)::int - extract(year from p_date)::int))::date - p_posted) <= 7
+      then (p_date + make_interval(years => extract(year from p_posted)::int - extract(year from p_date)::int))::date
+    else p_date end
+$$;
+-- v_exp_receipt.doc_date then wraps its value in fn_exp_fix_year(date, e.day); the rest of the view is unchanged.
