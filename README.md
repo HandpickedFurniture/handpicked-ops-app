@@ -845,6 +845,7 @@ js/mod-dashboard.js     module 3 + end-of-day
 js/mod-transfer.js      module 4 - transfer of materials
 js/mod-inventory.js     module 5 - inventory
 js/mod-audit.js         module 6 - photo audit
+js/mod-expenses.js      Expense tracking: crew float, bills, advances, fuel, audit (ops only)
 js/mod-comments.js      module 8 - the line-by-line PO review
 js/mod-chotu.js         module 9 - the voice screen
 js/mod-finance.js       module 10 - the two finance grids
@@ -965,12 +966,57 @@ select public.fn_wa_inbound_test('{"messages":[...]}');        -- simulate a del
 (`wa-register` is the tiny sibling function that does the PATCH pg_net cannot.) Rotate the secret
 by updating `wa_webhook_secret` in Vault and running `register` again.
 
+## Expense tracking (4 Nov 2026)
+
+`#/expenses`, a Home tile for ops accounts only. Everything else is refused by RLS: unlike the other
+modules, `viewer` roles cannot read these tables, because this is staff money.
+
+**Where the numbers come from.** `expense-capture` (Edge Function, pg_cron
+`handpicked-expense-capture`, every 20 minutes 06:00-07:40 Dubai, or the Refresh button) reads two
+places on WhatsApp and never posts: the group "Bills to be uploaded" into `exp_message`, and the
+coordinators' day posts in the Team N groups into `exp_team_post`. Each bill goes to the private
+`team-bills` bucket and Gemini reads it into `exp_message.ocr`. Several runs each morning are
+deliberate: one run gets through about six bills in its time budget and the next finishes the rest.
+
+**Everything derived is SQL**, rebuilt by `fn_exp_after_capture()` from those raw copies, so a parsing
+rule can change and be re-applied to history:
+- `fn_exp_parse_statement` reads the crews' typed statements. Two formats exist, and an opening can
+  be `350.54`, `38.79+500=538.79` or `500--157.90=\n342.10`. `70:00` means 70.00.
+- `fn_exp_rebuild_teams` turns the day posts into `exp_team_day` and `exp_team_stop`. The header's
+  date and "Assigned personnel" open a day; cards, the summary and the checklist file names give the
+  orders. The Team group is the record of who went where, not the schedule draft.
+- Coordinates come from `live_order`, then `sched_stop`, then the sheet pin. Stops with none are
+  counted as orders but add no km, and the day says so.
+
+**The ledger is per cash holder (`exp_holder`), not per team.** Book balance = first opening +
+confirmed advances - the real sum of each statement's lines. Claimed balance is what the person last
+wrote. The difference is the audit question.
+
+**Advances.** Paid by Ashmeet or Elysha. A payment proof posted by a number in `exp_payer` becomes a
+`to_confirm` row and counts for nothing until a person confirms it, because a model read it from a
+screenshot. Advances are voided with a reason, never deleted.
+
+**Fuel.** Estimate = road km (`fn_exp_route_km`: base, each stop, back; straight line times the
+`geo_speed` road factor) / km per litre x the month's price. The price is a typed `exp_fuel_price`
+row, else the median of that month's fuel receipts. The km/L default of 10 is an ASSUMPTION until set
+per vehicle. The estimate leaves out pickups and private trips and crews fill up in lumps, so nearly
+every claim sits above it. So an OUTLIER (`v_exp_fuel_week`) needs a finished week with routes every
+day, above the estimate, AND well above the fleet's own AED per km. Above the estimate only is WATCH,
+which is amber and raises no flag. Do not loosen this: a list that names everyone gets ignored.
+
+**Audit.** `v_exp_flags` is one row per finding with a stable `flag_key`, so a verdict in
+`exp_flag_review` survives every rebuild.
+
+**Drive.** `ingestion-agent/team_bills_drive.py` runs inside the 5-minute agent and copies stored
+bills to the app's own "Team bills" folder. The token is `drive.file`, so it cannot see a folder made
+by hand; see `drive-pdf-exports-folder` in the project notes.
+
 ## Edge Functions
 
 The functions in `supabase/functions/` live in **this** repo because they exist only to serve this
 app — `js/voice.js` calls `transcribe`, `js/mod-chotu.js` calls `chotu`, `js/mod-schedule.js` calls
 `sched-ask`, `js/photos.js` calls `photo-signed-url`, and `wa-inbound` / `wa-register` are Chotu's
-WhatsApp door (above). Deploy from the repo root, which is where the `supabase/` directory sits:
+WhatsApp door (above). `expense-capture` is the morning copy behind Expense tracking. Deploy from the repo root, which is where the `supabase/` directory sits:
 
 ```bash
 supabase functions deploy chotu --project-ref jrevqijbzzwdcwxcnwfa

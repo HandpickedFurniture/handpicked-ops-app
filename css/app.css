@@ -1012,3 +1012,12 @@ table.rev tr.collapsed{display:none;}
 .revtoggle{border:0;background:none;cursor:pointer;font-size:13px;padding:0 4px 0 0;color:var(--brand);}
 table.rev td.remarkcell{min-width:170px;}
 table.rev td.remarkcell textarea{width:100%;min-height:34px;font:inherit;font-size:12px;resize:vertical;box-sizing:border-box;}
+
+/* Expense tracking */
+.expgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:8px;margin-bottom:10px;}
+table.dense tr.exp-out td{background:var(--bad-bg);}
+table.dense tr.exp-watch td{background:var(--warn-bg);}
+
+.tablewrap{overflow-x:auto;}
+.exp-line{padding:9px 0;border-bottom:1px solid var(--line);}
+.exp-line:last-child{border-bottom:0;}

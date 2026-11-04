@@ -30,6 +30,7 @@ import * as dashboard from "./mod-dashboard.js";
 import * as reports from "./mod-reports.js";
 import * as audit from "./mod-audit.js";
 import * as roles from "./mod-roles.js";
+import * as expenses from "./mod-expenses.js";
 import * as finance from "./mod-finance.js";
 
 /* Every screen is a top-level route. Only seven of them are in the ribbon.
@@ -61,6 +62,8 @@ const ROUTES = {
   roles:      { key: "nav.roles",      render: (m, s) => roles.render(m, s) },
   // the accounts team's screen: PO lines and adjustments, checked and marked as billed
   finance:    { key: "nav.finance",    render: (m, s) => finance.render(m, s) },
+  // the crews' float, bills, advances and fuel (4 Nov 2026); ops only
+  expenses:   { key: "nav.expenses",   render: (m) => expenses.render(m) },
 };
 
 /* Six, in the order the day runs, and six is deliberate: seven was the most a phone showed without
