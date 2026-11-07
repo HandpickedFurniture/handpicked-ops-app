@@ -767,6 +767,44 @@ function xlsxPlan(){
     .catch(e => toast("Excel export failed: " + e.message, "bad"));
 }
 
+/* Order details as icons for the one-pager (user, 6 Nov 26: "convert the order details into icons"). One chip per fact: icon + count.
+ * Blackout / sheer counts are NOT shown (the layer counts replace them); the title attribute carries the plain words. */
+const ICON_LEGEND = [["🪟", "windows"], ["▌", "single layer"], ["▌▌", "double layer"], ["↪", "bend rail"], ["⚡", "motor"], ["🎛", "remote"], ["▤", "blinds"],
+  ["🔗", "tie belts Velcro"], ["🪝", "tie belts hook"], ["⛓", "pull cord track"], ["🪜", "tall ladder"], ["🏗", "scaffolding"], ["🏠", "villa"], ["🔁", "ISR / hanging"], ["⏩", "express"]];
+function detailIcons(o){
+  const f = F[o.order_id] || {}, sc = String(o.scope || ""), alerts = (o.installation_alert || []).map(String), chips = [], rest = [];
+  const chip = (ic, n, words, cls) => chips.push(`<span class="ic ${cls || ""}" title="${esc(words)}${n ? ": " + n : ""}"><i>${ic}</i>${n ? "<b>" + esc(String(n)) + "</b>" : ""}</span>`);
+  const num = (re, txt) => { const m = re.exec(txt); return m ? Number(m[1]) : 0; };
+  const win = num(/^(\d+)\s*win/, sc); if (win) chip("🪟", win, "Windows");
+  const one = num(/(\d+)×1L/, sc), two = num(/(\d+)×2L/, sc);
+  if (one) chip("▌", one, "Single-layer windows"); if (two) chip("▌▌", two, "Double-layer windows");
+  let bend = 0, motor = 0, remote = 0, blinds = 0, velcro = 0, hook = 0, pull = 0, baton = 0; const pullTxt = [];
+  alerts.forEach(a => { let m;
+    if ((m = /^Bend rail:\s*(\d+)/i.exec(a))) bend += +m[1];
+    else if ((m = /^Motors?:\s*(\d+)/i.exec(a))) motor += +m[1];
+    else if ((m = /^Remotes?:\s*(\d+)/i.exec(a))) remote += +m[1];
+    else if ((m = /^Blinds[^:]*:\s*(\d+)/i.exec(a))) blinds += +m[1];
+    else if ((m = /^Tie belts Velcro:\s*(\d+)/i.exec(a))) velcro += +m[1];
+    else if ((m = /^Tie belts Hook:\s*(\d+)/i.exec(a))) hook += +m[1];
+    else if ((m = /^Pull cord tracks?:\s*(\d+)\s*(\(([^)]*)\))?/i.exec(a))) { pull += +m[1]; if (m[3]) pullTxt.push(m[3]); }
+    else if ((m = /^Hand baton[^:]*:\s*(\d+)/i.exec(a))) baton += +m[1];
+    else if (/^(Blackout|Sheer)\s*:/i.test(a)) { /* replaced by the layer counts */ }
+    else if (/express/i.test(a)) chip("⏩", 0, "2-day express");
+    else rest.push(a); });
+  bend = bend || num(/bend rail ×(\d+)/i, sc); motor = motor || num(/motor ×(\d+)/i, sc); remote = remote || num(/remote ×(\d+)/i, sc);
+  blinds = blinds || num(/(\d+) blinds?/i, sc);
+  if (bend) chip("↪", bend, "Bend rail"); if (motor) chip("⚡", motor, "Motor"); if (remote) chip("🎛", remote, "Remote"); if (blinds) chip("▤", blinds, "Blinds");
+  if (velcro) chip("🔗", velcro, "Tie belts Velcro"); if (hook) chip("🪝", hook, "Tie belts hook");
+  if (pull) chip("⛓", pull, "Pull cord track" + (pullTxt.length ? " (" + pullTxt.join("; ") + ")" : ""));
+  if (baton) chip("🥢", baton, "Hand baton");
+  const lad = num(/TALL LADDER ×(\d+)/i, sc) || (f.tall_ladder ? 1 : 0); if (lad) chip("🪜", lad, "Tall ladder");
+  if (/SCAFFOLD/i.test(sc) || f.scaffolding) chip("🏗", 0, "Scaffolding", "warn");
+  if (/villa/i.test(sc)) chip("🏠", 0, "Villa");
+  if (/ISR/.test(sc) || f.kind === "ISR") chip("🔁", 0, "ISR / hanging");
+  const text = rest.map(r => `<div class="dn">${esc(r)}</div>`).join("");
+  return chips.join("") + text;
+}
+
 /* The one-page PDF uses the browser's print engine like every other PDF in this app (see printSheet in
  * ui.js): it lays out Arabic customer names and addresses, which an embedded-font PDF library cannot
  * without shipping fonts. A script shrinks the type until everything fits ONE landscape A4 page, then
@@ -796,7 +834,7 @@ function pdfOnePager(){
     let label = t.name; t.members.forEach(m => { label = label.split(m).join(""); }); label = label.replace(/\s*&\s*/g, " ").replace(/\s{2,}/g, " ").trim() || t.name;
     const teamCell = first ? `<td class="tm" rowspan="${span}"><b>${esc(label)}</b><div>${esc(mem)}</div><span class="city">${esc(UI.city)}</span></td>` : "";
     return `<tr class="${first ? "first" : ""}">${teamCell}<td class="tc">${timeCell}</td><td class="oid">${esc(o.order_id)}</td><td><span class="pill ${JOB[jt] || "j-new"}">${jt}</span></td>
-      <td class="sc">${o.scope && /^\d/.test(String(o.order_id)) ? esc(o.scope) : ""}</td><td>${esc(o.customer || "")}${o.phone ? " " + esc(o.phone) : ""}</td><td>${addrCell}</td><td>${notes}</td></tr>`; };
+      <td class="sc">${o.scope ? esc(o.scope) : ""}</td><td class="dt">${detailIcons(o)}</td><td>${esc(o.customer || "")}${o.phone ? " " + esc(o.phone) : ""}</td><td>${addrCell}</td><td>${notes}</td></tr>`; };
   const rows = P.teams.map(t => t.orders.map((o, i) => row(o, i === 0, t.orders.length, t)).join("")).join("");
   const planDate = d.toLocaleDateString("en-GB", {day: "numeric", month: "short", year: "2-digit"});
   w.document.open();
@@ -817,11 +855,16 @@ function pdfOnePager(){
     td.oid{font-weight:700;width:5%}td.sc{color:#33414f;font-size:.85em}
     .pill{display:inline-block;border-radius:3px;font-size:.85em;padding:0 6px}
     .j-new{background:#d7efdb;color:#1f5130}.j-visit{background:#fbe7c0;color:#6b4a0c}.j-hang{background:#dcdcf2;color:#33337a}.j-part{background:#e4d6f3;color:#5a2a86}
+    td.sc{font-weight:700;width:12%}td.dt{width:20%}
+    .ic{display:inline-flex;align-items:center;gap:2px;border:1px solid #b9c2cc;border-radius:4px;padding:0 4px;margin:1px 2px 1px 0;background:#f7f8fa;white-space:nowrap}
+    .ic i{font-style:normal;font-size:1.15em}.ic b{font-size:1.05em}.ic.warn{background:#fde2e0;border-color:#c0392b}
+    .dn{font-size:.8em;color:#33414f}.lg{margin-top:4px;font-size:.8em;color:#33414f}.lg .ic{background:#fff}
     td a{color:#14202e}.np{color:#c0392b}
   </style></head><body>
     <div class="hd"><h1>Installation schedule · ${esc(d.toLocaleDateString("en-GB", {weekday: "long", day: "2-digit", month: "long", year: "numeric"}))}</h1>
       <div class="sub">${P.teams.length} teams · ${jobs} jobs<br>Team Board plan ${esc(planDate)} (${esc(UI.city)}) + 3D sheet details; end times are estimates</div></div>
-    <table id="g"><thead><tr><th>Team</th><th>Time</th><th>Order</th><th>Job</th><th>Scope (database)</th><th>Customer</th><th>Address</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>
+    <table id="g"><thead><tr><th>Team</th><th>Time</th><th>Order</th><th>Job</th><th>Scope of work</th><th>Order details</th><th>Customer</th><th>Address</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="lg">${ICON_LEGEND.map(([ic, w]) => `<span class="ic"><i>${ic}</i> ${w}</span>`).join("")}</div>
     <script>
       var fs = 12, max = 190 * 3.7795; // 190 mm of usable height, in CSS px
       function fit(){ document.body.style.fontSize = fs + "px";
