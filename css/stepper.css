@@ -358,3 +358,5 @@
 .stphist table.stpvt td{border-bottom:1px solid #e5e8ec;padding:4px 2px;vertical-align:middle}
 .stphist .stplog{max-height:45vh;overflow:auto;font-size:12.5px;line-height:1.5;border:1px solid #e5e8ec;border-radius:6px;padding:6px}
 .modal .sheet.wide{max-width:760px;width:96vw}
+/* Stage 2 order (10 Nov 2026): every block full width, stacked tray -> teams -> ISR -> Checks */
+.stp[data-stage="2"] .s2 > #stp-tray,.stp[data-stage="2"] .s2 > .isrtray,.stp[data-stage="2"] .s2 > .checkspanel{grid-column:1/-1}

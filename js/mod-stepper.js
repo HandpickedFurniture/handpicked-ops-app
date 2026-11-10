@@ -1484,10 +1484,11 @@ const SKELETON = `<div class="stp" data-stage="1">
   <div id="stp-split" role="separator" aria-orientation="vertical" tabindex="0" title="Drag to resize the map and the table (double-click to reset)"></div>
   <section class="s1"><div id="stp-s1"></div></section>
   <section class="s2">
-    <div class="panel" style="margin-top:12px"><h2>Checks</h2><ul class="checks" id="stp-checks"></ul></div>
+    <!-- order (user, 10 Nov 2026): Not on a team, the teams, the ISR cards, then the Checks at the very bottom -->
     <div class="panel" id="stp-tray" style="margin-top:10px"></div>
-    <div class="panel isrtray" id="stp-isrtray" style="margin-top:10px"></div>
     <div class="teams" id="stp-teams"></div>
+    <div class="panel isrtray" id="stp-isrtray" style="margin-top:10px"></div>
+    <div class="panel checkspanel" style="margin-top:10px"><h2>Checks</h2><ul class="checks" id="stp-checks"></ul></div>
     <datalist id="stp-crews"></datalist>
   </section>
   <section class="s3" id="stp-s3" style="margin-top:12px"></section>
