@@ -116,11 +116,13 @@ function orderWork(ls, R) {
   }
   const existingMotor = ls.some((l) => /motori[sz]ed/i.test(l.cmt || "")) && !c.motor_windows;
   const poScaffold = ls.some((l) => (l.scaffolding || 0) > 0 || lower(l).includes("scaffold"));
-  /* Scaffolding is shown ONLY when a window is taller than scaffold_height_cm (400, user 28 Oct 2026),
-   * whatever the PO says; a tall window with no scaffolding on the PO is tagged "Follow up accounts -
-   * charge for scaffolding" by fn_auto_accounts_followups (called when the day loads). Windows over
-   * tall_flag_cm (350) only need the tall ladder. */
-  const scaf = c.h_over_scaffold > 0;
+  /* Scaffolding is needed when the PO carries it (a "Scaffolding Rental" line, the scaffolding column, or
+   * the word in the product) OR a window is taller than scaffold_height_cm (400). Until 10 Nov 2026 only
+   * the height counted, so 80161 - scaffolding on the PO, every window 290 cm - showed none (user). A
+   * tall window with no scaffolding on the PO is tagged "Follow up accounts - Scaffolding suggested" by
+   * fn_auto_accounts_followups (called when the day loads). Windows over tall_flag_cm (350) only need
+   * the tall ladder. */
+  const scaf = c.h_over_scaffold > 0 || poScaffold;
   const scafMissing = scaf && !poScaffold;
   const extraTall = Math.max(c.h_over_scaffold - 1, 0);
   const bd = { windows: wins.reduce((a, w) => a + w.minutes, 0), flex_track: R.flex_track_min * c.flex, pelmet: R.pelmet_min * c.pelmet,

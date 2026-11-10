@@ -9,14 +9,17 @@
  * Built from the user-approved prototype (schedules/Step_Scheduler.html). It is deliberately NOT the
  * fn_sched_* engine behind #/schedule: this timing model is the Schedule skill's (rules.json ->
  * sched_settings 'stepper_rules', counting in stepper-facts.js), which is what the user plans with.
- * The plan lives in this browser (localStorage, per date + city); nothing is written to the database
- * and Stage 3 only previews - window.STEPPER_HOOKS is where real senders plug in.
+ * The plan is SHARED since 10 Nov 2026 (stepper_plan, one row per date + city, see stepper-sync.js):
+ * everybody who opens a day sees and edits the same plan, every change is logged against the person,
+ * and versions can be saved and restored. localStorage keeps a copy so the screen opens at once and
+ * works offline. Stage 3 only previews - window.STEPPER_HOOKS is where real senders plug in.
  */
-import { rpc, api, isSignedIn } from "./api.js";
+import { rpc, api, isSignedIn, currentActor } from "./api.js";
 import { STORAGE_PREFIX } from "./config.js";
 import { el, loading, toast, downloadXlsx } from "./ui.js";
 import { buildDay, CITY_CENTRE } from "./stepper-facts.js";
 import * as live from "./mod-stepper-live.js";   // Stage 4: the live day
+import * as sync from "./stepper-sync.js";       // the plan is shared between people (10 Nov 2026)
 
 let R = null, BASE = null, ROSTER = null;                    // sched_settings stepper_rules / stepper_roster
 const DAYS = {};                                              // date -> {facts, held, inst, date_label, synced_at}
@@ -45,7 +48,19 @@ function buildF(){
   F = clone(DAY.facts);
   (state.added || []).forEach(i => { if (DAY.held[i]) { F[i] = clone(DAY.held[i]); F[i].hold = true; } });
   Object.entries(state.extra || {}).forEach(([i, f]) => { F[i] = clone(f); F[i].manual = true; });
+  // on the plan but no longer on the 3D sheet: kept, flagged, until the user decides (see checkSheet)
+  Object.entries(state.sheetGone || {}).forEach(([i, f]) => { if (!F[i]) { F[i] = clone(f); F[i].gone3d = true; } });
+  Object.entries(state.isrMap || {}).forEach(([i, n]) => { if (F[i]) F[i].isr_id = n; });
   Object.keys(F).forEach(i => { F[i].sheet_slot = F[i].slot; });
+  /* Location (user, 10 Nov 2026: "if you don't have location, say Unknown location and let me pick it on
+   * the map"). The resolver falls back to the city centre when it knows nothing (confidence 'none') -
+   * that point is NOT a location, so it is never drawn as one. A pin picked by hand wins (state.pins),
+   * and is also remembered for the address in geo_place (fn_stepper_set_pin). */
+  Object.entries(state.pins || {}).forEach(([i, p]) => { if (F[i]) { F[i].lat = p.lat; F[i].lng = p.lng; F[i].loc_confidence = "manual";
+    F[i].loc_note = "Pin set by hand on the map" + (p.by ? " by " + p.by : ""); } });
+  Object.keys(F).forEach(i => { const f = F[i];
+    f.loc_unknown = f.lat == null || f.loc_confidence === "none";
+    f.loc_doubt = !f.loc_unknown && (f.loc_confidence === "low" || /CHECK|km from/.test(f.loc_note || "")); });
   IDS = Object.keys(F).filter(i => F[i].city === UI.city && !(state.removed || []).includes(i));
   // a saved plan can name an order the refreshed 3D sheet no longer has; drop it instead of crashing on F[id]
   if (state.assign){
@@ -53,22 +68,45 @@ function buildF(){
     state.waveIds = (state.waveIds || []).filter(i => F[i]); state.history = (state.history || []).filter(h => F[h.id]);
   }
 }
+let hadLocal = false;
 function enterScope(){
   DAY = DAYS[UI.date]; T = {}; KM = {};
-  const saved = load();
+  const saved = load(); hadLocal = !!saved;
   state = saved || {added: [], extra: {}, removed: []};
   state.added = state.added || []; state.extra = state.extra || {}; state.removed = state.removed || [];
   buildF();
   if (!saved) { state = fresh(); buildF(); }
   else if (!(state.teams || []).length){ state.teams = [{team: 1, name: "Team 1", members: []}]; state.assign[1] = state.assign[1] || []; }   // plan saved by the crashing build
-  applyTimes(); fitKey = ""; hiddenTeams.clear(); hot = null;
+  applyTimes(); fitKey = ""; hiddenTeams.clear(); hot = null; DIFF = null; picking = null;
+  sync.open();
 }
+/* the shared plan came in (on opening, from somebody else's save, a merge, or a restored version):
+ * take it, keeping what is this person's own view (stage, order in hand, map options, Undo) */
+function normalise(){
+  state.added = state.added || []; state.extra = state.extra || {}; state.removed = state.removed || [];
+  state.times = state.times || {}; state.assign = state.assign || {}; state.history = state.history || [];
+  if (!(state.teams || []).length){ state.teams = [{team: 1, name: "Team 1", members: []}]; }
+  state.teams.forEach(t => { state.assign[t.team] = state.assign[t.team] || []; });
+}
+function adopt(remote, by){
+  const keep = {};
+  sync.LOCAL_KEYS.forEach(k => { if (state && k in state) keep[k] = state[k]; });
+  state = Object.assign({stage: 1, history: []}, clone(remote), keep);
+  normalise(); buildF(); applyTimes(); saveLocal();
+  if (ROOT && ROOT.isConnected) paint();
+  if (by) toast(`Plan updated by ${String(by).split("@")[0]}`);
+}
+sync.init({
+  scope: () => scopeKey(), day: () => UI.date, city: () => UI.city, stage: () => state && state.stage,
+  state: () => state, adopt, hasLocal: () => hadLocal, root: () => ROOT,
+  status: (html) => { const x = $("sync"); if (x) x.innerHTML = html; },
+});
 function restart(wave, keepOrders){
   haltPlay();
   const keep = keepOrders ? {added: state.added, extra: state.extra, removed: state.removed} : {added: [], extra: {}, removed: []};
   state = keep; buildF();                        // the order list first, so the first wave is taken from it
   state = Object.assign(fresh(wave), keep); buildF(); applyTimes();
-  hiddenTeams.clear(); hot = null; caption = ""; fitKey = ""; resetArmed = false; save(); paint();
+  hiddenTeams.clear(); hot = null; caption = ""; fitKey = ""; resetArmed = false; save("Started the plan again (cleared every assignment)"); paint();
 }
 // a two-press confirm on the button itself: the browser's confirm() box is blocked silently in some
 // embedded views, which made the button look dead
@@ -104,7 +142,10 @@ function fresh(wave){
   return s;
 }
 function load(){ try{ const s = JSON.parse(localStorage.getItem(KEY()) || "null"); return s && s.assign ? s : null; }catch(e){ return null; } }
-function save(){ try{ localStorage.setItem(KEY(), JSON.stringify(state)); }catch(e){} }
+function saveLocal(){ try{ localStorage.setItem(KEY(), JSON.stringify(state)); }catch(e){} }
+// every change to the plan: kept on this device and pushed to the shared plan; `summary` is the line the
+// change log shows against the person's name ("" for a change that needs no line)
+function save(summary, kind){ saveLocal(); if (state) sync.changed(summary || "", kind); }
 let state = null;
 
 const assignedIds = () => new Set(Object.values(state.assign).flat());
@@ -211,25 +252,29 @@ function assignTo(id, team){
   const was = Object.keys(state.assign).find(t => state.assign[t].includes(id));
   for (const t in state.assign) state.assign[t] = state.assign[t].filter(i => i !== id);
   if (team !== "") state.assign[team] = insertAt(state.assign[team] || [], id);
-  state.history.push({id, team, was: was ? Number(was) : null}); state.cur = null; hot = null; save(); paint();
+  state.history.push({id, team, was: was ? Number(was) : null}); state.cur = null; hot = null;
+  save(team === "" ? `${id} taken off ${was ? tname(was) : "its team"}` : `${id} → ${tname(team)}`); paint();
 }
 function undo(){
   const h = state.history.pop(); if (!h) return;
   for (const t in state.assign) state.assign[t] = state.assign[t].filter(i => i !== h.id);
   if (h.was) state.assign[h.was] = insertAt(state.assign[h.was] || [], h.id);
-  state.cur = h.id; save(); paint();
+  state.cur = h.id; save(`Undo: ${h.id} back to ${h.was ? tname(h.was) : "no team"}`); paint();
 }
-function refreshOrders(then){ buildF(); applyTimes(); state.cur = then || null; save(); paint(); }
+function refreshOrders(then, summary){ buildF(); applyTimes(); state.cur = then || null; save(summary); paint(); }
 function removeOrder(id){
   for (const t in state.assign) state.assign[t] = state.assign[t].filter(i => i !== id);
   state.history = state.history.filter(h => h.id !== id); delete state.times[id];
   if (state.extra[id]) delete state.extra[id];                       // a hand-made order is deleted outright
   else if (state.added.includes(id)) state.added = state.added.filter(i => i !== id);
   else state.removed.push(id);
-  refreshOrders();
+  if (state.sheetGone && state.sheetGone[id]) delete state.sheetGone[id];
+  const isrId = F[id] && F[id].isr_id;
+  if (isrId) rpc("fn_isr_schedule", {p_id: isrId, p_day: null}).catch(() => {});
+  refreshOrders(null, `Removed ${id} from the plan`);
 }
-function restoreOrder(id){ state.removed = state.removed.filter(i => i !== id); refreshOrders(id); }
-function addHeld(id){ if (!state.added.includes(id)) state.added.push(id); refreshOrders(id); }
+function restoreOrder(id){ state.removed = state.removed.filter(i => i !== id); refreshOrders(id, `Restored ${id}`); }
+function addHeld(id){ if (!state.added.includes(id)) state.added.push(id); refreshOrders(id, `Added ${id} from the held list (ISR / odd time)`); }
 function addManual(v){
   const id = String(v.id || "").trim();
   if (!id) return "Give the order a number.";
@@ -240,23 +285,56 @@ function addManual(v){
     lat: hasPin ? lat : centre[0], lng: hasPin ? lng : centre[1], loc_note: hasPin ? "Pin typed in by hand" : "Location not set - using the city centre",
     emaar: !!v.emaar, villa: false, entry_type: "manual", status: "Added by hand", minutes: Math.max(5, parseInt(v.minutes, 10) || 60),
     windows: Math.max(0, parseInt(v.windows, 10) || 0), counts: {}, scaffolding: false, motor: false, comments: []};
-  refreshOrders(id); return "";
+  if (!hasPin) state.extra[id].loc_confidence = "none";
+  refreshOrders(id, `Added order ${id} by hand`); return "";
 }
 function addTeam(){
   const n = Math.max(0, ...state.teams.map(t => t.team)) + 1;
   // named after the first "Team K" no other team is called (crews keep their WhatsApp numbers in the name)
   let k = 1; while (state.teams.some(t => new RegExp("^team\\s*" + k + "(?!\\d)", "i").test(t.name))) k++;
-  state.teams.push({team: n, name: "Team " + k, members: []}); state.assign[n] = []; save(); paint();
+  state.teams.push({team: n, name: "Team " + k, members: []}); state.assign[n] = []; save(`Added Team ${k}`); paint();
 }
 // its orders go back to "Not on a team"; the last team cannot go (Stage 1 needs one to suggest)
 function deleteTeam(n){
   n = Number(n); if (state.teams.length <= 1) return;
+  const gone = tname(n);
   state.teams = state.teams.filter(t => t.team !== n); delete state.assign[n];
   state.history.forEach(h => { if (Number(h.was) === n) h.was = null; });
   if (state.notes) delete state.notes.team[n];
-  hiddenTeams.delete(n); delArmed = null; save(); paint();
+  hiddenTeams.delete(n); delArmed = null; save(`Deleted ${gone}`); paint();
 }
 let delArmed = null, delTimer = null;            // same two-press confirm as Start again
+
+/* ---------------- location: unknown / to confirm, and the pick-on-the-map button ---------------- */
+function locHtml(id, short){
+  const f = F[id]; if (!f) return "";
+  const pick = `<button class="lnk pickpin" data-pickpin="${esc(id)}" draggable="false" title="Click, then click the map where the customer is">📍 ${f.loc_unknown || f.loc_doubt ? "pick on map" : short ? "" : "move pin"}</button>`;
+  if (f.loc_unknown) return `<span class="chip bad locchip" title="${esc(f.loc_note || "")}">Unknown location</span>${pick}`;
+  if (f.loc_doubt) return `<span class="chip warn locchip" title="${esc(f.loc_note || "")}">Location to confirm</span>${pick}`;
+  return f.loc_confidence === "manual" ? `<span class="muted" style="font-size:11px" title="${esc(f.loc_note)}">📍 pinned by hand</span>${pick}` : pick;
+}
+let picking = null;
+function startPick(id){
+  picking = id; state.cur = state.stage === 1 ? id : state.cur;
+  if (map){ map.getContainer().classList.add("picking"); if (ll(id)) map.panTo(ll(id), {animate: false}); }
+  renderMapBar();
+  toast(`Click the map where ${id} ${F[id] ? F[id].customer : ""} is`);
+  const mw = $("mapwrap"); if (mw && mw.scrollIntoView) mw.scrollIntoView({block: "nearest"});
+}
+function endPick(){ picking = null; if (map) map.getContainer().classList.remove("picking"); renderMapBar(); }
+async function setPin(id, lat, lng){
+  if (!F[id]) { endPick(); return; }
+  state.pins = state.pins || {};
+  state.pins[id] = {lat: Math.round(lat * 1e6) / 1e6, lng: Math.round(lng * 1e6) / 1e6, by: String(currentActor() || "").split("@")[0]};
+  T = {}; KM = {};
+  endPick(); buildF(); applyTimes(); save(`${id} pin set on the map`); paint();
+  const f = F[id];
+  if (f.address && !f.manual){
+    try { await rpc("fn_stepper_set_pin", {p_address: f.address, p_city: f.city, p_lat: lat, p_lng: lng, p_order: String(id)});
+          toast(`Pin saved for ${id} - remembered for this address from now on`); }
+    catch (e) { toast((e && e.message) || "The pin is on this plan, but could not be remembered for the address", "bad"); }
+  }
+}
 
 /* ---------------- render: stage 1 ---------------- */
 let hot = null;                                   // team number under the mouse in the suggestion table
@@ -351,7 +429,7 @@ function renderStage1(){
       const note = st ? (st.late ? `<span class="chip bad">TIME CHANGE +${st.late}</span>` : st.minor ? `<span class="chip warn">starts ${hm(st.start)} (+${st.minor})</span>` : st.wait > 15 ? `<span class="chip">waits ${Math.round(st.wait)} min</span>` : "") + (st.over ? `<span class="chip bad">ends after limit</span>` : "") : "";
       return `<tr class="orow ${f.emaar ? (f.maybe ? "emaar maybe" : "emaar") : ""} ${f.kind === "ISR" ? "isr" : ""} ${oid === id ? "focused" : ""}" data-focus="${oid}" style="${tn ? `border-left:6px solid ${teamColor(tn)}` : "border-left:6px solid transparent"}">
         <td><b>${esc(oid)}</b> <button class="lnk" data-remove="${oid}" title="Remove from this list" aria-label="Remove ${oid}">✕</button>${f.hold ? ' <span class="chip warn">ISR / odd time</span>' : f.manual ? ' <span class="chip">added</span>' : ""}<div class="muted" style="font-size:12px">${esc(f.city)} · <label class="etog ${f.emaar ? "on" : ""}" title="${f.maybe ? "The address MIGHT be Emaar: tick or untick to decide" : f.emaar_auto ? "The address looks like Emaar" : "The address does not look like Emaar"}${state.emaarSet && oid in state.emaarSet ? " - you changed it" : ""}"><input type="checkbox" data-emaar="${oid}" ${f.emaar ? "checked" : ""}>Emaar${state.emaarSet && oid in state.emaarSet ? "*" : ""}</label> · <label class="etog ${f.kind === "ISR" ? "on" : ""}" title="Tag this order as an ISR (issue resolution): flat ${R.isr_flat_min} min, dotted border"><input type="checkbox" data-isr="${oid}" ${f.kind === "ISR" ? "checked" : ""}>ISR</label>${f.scaffolding ? " · scaffolding" : ""}${f.motor ? " · motor" : ""}</div></td>
-        <td>${esc(f.customer)}<div class="muted" style="font-size:12px">${esc(f.address)}</div></td>
+        <td>${esc(f.customer)}<div class="muted" style="font-size:12px">${esc(f.address)}</div><div>${locHtml(oid)}${f.gone3d ? ' <span class="chip bad" title="It was on the 3D sheet when it was planned">not on the 3D sheet now</span>' : ""}</div></td>
         <td><input type="time" step="300" value="${esc(f.slot)}" data-time="${oid}" aria-label="Start time of ${oid}">${st ? `<div class="muted" style="font-size:11px;white-space:nowrap">ETA <input type="time" step="300" class="tin" value="${hm(st.arrive)}" data-eta="${oid}" aria-label="ETA of ${oid}" title="Change when the team arrives and starts">${st.eta_set ? ` <button class="lnk" data-etareset="${oid}">reset</button>` : ""}</div>` : ""}${f.slot !== f.sheet_slot ? `<div class="muted" style="font-size:11.5px">sheet ${esc(f.sheet_slot)} <button class="lnk" data-treset="${oid}">reset</button></div>` : ""}</td>
         <td>${winViz(f)}</td>
         <td>${etaViz(oid, st, tn)}</td>
@@ -405,7 +483,7 @@ function renderStage2(){
       <span class="trb"><button class="btn small" id="stp-b-addteam" title="A new, empty team on the end; drag orders onto it">+ Team</button><button class="btn small" id="stp-b-addorder" title="Add an ISR / odd-time order or a new one; it lands here, then drag it onto a team">+ Add order</button>${sortSel()}</span></div>
     ${gone2.length ? `<div class="muted" style="font-size:11.5px">Removed: ${gone2.map(f => `<span class="chip">${esc(f.order_id)} ${esc(f.customer)} <button class="lnk" data-restore="${esc(f.order_id)}">restore</button></span>`).join(" ")}</div>` : ""}
     <div class="trr">` + (q.length
-    ? `<div class="tray">${q.map(i => `<span class="qcard ${F[i].emaar ? (F[i].maybe ? "emaar maybe" : "emaar") : ""} ${F[i].kind === "ISR" ? "isr" : ""}" draggable="true" data-id="${i}" title="Drag onto a team">${esc(F[i].slot)} · <b>${i}</b> ${esc(F[i].customer)} <span class="muted">· ${F[i].windows} win</span></span>`).join("")}<span class="muted" style="font-size:11px">drag onto a team</span></div>`
+    ? `<div class="tray">${q.map(i => `<span class="qcard ${F[i].emaar ? (F[i].maybe ? "emaar maybe" : "emaar") : ""} ${F[i].kind === "ISR" ? "isr" : ""}" draggable="true" data-id="${i}" title="Drag onto a team">${esc(F[i].slot)} · <b>${i}</b> ${esc(F[i].customer)} <span class="muted">· ${F[i].windows} win</span> <label class="etog ${F[i].emaar ? "on" : ""}" draggable="false"><input type="checkbox" data-emaar="${i}" draggable="false" ${F[i].emaar ? "checked" : ""}>E</label>${F[i].loc_unknown ? ` <button class="lnk pickpin" data-pickpin="${esc(i)}" draggable="false" title="Unknown location: pick it on the map">📍?</button>` : ""}</span>`).join("")}<span class="muted" style="font-size:11px">drag onto a team</span></div>`
     : `<span class="muted">✓ Every order is on a team.</span>`) +
     `<div class="legend"><span class="kit motor">motor</span><span class="kit pelmet">pelmet box</span><span class="kit bend">bend rail</span><span class="kit scaf">scaffolding (&gt;4 m)</span><span class="kit ladder">tall ladder (&gt;3.5 m)</span><span class="kit isrkey">ISR</span></div></div>`;
 
@@ -423,7 +501,8 @@ function renderStage2(){
         <div class="l1"><span class="sheett" title="Time on the 3D sheet"><span>3D</span><b>${esc(f.sheet_slot)}</b></span>${f.slot !== f.sheet_slot ? `<em class="youset" title="You changed the time">→ ${esc(f.slot)}</em>` : ""}<span class="who" title="${esc(s.id + " " + f.customer)}"><span class="oid">${s.id}</span> ${esc(f.customer)}</span><button class="lnk rmx" data-remove="${s.id}" title="Remove from this day's plan (you can restore it above)" aria-label="Remove ${s.id}">✕</button></div>
         <div class="pt">Appt <input type="time" step="300" class="tin" value="${esc(f.slot)}" data-time="${s.id}" draggable="false" title="Change the appointment time" aria-label="Start time of ${s.id}"> · Planned <b>${hm(s.start)}–${hm(s.end)}</b> · ETA <input type="time" step="300" class="tin" value="${hm(s.arrive)}" data-eta="${s.id}" draggable="false" title="Change when the team arrives and starts" aria-label="ETA of ${s.id}">${s.eta_set ? ` <button class="lnk" data-etareset="${s.id}" draggable="false">reset</button>` : ""} <label class="isrtog"><input type="checkbox" data-isr="${s.id}" draggable="false" ${f.kind === "ISR" ? "checked" : ""}>ISR</label>${s.delay > 0 ? ` <span class="chip ${s.late ? "bad" : "warn"}">+${s.delay}</span>` : ""}${s.over ? ` <span class="chip bad">after limit</span>` : ""}</div>
         <div class="ad" title="${esc(f.address)}">${esc(f.address)}</div>
-        <div class="jw2">${f.emaar ? (f.maybe ? `<span class="chip emaar maybe">EMAAR?</span> ` : `<span class="chip emaar">EMAAR</span> `) : ""}${workLineHtml(s.id)}</div>
+        <div class="locl">${locHtml(s.id, true)}${f.gone3d ? ' <span class="chip bad">not on the 3D sheet now</span>' : ""}${f.isr_id ? ` <span class="chip">ISR #${f.isr_id}</span>` : ""}</div>
+        <div class="jw2"><label class="etog ${f.emaar ? "on" : ""}" draggable="false" title="${f.maybe ? "The address MIGHT be Emaar: tick or untick to decide" : "Tick if this is an Emaar property (the card turns yellow; remembered for the address)"}"><input type="checkbox" data-emaar="${s.id}" draggable="false" ${f.emaar ? "checked" : ""}>${f.maybe ? "Emaar?" : "Emaar"}</label> · ${workLineHtml(s.id)}</div>
         ${specialsHtml(s.id)}
         <input class="onote2" data-onote="${s.id}" data-team="${t.team}" draggable="false" value="${esc(notes().order[s.id] || "")}" placeholder="Note (goes on WhatsApp)" aria-label="Note for ${s.id}"></div>`;
     });
@@ -436,6 +515,74 @@ function renderStage2(){
       ${body}</article>`;
   }).join("");
   $("teams").innerHTML = teamsHtml;
+  renderIsrTray();
+  if (!ISRC.rows || Date.now() - ISRC.at > 60000) loadIsr().then(() => { if (state.stage === 2) renderIsrTray(); });
+}
+
+/* ---------------- ISR cards (Production > ISR), in Stage 2 (user, 10 Nov 2026) ----------------
+ * Every open ISR of this city, filtered by how ready it is, with what the 3D sheet says about the order on
+ * this day. Drag a card onto a team: it joins the plan (the 3D sheet's own ISR row when there is one, else
+ * a new ISR job) and the case is marked scheduled for this day. */
+const ISRC = {rows: null, at: 0, err: "", filter: "all"};
+const ISR_TYPE = {on_the_spot: "On the spot", new_fabric: "New fabric", planned_alteration: "Planned alteration", unplanned_alteration: "Unplanned alteration", others: "Others"};
+const ISR_SRC = {production: "Production issue", installation: "Installation issue", consultation: "Consultation issue", client_change_of_mind: "Client change of mind", fabric: "Fabric issue", others_kurtains: "Others - Kurtains"};
+async function loadIsr(){
+  try {
+    ISRC.rows = await api(`/rest/v1/v_isr_cases?select=id,order_id,customer_any,city_any,address,isr_type,source,issue,expected_back,expected_new,readiness,return_supplier,status,sched_day,sched_city,sched_team&status=in.(open,scheduled)&order=id.desc`) || [];
+    ISRC.at = Date.now(); ISRC.err = "";
+  } catch (e) { ISRC.err = (e && e.message) || "Could not load the ISR cards"; ISRC.rows = ISRC.rows || []; }
+}
+function isrOnPlan(id){ return Object.keys(F).find(i => F[i].isr_id === id) || null; }
+function renderIsrTray(){
+  const box = $("isrtray"); if (!box) return;
+  if (!ISRC.rows){ box.innerHTML = `<div class="trh"><h2>ISR cards</h2><span class="muted">loading…</span></div>`; return; }
+  const mine = ISRC.rows.filter(r => !r.city_any || r.city_any === UI.city);
+  const f = ISRC.filter, show = mine.filter(r => f === "all" || (f === "return" ? r.return_supplier : r.readiness === f));
+  const cnt = k => mine.filter(r => k === "return" ? r.return_supplier : r.readiness === k).length;
+  const on3d = r => {
+    const h = Object.values(DAY.held).find(x => x.order_id === r.order_id && x.city === UI.city);
+    if (h) return `<span class="chip good" title="${esc(h.note || "")}">on the 3D sheet ${esc(h.slot || "")} (${esc(h.kind || "held")})</span>`;
+    if (DAY.facts[r.order_id]) return `<span class="chip good">installation on the 3D sheet ${esc(DAY.facts[r.order_id].slot || "")}</span>`;
+    return `<span class="chip warn">not on the 3D sheet for this day</span>`;
+  };
+  const RD = {waiting: ["waiting", "warn"], received: ["received back", ""], ready: ["ready", "good"]};
+  box.innerHTML = `<div class="trh"><h2>ISR cards (${show.length}${show.length !== mine.length ? " of " + mine.length : ""})</h2>
+      <span class="trb"><label class="muted">Readiness <select id="stp-isrfilter">
+        ${[["all", "All"], ["waiting", "Waiting"], ["received", "Received back"], ["ready", "Ready"], ["return", "To return to supplier"]].map(([v, l]) => `<option value="${v}" ${f === v ? "selected" : ""}>${l}${v === "all" ? "" : " (" + cnt(v) + ")"}</option>`).join("")}</select></label>
+      <button class="btn small" data-isrreload="1">↻</button> <a class="btn small" href="#/isr" target="_blank" rel="noopener">Open ISR list ↗</a></span></div>
+    ${ISRC.err ? `<div class="chip bad">${esc(ISRC.err)}</div>` : ""}
+    <div class="isrcards">${show.length ? show.map(r => { const on = isrOnPlan(r.id), rd = RD[r.readiness] || RD.waiting;
+      return `<div class="isrcard ${on ? "onplan" : ""}" draggable="${on ? "false" : "true"}" data-id="isr:${r.id}" title="${on ? "Already on the plan" : "Drag onto a team"}">
+        <div><b>ISR #${r.id} · ${esc(r.order_id)}</b> ${esc(r.customer_any || "")} <span class="chip ${rd[1]}">${rd[0]}</span>${r.return_supplier ? ' <span class="chip bad">return to supplier</span>' : ""}</div>
+        <div class="muted" style="font-size:11.5px">${esc(ISR_TYPE[r.isr_type] || r.isr_type)} · ${esc(ISR_SRC[r.source] || r.source)}${r.sched_day ? ` · scheduled ${esc(r.sched_day)}${r.sched_city ? " " + esc(r.sched_city) : ""}` : ""}</div>
+        <div class="isrissue">${esc(r.issue)}</div>
+        ${r.expected_back || r.expected_new ? `<div class="muted" style="font-size:11.5px">${r.expected_back ? "Back from site: " + esc(r.expected_back) : ""}${r.expected_back && r.expected_new ? " · " : ""}${r.expected_new ? "New: " + esc(r.expected_new) : ""}</div>` : ""}
+        <div>${on3d(r)}${on ? ` <span class="chip good">on the plan (${esc(on)})</span>` : ""}</div></div>`; }).join("")
+      : `<span class="muted">No ${f === "all" ? "" : "such "}open ISR for ${esc(UI.city)}.</span>`}</div>`;
+}
+async function addIsrToTeam(isrId, team){
+  const r = (ISRC.rows || []).find(x => x.id === isrId); if (!r) return;
+  if (isrOnPlan(isrId)){ toast(`ISR #${isrId} is already on the plan`); return; }
+  const h = Object.values(DAY.held).find(x => x.order_id === r.order_id && x.city === UI.city);
+  let id;
+  if (h && !Object.values(state.isrMap || {}).includes(isrId) && !Object.keys(state.isrMap || {}).includes(h.key)){
+    id = h.key; if (!state.added.includes(id)) state.added.push(id);
+  } else {
+    id = F[r.order_id] ? `${r.order_id}-ISR${r.id}` : r.order_id;
+    let lat = null, lng = null, conf = "none", note = "ISR card - location not known yet";
+    if (r.address){ try { const g = await rpc("fn_sched_resolve_location", {p_address: r.address, p_city: UI.city}); const x0 = Array.isArray(g) ? g[0] : g;
+      if (x0 && x0.confidence && x0.confidence !== "none"){ lat = Number(x0.lat); lng = Number(x0.lng); conf = x0.confidence; note = x0.community || x0.anomaly_reason || ""; } } catch (e) {} }
+    state.extra[id] = {order_id: r.order_id, city: UI.city, slot: "10:00", customer: r.customer_any || "ISR", phone: "", address: r.address || "",
+      lat, lng, loc_note: note, loc_confidence: conf, emaar: false, villa: false, entry_type: "issue_resolution", status: "ISR", kind: "ISR",
+      minutes: R.isr_flat_min, windows: 0, counts: {}, scaffolding: false, motor: false, comments: [r.issue]};
+  }
+  state.isrMap = state.isrMap || {}; state.isrMap[id] = isrId;
+  buildF(); applyTimes();
+  for (const t in state.assign) state.assign[t] = state.assign[t].filter(i => i !== id);
+  state.assign[team] = bestInsert(state.assign[team] || [], id);
+  save(`ISR #${isrId} (${r.order_id}) → ${tname(team)}`); paint();
+  try { await rpc("fn_isr_schedule", {p_id: isrId, p_day: UI.date, p_city: UI.city, p_team: team}); await loadIsr(); if (state.stage === 2) renderIsrTray(); }
+  catch (e) { toast((e && e.message) || "On the plan, but the ISR case could not be marked scheduled", "bad"); }
 }
 
 /* actions on the schedule (stage 2) */
@@ -443,24 +590,24 @@ function removeAll(id){ for (const t in state.assign) state.assign[t] = state.as
 function moveOrder(id, team){
   removeAll(id);
   if (team !== "un") state.assign[team] = bestInsert(state.assign[team] || [], id);
-  state.history = state.history.filter(h => h.id !== id); save(); paint();
+  state.history = state.history.filter(h => h.id !== id); save(team === "un" ? `${id} taken off the schedule` : `${id} → ${tname(team)}`); paint();
 }
 function shift(team, idx, d){
   const s = state.assign[team], j = idx + d; if (j < 0 || j >= s.length) return;
-  [s[idx], s[j]] = [s[j], s[idx]]; save(); paint();
+  [s[idx], s[j]] = [s[j], s[idx]]; save(`Changed the order of ${tname(team)}'s jobs`); paint();
 }
 function setName(team, v){
   const t = teamOf(team), crew = ROSTER.teams.find(c => c.members.length && crewLabel(c) === v);
   t.name = v.trim() || ("Team " + team);
   if (crew) t.members = crew.members.slice();
-  save(); paint();
+  save(`Team ${team} named "${t.name}"`); paint();
 }
 function setMembers(team, v){
   const crew = ROSTER.teams.find(c => c.members.length && crewLabel(c) === v);
   const t = teamOf(team);
   if (crew){ t.members = crew.members.slice(); t.name = crewLabel(crew); }
   else t.members = v.split(/&|,/).map(x => x.trim()).filter(Boolean);
-  save(); paint();
+  save(`${t.name} crew: ${t.members.join(" & ") || "none"}`); paint();
 }
 
 /* ---------------- sorting (Stage 1 table, Stage 2 cards) ---------------- */
@@ -503,7 +650,7 @@ function specials(id){
   if (c.flex) add("hot", `Bend / flexible rail ×${c.flex}`);
   if (c.cassette) add("", `Cassette ×${c.cassette}`);
   if (f.scaffolding) add("bad", "Scaffolding", c.max_h ? `tallest window ${Math.round(c.max_h)} cm` : "");
-  if (f.scaffold_missing) add("bad", "Scaffolding not in PO", "tagged Follow up accounts: charge for scaffolding");
+  if (f.scaffold_missing) add("bad", "Scaffolding not in PO", "tagged Follow up accounts: Scaffolding suggested");
   if (c.h_over_tall) add("hot", `Tall ladder ×${c.h_over_tall}`, `windows over ${R.tall_flag_cm / 100} m, tallest ${Math.round(c.max_h)} cm`);
   if (c.w_over_std) add("", `Wide window ×${c.w_over_std}`, `max ${Math.round(c.max_w)} cm, extra time added`);
   if (c.removal) add("hot", `Remove existing ×${c.removal}`, (f.removal_notes || []).join(" · "));
@@ -853,7 +1000,7 @@ function pdfOnePager(){
     td.tm b{font-size:1em}.city{display:inline-block;background:#2e6f9e;color:#fff;border-radius:3px;font-size:.75em;padding:0 5px;margin-top:2px}
     td.tc{width:12%;white-space:nowrap}.t1{font-size:1.9em;font-weight:800}.t2{font-size:.85em;font-weight:700}.t3{color:#5f7480;font-size:1.05em}
     td.oid{font-weight:700;width:5%}td.sc{color:#33414f;font-size:.85em}
-    .pill{display:inline-block;border-radius:3px;font-size:.85em;padding:0 6px}
+    .pill{display:inline-block;border-radius:3px;font-size:.85em;padding:0 6px;white-space:nowrap}
     .j-new{background:#d7efdb;color:#1f5130}.j-visit{background:#fbe7c0;color:#6b4a0c}.j-hang{background:#dcdcf2;color:#33337a}.j-part{background:#e4d6f3;color:#5a2a86}
     td.sc{font-weight:700;width:12%}td.dt{width:20%}
     .ic{display:inline-flex;align-items:center;gap:2px;border:1px solid #b9c2cc;border-radius:4px;padding:0 4px;margin:1px 2px 1px 0;background:#f7f8fa;white-space:nowrap}
@@ -881,6 +1028,7 @@ function initMap(){
   map = L.map($("map"), {scrollWheelZoom: true});
   layer = L.layerGroup().addTo(map);
   map.setView(CITY_CENTRE[UI.city] || [25.1, 55.2], 10);
+  map.on("click", e => { if (picking) setPin(picking, e.latlng.lat, e.latlng.lng); });
   englishBase().then(ok => { if (!ok) rasterBase(); });
 }
 // every place label is rewritten to its English (or Latin-script) name, so no Arabic appears on the map
@@ -904,7 +1052,7 @@ const pinIcon = (text, color, cls, label) => L.divIcon({className: "", iconSize:
   html: `<div class="pin ${cls || ""}" style="background:${color}">${esc(text)}${label ? `<span class="lab">${label}</span>` : ""}</div>`});
 const legLabel = (a, b, text, color) => L.marker([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], {interactive: false,
   icon: L.divIcon({className: "", iconSize: null, html: `<div class="leg-label" style="border-color:${color}">${esc(text)}</div>`})}).addTo(layer);
-const ll = id => F[id].lat != null ? [F[id].lat, F[id].lng] : null;
+const ll = id => F[id].lat != null && !F[id].loc_unknown ? [F[id].lat, F[id].lng] : null;
 function fit(points, key, force){
   if (!map || !points.length) return;
   if (!force && key === fitKey) return;
@@ -957,11 +1105,16 @@ function drawMap(force){
     for (const i of queue()) if (ll(i)) { L.marker(ll(i), {icon: pinIcon("?", "#fff", "grey")}).addTo(layer).bindPopup(`<b>${i}</b> not on a team`); all.push(ll(i)); }
     fit(all, scopeKey() + "|s2|" + state.teams.length + "|" + [...hiddenTeams].join(","), !!force);
   }
-  $("map-nopin").textContent = noPin.length ? `Not on the map (no location): ${noPin.join(", ")}.` : "";
+  const unknown = IDS.filter(i => F[i].loc_unknown);
+  $("map-nopin").innerHTML = unknown.length ? `<b style="color:var(--bad)">Unknown location (${unknown.length}):</b> ${unknown.map(i => `<span class="chip">${esc(i)} ${esc(F[i].customer)} <button class="lnk" data-pickpin="${esc(i)}">📍 pick on map</button></span>`).join(" ")}` : "";
 }
 const hiddenTeams = new Set();
 
 function renderMapBar(){
+  if (picking && F[picking]){
+    $("mapbar").innerHTML = `<b class="pickbar">📍 Click the map where <u>${esc(picking)}</u> ${esc(F[picking].customer)} is</b> <span class="muted" style="font-size:11.5px">${esc(F[picking].address || "")}</span> <button class="btn small" id="stp-b-pickcancel">Cancel</button>`;
+    return;
+  }
   setTimeout(() => { const a = $("maptoggleall"); if (a) a.indeterminate = state.teams.some(t => hiddenTeams.has(t.team)) && !state.teams.every(t => hiddenTeams.has(t.team)); }, 0);
   if (state.stage === 1){
     $("mapbar").innerHTML = `<b style="color:var(--ink)">Latest order of each team</b>
@@ -1007,6 +1160,7 @@ async function loadDay(date){
 async function switchDate(date){
   if (!date) return;
   haltPlay(); caption = "";
+  await sync.flush();
   UI.date = date; saveUI();
   try { await loadDay(date); } catch (e) { toast((e && e.message) || "Could not load that day", "bad"); return; }
   enterScope(); paint();
@@ -1045,6 +1199,92 @@ function wireSplit(){
   sp.addEventListener("keydown", e => { if (e.key === "ArrowLeft") setSplit(UI.split - 3, true); if (e.key === "ArrowRight") setSplit(UI.split + 3, true); });
 }
 
+/* ---------------- "Check the 3D sheet again": what differs, with a button per order (user, 10 Nov 2026) ----------------
+ * The sheet is read again and compared with the plan, three ways:
+ *   time    - the appointment on the sheet is not the plan's time. The plan keeps its time until the user
+ *             picks: "Use 3D time" or "Keep plan time" (nothing changes silently any more).
+ *   gone    - on the plan, no longer on the sheet. Kept on the plan (state.sheetGone) and flagged, until
+ *             "Remove from plan" or "Keep on plan".
+ *   fresh   - on the sheet, not on the plan: new orders (already waiting under Not on a team), held ISR /
+ *             odd-time rows, orders removed here, and hand-made orders the sheet now carries. */
+let DIFF = null;
+function factSnap(f){ const g = clone(f); g.slot = f.sheet_slot || f.slot; ["kind_base", "minutes_base", "emaar_auto", "maybe", "gone3d", "manual", "loc_unknown", "loc_doubt"].forEach(k => delete g[k]); return g; }
+async function checkSheet(){
+  await sync.flush();
+  const before = {}; IDS.forEach(i => { before[i] = clone(F[i]); });
+  delete DAYS[UI.date];
+  try { await loadDay(UI.date); } catch (e) { toast((e && e.message) || "Could not read the 3D sheet", "bad"); return; }
+  DAY = DAYS[UI.date];
+  const sheetIds = new Set(Object.keys(DAY.facts).filter(i => DAY.facts[i].city === UI.city));
+  const heldKeys = new Set(Object.keys(DAY.held));
+  const D = {at: new Date(), time: [], gone: [], fresh: [], manual: []};
+  state.sheetGone = state.sheetGone || {};
+  for (const i of Object.keys(before)){
+    const f = before[i];
+    if (f.manual){ if (sheetIds.has(i)) D.manual.push(i); continue; }
+    if (f.gone3d){ if (sheetIds.has(i) || heldKeys.has(i)) delete state.sheetGone[i]; else D.gone.push(i); continue; }
+    const still = f.hold ? heldKeys.has(i) : sheetIds.has(i);
+    if (!still){ state.sheetGone[i] = factSnap(f); D.gone.push(i); continue; }
+    const nf = f.hold ? DAY.held[i] : DAY.facts[i];
+    if (nf && nf.slot && f.slot && nf.slot !== f.slot){
+      if (!state.times[i]) state.times[i] = f.slot;     // keep the plan's time until the user picks
+      D.time.push({id: i, sheet: nf.slot, plan: f.slot});
+    }
+  }
+  for (const i of sheetIds) if (!before[i] && !state.removed.includes(i)) D.fresh.push(i);
+  DIFF = D; T = {}; KM = {};
+  buildF(); applyTimes();
+  const n = D.time.length + D.gone.length + D.fresh.length + D.manual.length;
+  save(n ? `Checked the 3D sheet: ${D.time.length} time difference(s), ${D.gone.length} not on the sheet any more, ${D.fresh.length} new on the sheet` : "Checked the 3D sheet: it agrees with the plan");
+  paint();
+}
+const dfRow = (id, body, btns) => `<div class="dfr"><span><b>${esc(id)}</b> ${body}</span><span class="dfb">${btns}</span></div>`;
+function renderDiff(){
+  const box = $("diff"); if (!box) return;
+  if (!DIFF){ box.innerHTML = ""; return; }
+  const D = DIFF, cust = i => esc((F[i] || DAY.facts[i] || DAY.held[i] || {}).customer || "");
+  const teamOfId = i => { const t = Object.keys(state.assign).find(t => state.assign[t].includes(i)); return t ? tname(t) : "not on a team"; };
+  const held = Object.values(DAY.held).filter(h => h.city === UI.city && !state.added.includes(h.key));
+  const gone = state.removed.map(i => DAY.facts[i] || DAY.held[i]).filter(f => f && f.city === UI.city);
+  const n = D.time.length + D.gone.length + D.fresh.length + D.manual.length + held.length + gone.length;
+  box.innerHTML = `<div class="panel diffp">
+    <div class="spread"><b>3D sheet check · ${D.at.toLocaleTimeString("en-GB", {hour: "2-digit", minute: "2-digit"})}</b>
+      <span><button class="lnk" data-refresh="1">↻ check again</button> <button class="lnk" data-diffclose="1" title="Hide">✕</button></span></div>
+    ${!n ? `<div class="good">✓ The plan and the 3D sheet agree: same orders, same times.</div>` : ""}
+    ${D.time.length ? `<h4>Time differs (${D.time.length}) <button class="btn small" data-dall="time">Use the 3D time for all</button></h4>
+      ${D.time.map(d => dfRow(d.id, `${cust(d.id)} · 3D sheet <b>${esc(d.sheet)}</b> · plan <b>${esc(d.plan)}</b>`,
+        `<button class="btn small primary" data-dsheet="${esc(d.id)}">Use 3D time ${esc(d.sheet)}</button><button class="btn small" data-dkeep="${esc(d.id)}">Keep plan time ${esc(d.plan)}</button>`)).join("")}` : ""}
+    ${D.gone.length ? `<h4>On the plan, not on the 3D sheet (${D.gone.length})</h4>
+      ${D.gone.map(i => dfRow(i, `${cust(i)} · ${esc(teamOfId(i))}`,
+        `<button class="btn small danger" data-dgonerm="${esc(i)}">Remove from plan</button><button class="btn small" data-dgonekeep="${esc(i)}">Keep on plan</button>`)).join("")}` : ""}
+    ${D.manual.length ? `<h4>Added by hand, now on the 3D sheet (${D.manual.length})</h4>
+      ${D.manual.map(i => dfRow(i, cust(i), `<button class="btn small primary" data-dmanual="${esc(i)}">Use the 3D sheet's row</button>`)).join("")}` : ""}
+    ${D.fresh.length || held.length || gone.length ? `<h4>On the 3D sheet, not on the plan (${D.fresh.length + held.length + gone.length})</h4>
+      ${D.fresh.map(i => dfRow(i, `${cust(i)} · new on the sheet, ${esc(DAY.facts[i].slot || "")} - waiting under Not on a team`,
+        `<button class="btn small" data-dfreshok="${esc(i)}">OK, plan it</button><button class="btn small" data-dfreshrm="${esc(i)}">Don't plan it</button>`)).join("")}
+      ${held.map(h => dfRow(h.order_id, `${esc(h.customer)} · ${esc(h.kind || "held")} ${esc(h.slot || "")}`, `<button class="btn small primary" data-addheld="${esc(h.key)}">+ Add to plan</button>`)).join("")}
+      ${gone.map(f => dfRow(f.order_id, `${esc(f.customer)} · removed from this plan earlier`, `<button class="btn small primary" data-restore="${esc(f.order_id)}">Restore</button>`)).join("")}` : ""}
+  </div>`;
+}
+function diffDrop(kind, id){ if (!DIFF) return; if (kind === "time") DIFF.time = DIFF.time.filter(d => d.id !== id); else DIFF[kind] = DIFF[kind].filter(i => i !== id); }
+function diffClick(b){
+  const d = b.dataset;
+  if (d.diffclose){ DIFF = null; renderDiff(); return true; }
+  if (d.dsheet){ const r = DIFF.time.find(x => x.id === d.dsheet); delete state.times[d.dsheet]; diffDrop("time", d.dsheet); applyTimes();
+    save(`${d.dsheet} time synced to the 3D sheet${r ? " (" + r.plan + " → " + r.sheet + ")" : ""}`); paint(); return true; }
+  if (d.dkeep){ const r = DIFF.time.find(x => x.id === d.dkeep); diffDrop("time", d.dkeep);
+    save(`${d.dkeep} keeps the plan time${r ? " " + r.plan + " (3D sheet says " + r.sheet + ")" : ""}`); paint(); return true; }
+  if (d.dall === "time"){ DIFF.time.forEach(r => delete state.times[r.id]); const n = DIFF.time.length; DIFF.time = []; applyTimes();
+    save(`${n} time(s) synced to the 3D sheet`); paint(); return true; }
+  if (d.dgonerm){ diffDrop("gone", d.dgonerm); removeOrder(d.dgonerm); return true; }
+  if (d.dgonekeep){ const i = d.dgonekeep; if (state.sheetGone && state.sheetGone[i]){ state.extra[i] = state.sheetGone[i]; delete state.sheetGone[i]; }
+    diffDrop("gone", i); buildF(); applyTimes(); save(`${i} kept on the plan although it is not on the 3D sheet`); paint(); return true; }
+  if (d.dmanual){ delete state.extra[d.dmanual]; diffDrop("manual", d.dmanual); buildF(); applyTimes(); save(`${d.dmanual} now follows the 3D sheet's row`); paint(); return true; }
+  if (d.dfreshok){ diffDrop("fresh", d.dfreshok); state.cur = d.dfreshok; renderDiff(); return true; }
+  if (d.dfreshrm){ diffDrop("fresh", d.dfreshrm); removeOrder(d.dfreshrm); return true; }
+  return false;
+}
+
 /* ---------------- main ---------------- */
 // everything the 3D sheet has for this date + city that the plan does not: held ISR / odd-time rows and
 // orders removed here. One click puts it back; it then waits under "Not on a team" / in the table.
@@ -1079,6 +1319,7 @@ function paint(){
   $("sub").textContent = `${DAY.date_label} · ${UI.city} · ${IDS.length} orders · ${heldN} ISR / odd-time held back · leave ${BASE.name} from ${BASE.depart_earliest}`;
   renderHeader();
   renderRibbon();
+  renderDiff();
   renderMapBar();
   if (state.stage === 1) renderStage1();
   if (state.stage === 2) renderStage2();
@@ -1097,8 +1338,8 @@ on("click", e => {
   if (b.dataset.stage) go(Number(b.dataset.stage));
   if (b.dataset.go) go(Number(b.dataset.go));
   if (b.dataset.assign) assignTo(curId(), Number(b.dataset.assign));
-  if (b.dataset.treset){ delete state.times[b.dataset.treset]; applyTimes(); save(); paint(); }
-  if (b.dataset.etareset){ delete (state.eta || {})[b.dataset.etareset]; save(); paint(); }
+  if (b.dataset.treset){ delete state.times[b.dataset.treset]; applyTimes(); save(`${b.dataset.treset} back to the 3D sheet time`); paint(); }
+  if (b.dataset.etareset){ delete (state.eta || {})[b.dataset.etareset]; save(`${b.dataset.etareset} ETA reset`); paint(); }
   if (b.dataset.shift) shift(b.dataset.team, Number(b.dataset.idx), Number(b.dataset.shift));
   if (idOf(b) === "b-undo") undo();
   if (idOf(b) === "b-addteam") addTeam();
@@ -1113,11 +1354,16 @@ on("click", e => {
   }
   if (idOf(b) === "b-fit") drawMap(true);
   if (b.dataset.dshift) switchDate(addDays(UI.date, Number(b.dataset.dshift)));
-  if (b.dataset.setcity){ haltPlay(); caption = ""; UI.city = b.dataset.setcity; saveUI(); enterScope(); paint(); }
+  if (b.dataset.setcity){ const c = b.dataset.setcity; haltPlay(); caption = ""; sync.flush().then(() => { UI.city = c; saveUI(); enterScope(); paint(); }); }
+  if (idOf(b) === "b-history") sync.openHistory();
   if (b.dataset.remove) removeOrder(b.dataset.remove);
   if (b.dataset.restore) restoreOrder(b.dataset.restore);
   if (b.dataset.addheld) { addHeld(b.dataset.addheld); closeAdd(); toast && typeof toast === "function" && toast(`Added ${b.dataset.addheld} - it is in the plan, not on a team yet`); }
-  if (b.dataset.refresh && typeof loadDay === "function"){ delete DAYS[UI.date]; save(); loadDay(UI.date).then(() => { enterScope(); paint(); }); }
+  if (b.dataset.refresh && typeof loadDay === "function"){ checkSheet(); return; }
+  if (diffClick(b)) return;
+  if (b.dataset.pickpin){ picking === b.dataset.pickpin ? endPick() : startPick(b.dataset.pickpin); return; }
+  if (idOf(b) === "b-pickcancel"){ endPick(); return; }
+  if (b.dataset.isrreload){ loadIsr().then(renderIsrTray); return; }
   if (idOf(b) === "b-addorder") openAdd();
   if (idOf(b) === "b-addclose") closeAdd();
   if (idOf(b) === "b-addmanual"){ const g = k => $(k).value; const msg = addManual({id: g("na-id"), customer: g("na-cust"), address: g("na-addr"), slot: g("na-slot"), minutes: g("na-min"), windows: g("na-win"), emaar: $("na-emaar").checked, lat: g("na-lat"), lng: g("na-lng")}); if (msg) $("na-msg").textContent = msg; else closeAdd(); }
@@ -1141,42 +1387,46 @@ on("change", e => {
   if (el.matches("input[data-emaar]")){
     const id = el.dataset.emaar; state.emaarSet = state.emaarSet || {};
     if (el.checked === F[id].emaar_auto) delete state.emaarSet[id]; else state.emaarSet[id] = el.checked;
-    applyTimes(); save(); paint();
+    // remembered for the address, so the next order there is tagged by itself (fn_sched_is_emaar)
+    if (F[id].address) rpc("fn_stepper_mark_emaar", {p_address: F[id].address, p_emaar: el.checked}).catch(() => {});
+    applyTimes(); save(`${id} ${el.checked ? "tagged" : "untagged"} Emaar`); paint();
   }
   if (el.matches("input[data-isr]")){
     const id = el.dataset.isr; state.isr = state.isr || {};
     if (el.checked === (F[id].kind_base === "ISR")) delete state.isr[id]; else state.isr[id] = el.checked;
-    applyTimes(); save(); paint();
+    applyTimes(); save(`${id} ${el.checked ? "tagged" : "untagged"} ISR`); paint();
   }
   if (el.matches("input[data-eta]")){
     const id = el.dataset.eta; state.eta = state.eta || {};
     if (el.value) state.eta[id] = el.value; else delete state.eta[id];
-    save(); paint();
+    save(`${id} ETA ${el.value || "reset"}`); paint();
   }
-  if (el.matches("input[data-time]")){ if (el.value) state.times[el.dataset.time] = el.value; else delete state.times[el.dataset.time]; applyTimes(); state.cur = el.dataset.time; save(); paint(); }
+  if (el.matches("input[data-time]")){ if (el.value) state.times[el.dataset.time] = el.value; else delete state.times[el.dataset.time]; applyTimes(); state.cur = el.dataset.time; save(`${el.dataset.time} appointment time ${el.value || "back to the 3D sheet's"}`); paint(); }
   if (el.matches("select[data-team-for]")){ if (playing) stopPlay(); assignTo(el.dataset.teamFor, el.value === "" ? "" : Number(el.value)); }
   if (idOf(el) === "wave") restart(el.value, true);
   if (idOf(el) === "sortSel"){ UI.sort = el.value; saveUI(); paint(); }
   if (idOf(el) === "voice"){ UI.voice = el.checked; saveUI(); if (!el.checked && canSpeak()) speechSynthesis.cancel(); }
   if (idOf(el) === "rate"){ UI.rate = Number(el.value); saveUI(); }
   if (idOf(el) === "dateSel") switchDate(el.value);
-  if (idOf(el) === "early"){ state.allowEarly = el.checked; save(); paint(); }
+  if (idOf(el) === "early"){ state.allowEarly = el.checked; save(`Later orders ${el.checked ? "may" : "may not"} start 2 h early`); paint(); }
   if (idOf(el) === "autozoom"){ state.autoZoom = el.checked; fitKey = ""; save(); paint(); }
   if (idOf(el) === "showrest"){ state.showRest = el.checked; save(); paint(); }
   if (el.matches("select[data-move]") && el.value) moveOrder(el.dataset.move, el.value === "un" ? "un" : Number(el.value));
   if (el.matches("input[data-tname]")) setName(el.dataset.tname, el.value);
   if (el.matches("input[data-tmem]")) setMembers(el.dataset.tmem, el.value);
   if (el.matches("input[data-maptoggle]")){ const n = Number(el.dataset.maptoggle); el.checked ? hiddenTeams.delete(n) : hiddenTeams.add(n); fitKey = ""; renderMapBar(); drawMap(); }
+  if (idOf(el) === "isrfilter"){ ISRC.filter = el.value; renderIsrTray(); }
   if (idOf(el) === "maptoggleall"){ if (el.checked) hiddenTeams.clear(); else state.teams.forEach(t => hiddenTeams.add(t.team)); fitKey = ""; renderMapBar(); drawMap(); }
   if (el.matches("input[data-act]")){ el.checked ? picked.add(el.dataset.act) : picked.delete(el.dataset.act); renderStage3(); }
 });
 // Stage 3 notes: saved as you type and shown in the message preview, without redrawing the page
 on("input", e => {
   const el = e.target, n = notes();
-  if (el.matches("[data-tnote]")) n.team[el.dataset.tnote] = el.value;
-  else if (el.matches("input[data-onote]")) n.order[el.dataset.onote] = el.value;
+  let line = "";
+  if (el.matches("[data-tnote]")){ n.team[el.dataset.tnote] = el.value; line = `Note for ${tname(el.dataset.tnote)}: ${el.value}`; }
+  else if (el.matches("input[data-onote]")){ n.order[el.dataset.onote] = el.value; line = `Note ${el.dataset.onote}: ${el.value}`; }
   else return;
-  save();
+  save(line, "note");
   const team = el.dataset.tnote || el.dataset.team, t = teamOf(team), pre = $("wa-" + team);
   if (t && pre) pre.textContent = waText(teamPayload(t));
 });
@@ -1201,6 +1451,7 @@ on("drop", e => {
   const t = e.target.closest ? e.target.closest(".team") : null; if (!t) return;
   e.preventDefault(); t.classList.remove("drop");
   const id = e.dataTransfer.getData("text/plain");
+  if (id && id.startsWith("isr:")){ addIsrToTeam(Number(id.slice(4)), Number(t.dataset.team)); return; }
   if (id && F[id] && t.dataset.team !== dragFrom) moveOrder(id, Number(t.dataset.team));
 });
 
@@ -1213,6 +1464,7 @@ const SKELETON = `<div class="stp" data-stage="1">
   <span class="datebox"><button class="dbtn" data-dshift="-1" aria-label="Previous day">◀</button><input type="date" id="stp-dateSel" class="hsel" aria-label="Date"><button class="dbtn" data-dshift="1" aria-label="Next day">▶</button></span>
   <div class="cityseg" id="stp-citySeg" role="group" aria-label="City"></div>
   <span class="sub" id="stp-sub"></span>
+  <span class="stpsync" id="stp-sync"></span>
   <button class="btn small" id="stp-b-xlsx" title="Download this day's plan as an Excel workbook (works in every stage)">⬇ Excel</button>
   <nav class="steps" aria-label="Stages">
     <button data-stage="1"><span class="n">1</span>Assign orders</button>
@@ -1222,6 +1474,7 @@ const SKELETON = `<div class="stp" data-stage="1">
   </nav>
 </div>
 <div id="stp-ribbon" class="ribbon"></div>
+<div id="stp-diff"></div>
 <div class="stp-main" id="stp-main">
   <div id="stp-mapwrap">
     <div class="mapbar" id="stp-mapbar"></div>
@@ -1233,6 +1486,7 @@ const SKELETON = `<div class="stp" data-stage="1">
   <section class="s2">
     <div class="panel" style="margin-top:12px"><h2>Checks</h2><ul class="checks" id="stp-checks"></ul></div>
     <div class="panel" id="stp-tray" style="margin-top:10px"></div>
+    <div class="panel isrtray" id="stp-isrtray" style="margin-top:10px"></div>
     <div class="teams" id="stp-teams"></div>
     <datalist id="stp-crews"></datalist>
   </section>
@@ -1263,7 +1517,7 @@ function ensureLibs(){
   })), Promise.resolve());
   return libsReady;
 }
-window.addEventListener("hashchange", () => { if (!/^#\/stepper/.test(location.hash)){ haltPlay(); live.stop(); } });
+window.addEventListener("hashchange", () => { if (!/^#\/stepper/.test(location.hash)){ haltPlay(); live.stop(); sync.flush().finally(() => sync.stop()); } });
 
 export async function render(mount, state){
   if (!isSignedIn()) return;

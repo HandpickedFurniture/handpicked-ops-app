@@ -32,6 +32,8 @@ import * as audit from "./mod-audit.js";
 import * as roles from "./mod-roles.js";
 import * as expenses from "./mod-expenses.js";
 import * as finance from "./mod-finance.js";
+import * as isr from "./mod-isr.js";
+import * as tailors from "./mod-tailors.js";
 
 /* Every screen is a top-level route. Only seven of them are in the ribbon.
  *
@@ -64,6 +66,9 @@ const ROUTES = {
   finance:    { key: "nav.finance",    render: (m, s) => finance.render(m, s) },
   // the crews' float, bills, advances and fuel (4 Nov 2026); ops only
   expenses:   { key: "nav.expenses",   render: (m) => expenses.render(m) },
+  // Production's issue-resolution cards and the tailors' pay (10 Nov 2026)
+  isr:        { key: "nav.isr",        render: (m) => isr.render(m) },
+  tailors:    { key: "nav.tailors",    render: (m) => tailors.render(m) },
 };
 
 /* Six, in the order the day runs, and six is deliberate: seven was the most a phone showed without
@@ -247,7 +252,7 @@ function queueSheet() {
 
 const TAB_ICON = { home: "🏠", production: "✂️", prep: "🧵", status: "🚚", schedule: "🗓️", stepper: "🧭",
                    transfer: "📦", inventory: "🔩", po: "📄", chotu: "🗣️", menu: "🧭",
-                   dashboard: "📊", reports: "📈", eod: "🌙", audit: "📷", roles: "🔑" };
+                   dashboard: "📊", reports: "📈", eod: "🌙", audit: "📷", roles: "🔑", isr: "🔁", tailors: "🧵" };
 
 function paintTabs() {
   const { route: r, params } = readHash();

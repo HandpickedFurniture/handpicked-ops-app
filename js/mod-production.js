@@ -21,10 +21,13 @@ import {
 } from "./ui.js";
 import { renderFilterBar, toQuery, deriveOptions, activeCount } from "./filters.js";
 import { renderDrawer, invalidate } from "./drawer.js";
+import { receiveBar } from "./receive-nopo.js";
 
 /* Which of the opt-in filters v_ops_order_roster can actually answer - see OPTIONAL in filters.js.
  * The roster is the only view carrying fabric_recv_state and dispatch_state. */
-const CAPS = { fabstatus: true, tailor: true, prodstate: true };
+// the Tailors First Floor filter came off with its column and drawer tab (user, 10 Nov 2026); receiving
+// without a PO sits inside the filter panel (same day) - see `extra` in renderFilterBar
+const CAPS = { fabstatus: true, prodstate: true };
 
 const ROSTER_COLS = [
   "order_id", "customer_name", "city", "city_source", "version_no", "po_number",
@@ -80,7 +83,7 @@ async function renderList(mount, state, setFilters) {
   const bar = $("#fbar", mount);
   const box = $("#rosterbox", mount);
 
-  const paintBar = () => renderFilterBar(bar, state, OPTIONS, (f) => setFilters(f), CAPS);
+  const paintBar = () => renderFilterBar(bar, state, OPTIONS, (f) => setFilters(f), { ...CAPS, extra: receiveBar });
   paintBar();
 
   loading(true, tr("t.loading"));
@@ -424,7 +427,6 @@ function tableView(rows, selected) {
         ${sortableTh("special", tr("col.special"))}
         ${sortableTh("receiving", tr("col.receiving"))}
         ${sortableTh("prep", tr("col.prep"))}
-        ${sortableTh("dispatch", tr("disp.title"))}
         <th>${esc(tr("col.actions"))}</th>
       </tr></thead>
       <tbody></tbody>
@@ -458,7 +460,6 @@ function tableView(rows, selected) {
             ${progressBar(r.recv_mat_done, r.recv_mat_total)}</div>
         </td>
         <td>${stageCell(r)}</td>
-        <td>${dispatchCell(r)}</td>
         <td class="actcell">${docButton(r.order_id, DOCS[r.order_id])}
             <button class="btn sm" data-open>${esc(tr("d.open"))}</button></td>
       </tr>`);
@@ -530,9 +531,8 @@ function bulkBar(rows, selected, listEl) {
   const root = el(`
     <div class="selbar" hidden>
       <b class="selcount"></b>
-      <button class="btn sm primary" data-act="stitch">${esc(tr("bulk.stitch"))}</button>
-      <button class="btn sm" data-act="tstate">${esc(tr("bulk.tailorState"))}</button>
-      <button class="btn sm" data-act="prep">${esc(tr("bulk.prep"))}</button>
+      <!-- Tailors First Floor / tailor state / production stage bulk actions removed with their drawer
+           tabs (user, 10 Nov 2026); the handlers below are left in place, unreachable -->
       <button class="btn sm" data-act="csv">${esc(tr("bulk.export"))}</button>
       <button class="btn ghost sm" data-act="none">${esc(tr("bulk.clear"))}</button>
     </div>`);
@@ -577,10 +577,11 @@ function bulkBar(rows, selected, listEl) {
       Array.from(selected).map((id) => csvRow(byId.get(id))).filter(Boolean));
   });
 
-  root.querySelector('[data-act="stitch"]').addEventListener("click", () => stitchModal(selected, clear));
-  root.querySelector('[data-act="tstate"]').addEventListener("click",
-    () => tailorStateModal(rows, selected, clear));
-  root.querySelector('[data-act="prep"]').addEventListener("click", () => prepModal(selected, clear));
+  // the three buttons were taken off the bar (10 Nov 2026); wire them only if they come back
+  const on = (act, fn) => { const b = root.querySelector(`[data-act="${act}"]`); if (b) b.addEventListener("click", fn); };
+  on("stitch", () => stitchModal(selected, clear));
+  on("tstate", () => tailorStateModal(rows, selected, clear));
+  on("prep", () => prepModal(selected, clear));
 
   return { root, update };
 }

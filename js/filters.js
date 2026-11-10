@@ -400,6 +400,8 @@ export function renderFilterBar(mount, state, opts, onChange, caps) {
   };
 
   bar.querySelector(".fsummary").addEventListener("click", () => bar.classList.toggle("collapsed"));
+  // a screen's own controls that belong with its filters (Production: Receive without PO, 10 Nov 2026)
+  if (caps && typeof caps.extra === "function") bar.querySelector(".fbody").prepend(caps.extra());
 
   /* One popover open at a time, closing on a click anywhere else or on Escape. A list stays open
    * while it is being ticked - closing on every tick would make picking three cities three trips. */

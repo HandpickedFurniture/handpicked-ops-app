@@ -5,7 +5,7 @@
  * TRANSLATED. Reverse that and writes start failing their CHECK.
  */
 
-export const BUILD = "2026-11-04.1";
+export const BUILD = "2026-11-10.6";
 
 /* Supabase project "handpicked-curtains". The publishable key is safe to ship: every table is
  * RLS-locked to the `authenticated` role and `anon` has no policy at all. The bearer token on each
@@ -189,6 +189,8 @@ export const LINE_REVIEW_STATUSES = [
   { value: "follow_up_accounts",    key: "rev.fuAccounts",     tone: "warn" },
   { value: "ask_coordinators",      key: "rev.askCoord",       tone: "info" },
   { value: "installed",             key: "rev.installed",      tone: "ok" },
+  // finance has billed / adjusted what accounts was asked to follow up (user, 10 Nov 2026)
+  { value: "finance_action_done",   key: "rev.finDone",        tone: "ok" },
 ];
 
 /* v_ops_line_review.procurement_req - what procurement has to act on before this line can be made.

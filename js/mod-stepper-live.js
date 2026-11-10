@@ -13,9 +13,17 @@
  *                 `sheet_sync.py --live` writes them to the partner Adjustments tab, one row per order
  *
  * The board polls every 20 s while the tab is open, so a status set on another phone shows up here.
+ *
+ * 10 Nov 2026 (user):
+ *   notes         the Stage 3 note is shown as it was sent; "Today's note" is a second, separate note
+ *   adjustment    opens the Installation module's own panel for the order (status, visits, the charge
+ *                 sheet with the remade-curtain picker and tick boxes) - see openInstallationPanel
+ *   invoicing     every day the coordinator confirms per order: ready to invoice or not, adjustment or
+ *                 none. Finance downloads the whole list for any range of days (v_live_invoicing).
  */
-import { api, rpc, isViewer } from "./api.js";
-import { toast } from "./ui.js";
+import { api, apiAll, rpc, isViewer } from "./api.js";
+import { toast, downloadXlsx } from "./ui.js";
+import { openInstallationPanel } from "./mod-status.js";
 
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const mins = s => { const m = /^(\d{1,2}):(\d{2})/.exec(String(s || "")); return m ? +m[1] * 60 + +m[2] : null; };
@@ -117,6 +125,18 @@ function adjHtml(o){
     return `<div>💰 <b>AED ${Number(x.amount_aed).toLocaleString("en-AE")}</b> ${esc(String(x.charge_type).replace(/_/g, " "))}${Number(x.quantity) !== 1 ? " ×" + Number(x.quantity) : ""} — ${esc(String(x.reason || "").split("\n").filter(Boolean).slice(-1)[0] || "")} ${st}</div>`;
   }).join("")}</div>`;
 }
+/* the coordinator's daily confirmation for Finance: two small switches and who set them */
+function invoiceHtml(o, ro){
+  const hasAdj = LV.adjs.some(a => a.order_id === o.order_id);
+  const seg = (field, val, label, cls) => {
+    const cur = field === "inv" ? o.invoice_state : o.adj_state, on = cur === val;
+    return `<button class="lseg ${on ? "on " + cls : ""}" data-lv="inv" data-f="${field}" data-v="${val}" data-id="${esc(o.order_id)}" ${ro ? "disabled" : ""} aria-pressed="${on}">${label}</button>`;
+  };
+  const by = o.invoice_at ? `<span class="muted" title="${esc(o.invoice_by || "")}">${esc(String(o.invoice_by || "").split("@")[0])} ${new Date(o.invoice_at).toLocaleString("en-GB", {timeZone: "Asia/Dubai", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit"})}</span>` : `<span class="muted">not confirmed yet</span>`;
+  const hint = !o.adj_state && hasAdj ? ` <span class="chip warn" title="There is an adjustment on this order">has an adjustment?</span>` : "";
+  return `<div class="linv"><span class="lil">Invoice</span>${seg("inv", "ready", "✓ Ready", "good")}${seg("inv", "not_ready", "Not ready", "bad")}
+    <span class="lil">Adjustment</span>${seg("adj", "none", "None", "good")}${seg("adj", "has", "Yes", "warn")}${hint} ${by}</div>`;
+}
 function orderHtml(o, off){
   const s = STATUS[o.status] || STATUS.pending, ro = isViewer() || off;
   const times = `${esc(o.plan_start || "—")}–${esc(o.plan_end || "—")}`;
@@ -130,13 +150,15 @@ function orderHtml(o, off){
     ${o.scope ? `<div class="jw">${esc(o.scope)}</div>` : ""}
     ${o.reason ? `<div class="lreason">${o.status === "removed" ? "Removed" : s.label}: ${esc(o.reason)}${o.resched_to ? ` → <b>${esc(o.resched_to)}</b>` : ""}</div>` : ""}
     ${adjHtml(o)}
-    <div class="lnote"><input data-lnote="${esc(o.order_id)}" value="${esc(o.note || "")}" placeholder="Note" ${ro ? "disabled" : ""} aria-label="Note for ${esc(o.order_id)}"></div>
+    ${o.note ? `<div class="lplannote" title="The note sent with the schedule in Stage 3">📝 <span class="muted">Plan note:</span> ${esc(o.note)}</div>` : ""}
+    <div class="lnote"><input data-llnote="${esc(o.order_id)}" value="${esc(o.live_note || "")}" placeholder="Today's note (separate from the plan note)" ${ro ? "disabled" : ""} aria-label="Today's note for ${esc(o.order_id)}"></div>
+    ${off ? "" : invoiceHtml(o, ro)}
     ${off ? "" : `<div class="lacts">
       ${o.status === "pending" || o.status === "failed" ? btn("start", "▶ Start") : ""}
       ${o.status !== "completed" ? btn("done", "✓ Done", "okb") : ""}
       ${btn("partial", "½ Partial")}${btn("failed", "✕ Failed")}${btn("resched", "↻ Reschedule")}
       ${o.status !== "pending" && o.status !== "in_progress" ? btn("reopen", "↺ Reopen") : ""}
-      <span class="sep"></span>${btn("time", "🕒 Time")}${btn("adj", "＋ Adjustment")}${btn("move", "↔ Team")}${btn("remove", "🗑")}
+      <span class="sep"></span>${btn("time", "🕒 Time")}${btn("inst", "🧾 Adjustment / status")}${btn("move", "↔ Team")}${btn("remove", "🗑")}
     </div>`}
   </li>`;
 }
@@ -147,7 +169,8 @@ function countsHtml(){
   const money = LV.adjs.filter(a => a.chargeable).reduce((x, a) => x + Number(a.amount_aed || 0), 0);
   return `<b>${done}/${live} done</b> <span class="progress" style="width:120px;display:inline-block;margin:0 6px"><i style="width:${live ? Math.round(done / live * 100) : 0}%;background:var(--good)"></i></span>
     ${chip("pending", "")}${chip("in_progress", "warn")}${chip("completed", "good")}${chip("partial", "warn")}${chip("failed", "bad")}${chip("rescheduled", "bad")}
-    ${LV.adjs.length ? `<span class="chip">💰 ${LV.adjs.length} adjustment${LV.adjs.length > 1 ? "s" : ""} · AED ${money.toLocaleString("en-AE")}</span>` : ""}`;
+    ${LV.adjs.length ? `<span class="chip">💰 ${LV.adjs.length} adjustment${LV.adjs.length > 1 ? "s" : ""} · AED ${money.toLocaleString("en-AE")}</span>` : ""}
+    <span class="chip ${LV.orders.filter(o => o.status !== "removed" && o.invoice_state).length === live ? "good" : "warn"}" title="Orders the coordinator has confirmed for Finance today">🧾 ${LV.orders.filter(o => o.status !== "removed" && o.invoice_state).length}/${live} confirmed · ${LV.orders.filter(o => o.invoice_state === "ready").length} ready to invoice</span>`;
 }
 function paintCounts(){ const c = $("lcounts"); if (c) c.innerHTML = countsHtml(); const t = $("lstamp"); if (t) t.textContent = stamp(); }
 const stamp = () => LV.at ? "updated " + LV.at.toLocaleTimeString("en-GB", {timeZone: "Asia/Dubai"}) + (isToday() ? " · refreshes every 20 s" : "") : "";
@@ -172,6 +195,7 @@ function paint(){
       <button class="btn small" data-lv="reload" title="Reload now">↻</button>
       <button class="btn small" data-lv="addorder" ${isViewer() ? "disabled" : ""}>＋ Add order</button>
       <button class="btn small" data-lv="log">${LV.showLog ? "Hide" : "Show"} activity</button>
+      <button class="btn small" data-lv="export" title="For Finance: every live order in a range of days, with its outcome, the invoicing confirmation and its adjustments">⬇ Invoicing list</button>
       <button class="btn small" data-lv="publish" title="Re-publish the Stage 3 plan: keeps every status and note already recorded" ${isViewer() ? "disabled" : ""}>📌 Re-publish plan</button>
     </div>
     ${LV.showLog ? `<div class="panel llog"><b>Activity</b><ul>${LV.events.map(e => `<li><span class="muted">${new Date(e.at).toLocaleTimeString("en-GB", {timeZone: "Asia/Dubai", hour: "2-digit", minute: "2-digit"})}</span> ${esc((e.who || "").split("@")[0])} · ${esc(describe(e))}</li>`).join("") || "<li class='muted'>Nothing yet</li>"}</ul></div>` : ""}
@@ -193,6 +217,8 @@ function describe(e){
     case "remove": return `${o}removed${d.reason ? " (" + d.reason + ")" : ""}`;
     case "move": return `${o}moved Team ${d.from ?? "-"} → Team ${d.to ?? "-"}`;
     case "note": return `${o}note: ${d.note || "(cleared)"}`;
+    case "live_note": return `${o}today's note: ${d.note || "(cleared)"}`;
+    case "invoice": return `${o}invoice ${d.invoice === "ready" ? "ready" : d.invoice === "not_ready" ? "not ready" : "not confirmed"} · adjustment ${d.adj === "has" ? "yes" : d.adj === "none" ? "none" : "not confirmed"}`;
     case "team_note": return `Team ${e.team} note: ${d.note || "(cleared)"}`;
     case "adjustment": return `${o}adjustment ${String(d.charge_type || "").replace(/_/g, " ")}${d.amount != null ? " AED " + d.amount : ""}: ${d.reason || ""}`;
     default: return e.kind;
@@ -317,6 +343,52 @@ function addDlg(){
   });
 }
 
+/* Finance's download: one row per live order (both cities by default) over a range of days */
+function exportDlg(){
+  const d = dialog(`<h2 style="margin:0 0 6px">Invoicing list for Finance</h2>
+    <div class="formgrid"><label>From <input id="lv-from" type="date" value="${esc(CX.day)}"></label><label>To <input id="lv-to" type="date" value="${esc(CX.day)}"></label>
+      <label>City <select id="lv-city"><option value="">Both cities</option><option ${CX.city === "Dubai" ? "selected" : ""}>Dubai</option><option ${CX.city === "Abu Dhabi" ? "selected" : ""}>Abu Dhabi</option></select></label>
+      <label>Only <select id="lv-only"><option value="">Every order</option><option value="ready">Ready to invoice</option><option value="completed">Completed on the day</option><option value="adj">With an adjustment</option></select></label></div>
+    <div class="muted" style="font-size:12px;margin:6px 0">One row per order and day: outcome, the coordinator's confirmation, notes, and every adjustment of the order not yet invoiced or dropped (amount and reason), so Finance can invoice and add the adjustment in one pass.</div>
+    <div class="lbtns"><button class="btn primary" id="lv-ok">⬇ Download Excel</button><button class="btn" data-lvclose>Close</button><span id="lv-msg" class="muted"></span></div>`);
+  const b = d.box, g = k => b.querySelector("#lv-" + k);
+  g("ok").addEventListener("click", async () => {
+    const from = g("from").value, to = g("to").value || from, city = g("city").value, only = g("only").value;
+    if (!from){ g("from").focus(); return; }
+    g("msg").textContent = "Reading…";
+    let rows;
+    try {
+      rows = await apiAll(`/rest/v1/v_live_invoicing?select=*&day=gte.${from}&day=lte.${to}${city ? "&city=eq." + encodeURIComponent(city) : ""}&order=day.asc,city.asc,team.asc.nullslast,order_id.asc`);
+    } catch (e) { g("msg").textContent = ""; toast((e && e.message) || "Could not read the list", "bad"); return; }
+    if (only === "ready") rows = rows.filter(r => r.invoice_state === "ready");
+    if (only === "completed") rows = rows.filter(r => r.live_status === "completed");
+    if (only === "adj") rows = rows.filter(r => r.adj_state === "has" || Number(r.adj_open_count) > 0);
+    if (!rows.length){ g("msg").textContent = "Nothing in that range."; return; }
+    const ST = s => (STATUS[s] || {}).label || s || "";
+    const out = rows.map(r => ({
+      "Date": r.day, "City": r.city, "Team": r.team_name || (r.team ? "Team " + r.team : ""), "Crew": r.crew || "",
+      "Order": r.order_id, "Customer": r.customer || "", "Address": r.address || "",
+      "Outcome on the day": ST(r.live_status) + (r.live_reason ? " - " + r.live_reason : "") + (r.resched_to ? " (to " + r.resched_to + ")" : ""),
+      "Installation status": r.installation_status || "",
+      "Ready to invoice": r.invoice_state === "ready" ? "Yes" : r.invoice_state === "not_ready" ? "No" : "Not confirmed",
+      "Adjustment (coordinator)": r.adj_state === "has" ? "Yes" : r.adj_state === "none" ? "None" : "Not confirmed",
+      "Adjustments to bill (AED)": Number(r.adj_open_amount) || 0, "Adjustments to bill (count)": Number(r.adj_open_count) || 0,
+      "All adjustments (AED)": Number(r.adj_amount) || 0, "Adjustment details": r.adj_lines || "",
+      "Plan note": r.plan_note || "", "Today's note": r.live_note || "", "Invoicing note": r.invoice_note || "",
+      "Confirmed by": r.invoice_by || "", "Confirmed at": r.invoice_at ? new Date(r.invoice_at).toLocaleString("en-GB", {timeZone: "Asia/Dubai"}) : "",
+      "Finance: invoice no.": "", "Finance: amount invoiced": "", "Finance: remarks": "",
+    }));
+    const sum = {};
+    rows.forEach(r => { const k = r.day + "|" + r.city; const s = sum[k] = sum[k] || {"Date": r.day, "City": r.city, "Orders": 0, "Completed": 0, "Ready to invoice": 0, "Not confirmed": 0, "With adjustment": 0, "Adjustments to bill (AED)": 0};
+      s.Orders++; if (r.live_status === "completed") s.Completed++; if (r.invoice_state === "ready") s["Ready to invoice"]++; if (!r.invoice_state) s["Not confirmed"]++;
+      if (r.adj_state === "has" || Number(r.adj_open_count) > 0) s["With adjustment"]++; s["Adjustments to bill (AED)"] += Number(r.adj_open_amount) || 0; });
+    try {
+      await downloadXlsx(`invoicing_${from}${to !== from ? "_to_" + to : ""}${city ? "_" + city.replace(/ /g, "") : ""}.xlsx`, [{name: "Orders", rows: out}, {name: "By day", rows: Object.values(sum)}]);
+      g("msg").textContent = `${rows.length} row${rows.length === 1 ? "" : "s"} downloaded.`;
+    } catch (e) { toast((e && e.message) || "Excel export failed", "bad"); g("msg").textContent = ""; }
+  });
+}
+
 /* ---------------- events ---------------- */
 async function publishNow(){
   if (!CX.payload) return;
@@ -342,6 +414,17 @@ export function onClick(e){
   else if (act === "resched") ask(id, "rescheduled");
   else if (act === "time") retime(id);
   else if (act === "adj") adjustment(id);
+  else if (act === "inst") openInstallationPanel(id, async () => {
+    try { const n = await rpc("fn_live_link_adjustments", {p_day: CX.day, p_city: CX.city, p_order: id}); if (n) toast(`${n} adjustment${n > 1 ? "s" : ""} linked to the live day`); } catch (e) {}
+    refresh();
+  });
+  else if (act === "export") exportDlg();
+  else if (act === "inv"){
+    const o = order(id); if (!o) return true;
+    let inv = o.invoice_state || null, adj = o.adj_state || null;
+    if (b.dataset.f === "inv") inv = inv === b.dataset.v ? null : b.dataset.v; else adj = adj === b.dataset.v ? null : b.dataset.v;
+    call("fn_live_set_invoice", {p_day: CX.day, p_city: CX.city, p_order: id, p_invoice: inv, p_adj: adj, p_note: null});
+  }
   else if (act === "move") moveDlg(id);
   else if (act === "remove") removeDlg(id);
   return true;
@@ -349,6 +432,7 @@ export function onClick(e){
 export function onChange(e){
   const el = e.target;
   if (el.matches && el.matches("input[data-lnote]")){ call("fn_live_note", {p_day: CX.day, p_city: CX.city, p_order: el.dataset.lnote, p_note: el.value}); return true; }
+  if (el.matches && el.matches("input[data-llnote]")){ call("fn_live_live_note", {p_day: CX.day, p_city: CX.city, p_order: el.dataset.llnote, p_note: el.value}); return true; }
   if (el.matches && el.matches("input[data-ltnote]")){ call("fn_live_team_note", {p_day: CX.day, p_city: CX.city, p_team: Number(el.dataset.ltnote), p_note: el.value}); return true; }
   return false;
 }

@@ -28,7 +28,7 @@ import { tr, tv } from "./i18n.js";
 import { PREP_STAGES, ISSUE_FLAGS, FABRIC_RECV_STATES, PLAN_PRIORITIES, STORAGE_PREFIX, flagOf, priorityOf } from "./config.js";
 import {
   $, esc, el, num, aed, aed0, fmtDate, fmtDateTime, today, loading, chip, downloadCsv, printSheet, toast,
-  confirmSheet,
+  confirmSheet, modal,
 } from "./ui.js";
 import { renderFilterBar, toQuery, deriveOptions, writeHash, vals, TEXT_FIELDS, MULTI_FIELDS } from "./filters.js";
 import { syncBar } from "./sync.js";
@@ -135,6 +135,8 @@ export const REPORT_PAGES = [
       // the order cell carries the priority mark too (prioCell)
       { k: "order_id", key: "col.order", bold: true, w: 68 },
       { k: "customer_name", key: "col.customer", w: 92, wrap: 1 },
+      // who stitches it (user, 10 Nov 2026) - feeds MD Tailors (#/tailors), see tailorCell
+      { k: "_tailor", key: "rep.tailor", w: 66, wrap: 1, fmt: (_v, r) => tailorCell(r) },
       { k: "_st_receive", key: "rep.stReceive", tick: 1, w: 56, fmt: (_v, r) => tickCell(r, "receive") },
       { k: "_st_cut",     key: "rep.stCut",     tick: 1, w: 50, fmt: (_v, r) => tickCell(r, "cut") },
       { k: "_st_mark",    key: "rep.stMark",    tick: 1, w: 58, fmt: (_v, r) => tickCell(r, "marking") },
@@ -408,6 +410,61 @@ function tickCell(r, stage) {
 }
 const tick = (on) => `<span class="tick${on ? " on" : ""}">${on ? "✓" : ""}</span>`;
 
+/* ---------------------------------------------------------------- the tailor of an order (10 Nov 2026)
+ * A dropdown of the tailors (Belal, Shahzad, Faruk, Ali, Jamal, and anyone added with "+ Add new"),
+ * written to order_tailor through fn_order_tailor_set; MD Tailors prices it. Read once per paint of
+ * the sheet (a few hundred rows at most). */
+const TAILOR = { names: [], by: {}, at: 0 };
+async function loadTailors(force) {
+  if (!force && Date.now() - TAILOR.at < 30000) return;
+  try {
+    const [names, rows] = await Promise.all([
+      apiAll("/rest/v1/tailor?select=name&active=is.true&order=name.asc"),
+      apiAll("/rest/v1/order_tailor?select=order_id,tailor&tailor=not.is.null"),
+    ]);
+    TAILOR.names = names.map((n) => n.name);
+    TAILOR.by = Object.fromEntries(rows.map((r) => [String(r.order_id), r.tailor]));
+    TAILOR.at = Date.now();
+  } catch (e) { /* the sheet still works; the cell shows what it knows */ }
+}
+function tailorCell(r) {
+  const cur = TAILOR.by[String(r.order_id)] || "";
+  if (isViewer()) return cur ? esc(cur) : `<span class="muted">—</span>`;
+  const names = TAILOR.names.includes(cur) || !cur ? TAILOR.names : [...TAILOR.names, cur];
+  return `<select class="plantailor" data-tailor="${esc(r.order_id)}" aria-label="${esc(tr("rep.tailor"))} ${esc(r.order_id)}">
+    <option value="">—</option>${names.map((n) => `<option ${n === cur ? "selected" : ""}>${esc(n)}</option>`).join("")}
+    <option value="__new">＋ ${esc(tr("rep.tailorNew"))}</option></select>`;
+}
+function askName(title) {
+  return new Promise((resolve) => {
+    const m = modal(`<h3>${esc(title)}</h3><input name="nm" style="width:100%;margin:10px 0" autocomplete="off">
+      <div class="row" style="justify-content:flex-end"><button class="btn ghost" data-no>${esc(tr("act.cancel"))}</button>
+      <button class="btn primary" data-yes>${esc(tr("act.save"))}</button></div>`);
+    const i = m.sheet.querySelector("[name=nm]"); setTimeout(() => i.focus(), 0);
+    const done = (v) => { m.close(); resolve((v || "").trim()); };
+    m.sheet.querySelector("[data-no]").onclick = () => done("");
+    m.sheet.querySelector("[data-yes]").onclick = () => done(i.value);
+    i.addEventListener("keydown", (e) => { if (e.key === "Enter") done(i.value); });
+  });
+}
+async function setTailor(sel) {
+  const id = sel.dataset.tailor, was = TAILOR.by[id] || "";
+  let name = sel.value;
+  if (name === "__new") {
+    const typed = await askName(tr("rep.tailorNewAsk"));
+    if (!typed) { sel.value = was; return; }
+    try { name = await rpc("fn_tailor_add", { p_name: typed }); } catch (e) { toast(e.message || String(e), "bad"); sel.value = was; return; }
+    if (!TAILOR.names.includes(name)) TAILOR.names.push(name);
+    TAILOR.names.sort();
+  }
+  try {
+    await rpc("fn_order_tailor_set", { p_order: id, p: { tailor: name || null } });
+    if (name) TAILOR.by[id] = name; else delete TAILOR.by[id];
+    LIVE.table && LIVE.table.querySelectorAll(`select[data-tailor="${CSS.escape(id)}"]`).forEach((s) => { s.outerHTML = tailorCell({ order_id: id }); });
+    toast(tr("t.saved"), "ok");
+  } catch (e) { sel.value = was; toast(e.message || String(e), "bad"); }
+}
+
 /* ---------------------------------------------------------------- the priority mark (22 Sep 2026)
  * High / Medium / Low, or nothing. Asked for as a colour, and given no column of its own: the mark
  * rides INSIDE the order cell and colours the row's left edge, so the fourteen columns the sheet
@@ -661,6 +718,13 @@ function planDate(state) {
   return ISO_DATE.test(kept) && kept >= today() ? kept : today();
 }
 const rememberDate = (date) => { try { localStorage.setItem(PLAN_DATE_KEY, date); } catch (e) {} };
+/* An optional END day (user, 10 Nov 2026: "add a date range option"). The sheet is still opened on a
+ * day; "until" widens it to that day and every day between. It rides in the hash as ?until= and is
+ * dropped when it is not after the start day, so a one-day sheet is exactly what it always was. */
+function planUntil(state, date) {
+  const u = state.params.get("until");
+  return u && ISO_DATE.test(u) && u > date ? u : "";
+}
 
 /* Where the sheet was scrolled to, per day, for the session: coming back to a day lands on the
  * row that was being worked, not at the top of the list again. */
@@ -668,7 +732,7 @@ const SCROLL = new Map();
 
 /* The strip. Every control writes the day into the hash and the router repaints - no Apply. The
  * other filters ride along untouched, as they do when a report sub-tab is clicked. */
-function dateStrip(page, f, date) {
+function dateStrip(page, f, date, until) {
   const td = today();
   const chips = Array.from({ length: DAYS_AHEAD }, (_, i) => isoShift(td, i));
   const strip = el(`<div class="card plandate">
@@ -676,22 +740,31 @@ function dateStrip(page, f, date) {
       <button type="button" class="btn ghost sm" data-shift="-1" title="${esc(tr("sch.prev"))}" aria-label="${esc(tr("sch.prev"))}">◀</button>
       <div class="schdateinner">
         <div class="schdatelabel">${esc(tr("rep.sheetFor"))}</div>
-        <div class="schdatebig">${esc(fmtDate(date))}</div>
+        <div class="schdatebig">${esc(fmtDate(date))}${until ? " → " + esc(fmtDate(until)) : ""}</div>
         <input type="date" name="plandate" value="${esc(date)}" aria-label="${esc(tr("rep.sheetFor"))}">
       </div>
       <button type="button" class="btn ghost sm" data-shift="1" title="${esc(tr("sch.next"))}" aria-label="${esc(tr("sch.next"))}">▶</button>
+      <label class="planuntil"><span class="schdatelabel">${esc(tr("rep.until"))}</span>
+        <input type="date" name="planuntil" value="${esc(until || "")}" min="${esc(isoShift(date, 1))}" aria-label="${esc(tr("rep.until"))}">
+        ${until ? `<button type="button" class="btn ghost sm" data-untilclear title="${esc(tr("rep.untilClear"))}">✕</button>` : ""}</label>
     </div>
     <div class="daychips" role="group" aria-label="${esc(tr("rep.sheetFor"))}">${chips.map((d, i) =>
       `<button type="button" class="${d === date ? "on" : ""}" data-date="${d}" aria-pressed="${d === date}">${
         i === 0 ? "● " + esc(tr("bucket.today")) : esc(dayChip(d))}</button>`).join("")}</div>
   </div>`);
-  const go = (d) => {
-    if (!ISO_DATE.test(d) || d === date) return;
+  const go = (d, u) => {
+    if (!ISO_DATE.test(d) || (d === date && u === undefined)) return;
     // the page AND the sheet's own box - the rows scroll inside the box now (see fitPlan)
     const inner = LIVE.table && LIVE.table.closest(".planscroll");
     SCROLL.set(date, { y: window.scrollY, t: inner ? inner.scrollTop : 0 });
-    writeHash("reports", f, { rep: page.id, date: d });
+    // moving the start day keeps the range's length; picking a day chip drops the range
+    let nu = u !== undefined ? u : "";
+    if (u === undefined && until && d !== date) nu = "";
+    writeHash("reports", f, { rep: page.id, date: d, until: nu && nu > d ? nu : "" });
   };
+  strip.querySelector('[name="planuntil"]').addEventListener("change", (e) => go(date, e.target.value || ""));
+  const uc = strip.querySelector("[data-untilclear]");
+  if (uc) uc.addEventListener("click", () => go(date, ""));
   strip.querySelectorAll("[data-shift]").forEach((b) =>
     b.addEventListener("click", () => go(isoShift(date, Number(b.dataset.shift)))));
   strip.querySelectorAll("[data-date]").forEach((b) => b.addEventListener("click", () => go(b.dataset.date)));
@@ -902,10 +975,11 @@ export async function render(mount, state, setFilters) {
    * way the Installation board keeps its outcome filter and the dashboard its four status filters.
    * The live sheet's day rides the same way, so Apply and Clear keep the day on screen. */
   const date = page.live ? planDate(state) : null;
+  const until = page.live ? planUntil(state, date) : "";
   const need = page.materials ? (state.params.get("need") || "") : "";
   // the bar drops from / to on a page that has its own date control; Materials keeps its range
   const setF = (f) => writeHash("reports", page.materials ? { ...f, from: state.filters.from, to: state.filters.to } : f,
-    { rep: page.id, date, need });
+    { rep: page.id, date, need, until });
   const paintBar = () => renderFilterBar(bar_, state, opts, setF, caps);
   paintBar();
 
@@ -915,7 +989,7 @@ export async function render(mount, state, setFilters) {
     return;
   }
   if (page.live) {
-    await renderLive(mount, box, page, state, setFilters, date, caps, paintBar);
+    await renderLive(mount, box, page, state, setFilters, date, caps, paintBar, until);
     return;
   }
 
@@ -1025,7 +1099,7 @@ function materialsStrip(page, state, need) {
  * to give up: awaiting it would make the next day's chip wait that long. A refresh that comes
  * back after the day was switched (LIVE_SEQ moved on, or its box left the page) paints nothing. */
 let LIVE_SEQ = 0;
-async function renderLive(mount, box, page, state, setFilters, date, caps, paintBar) {
+async function renderLive(mount, box, page, state, setFilters, date, caps, paintBar, until) {
   const seq = ++LIVE_SEQ;
   rememberDate(date);
   /* A visit that named no day (the ribbon, the launcher) now shows one: write it into the hash
@@ -1041,13 +1115,14 @@ async function renderLive(mount, box, page, state, setFilters, date, caps, paint
    * rode in on an old link applies to nothing here and is not carried on. */
   const rest = { ...state.filters };
   delete rest.from; delete rest.to; delete rest.bucket;
-  const f = { ...rest, from: date, to: date };
+  const f = { ...rest, from: date, to: until || date };
   const strip = $("#repdate", mount);
   strip.innerHTML = "";
-  strip.appendChild(dateStrip(page, rest, date));
+  strip.appendChild(dateStrip(page, rest, date, until));
   const note = el(`<div class="plannote" hidden></div>`);
   strip.appendChild(note);
 
+  await loadTailors();
   const query = toQuery(f, caps);
   const key = sheetKey(date, query);
   const reload = () => { forgetSheet(key); render(mount, state, setFilters); };
@@ -1274,6 +1349,8 @@ function paintTable(box, page, rows, filters, reload) {
   if (page.live) {
     // tick to add up: one row, or every row on the sheet from the header box
     table.addEventListener("change", (e) => {
+      const ts = e.target.closest("select[data-tailor]");
+      if (ts) { setTailor(ts); return; }
       const one = e.target.closest("input[data-pick]");
       const all = e.target.closest("input[data-pickall]");
       if (!one && !all) return;
@@ -1302,6 +1379,7 @@ function paintTable(box, page, rows, filters, reload) {
       });
       // the priority has no column on the sheet, so it is named here rather than left out of the file
       if (page.live) o[tr("rep.priority")] = r.plan_priority ? tr(priorityOf(r.plan_priority).key) : "";
+      if (page.live) o[tr("rep.tailor")] = TAILOR.by[String(r.order_id)] || "";
       return o;
     }),
     () => printableTable(wrap.querySelector("table")),
@@ -1326,6 +1404,9 @@ function printableTable(table, { clear = false } = {}) {
   });
   if (clear) t.querySelectorAll(".tick").forEach((s) => { s.classList.remove("on", "sys"); s.textContent = ""; });
   t.querySelectorAll("[data-unadhoc]").forEach((b) => b.remove());
+  t.querySelectorAll("select.plantailor").forEach((s) => {
+    const span = document.createElement("span"); span.textContent = TAILOR.by[s.dataset.tailor] || ""; s.replaceWith(span);
+  });
   if (t.querySelector(".selcol")) {
     t.querySelectorAll(".selcol").forEach((c) => c.remove());
     t.querySelectorAll("th[data-lead]").forEach((th) => { th.colSpan = Math.max(1, th.colSpan - 1); });

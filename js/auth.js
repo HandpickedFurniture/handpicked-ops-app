@@ -21,12 +21,30 @@ export function renderLogin(mount, onDone) {
         </div>
         <div style="margin-bottom:16px">
           <label class="f" for="lg_pw">${esc(tr("auth.password"))}</label>
-          <input type="password" id="lg_pw" name="password" autocomplete="current-password" required>
+          <div style="position:relative">
+            <input type="password" id="lg_pw" name="password" autocomplete="current-password" required
+                   style="width:100%;padding-right:44px;box-sizing:border-box">
+            <!-- show / hide the password (user, 10 Nov 2026) -->
+            <button type="button" id="lg_eye" aria-label="Show password" aria-pressed="false" title="Show password"
+                    style="position:absolute;right:4px;top:50%;transform:translateY(-50%);border:0;background:none;
+                           cursor:pointer;font-size:18px;line-height:1;padding:6px;color:inherit">👁</button>
+          </div>
         </div>
         <div id="lg_err" class="err hidden" style="margin-bottom:10px"></div>
         <button class="btn primary" type="submit" style="width:100%">${esc(tr("auth.signin"))}</button>
       </form>
     </div>`;
+
+  const eye = $("#lg_eye", mount), pwIn = $("#lg_pw", mount);
+  eye.addEventListener("click", () => {
+    const show = pwIn.type === "password";
+    pwIn.type = show ? "text" : "password";
+    eye.textContent = show ? "🙈" : "👁";
+    eye.setAttribute("aria-pressed", String(show));
+    eye.title = show ? "Hide password" : "Show password";
+    eye.setAttribute("aria-label", eye.title);
+    pwIn.focus();
+  });
 
   $("#loginform", mount).addEventListener("submit", async (e) => {
     e.preventDefault();

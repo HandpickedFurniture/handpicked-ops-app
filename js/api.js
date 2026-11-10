@@ -279,7 +279,7 @@ export function rawMessage(e) { return (e && (e.raw || e.message)) || ""; }
  * because that is the only verb PostgREST gives an RPC. Leaving it out made "view only" mean "view
  * the list and nothing in it", which is not a role anybody wanted. */
 const VIEWER_ALLOWED =
-  /\/rpc\/(fn_order_drawer|fn_ops_rate_for|fn_ops_log_photo_access|fn_chotu_context|fn_sched_board|fn_sched_run_for|fn_sched_next_working_day|fn_sched_suggest_teams|fn_sched_eta_explain)$/;
+  /\/rpc\/(fn_order_drawer|fn_ops_rate_for|fn_ops_log_photo_access|fn_chotu_context|fn_sched_board|fn_sched_run_for|fn_sched_next_working_day|fn_sched_suggest_teams|fn_sched_eta_explain|fn_stepper_get|fn_stepper_ping)$/;
 
 /* NOTHING may hang forever.
  *

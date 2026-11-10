@@ -121,6 +121,32 @@ export async function render(mount, state, setFilters) {
   box.appendChild(list);
 }
 
+/* The Installation panel for ONE order, in a sheet over whatever screen asked for it (user, 10 Nov 2026:
+ * Stage 4 of the step scheduler "should do exactly what is in Installation" - status, visits, the charge
+ * sheet with the remade-curtain picker and the tick boxes). It is the same renderStatusPanel, so the two
+ * can never drift apart. onClose runs after the sheet is closed, whatever was saved in it. */
+export async function openInstallationPanel(orderId, onClose) {
+  const q = encodeURIComponent(orderId);
+  const fetchRow = async () => ((await api(`/rest/v1/v_ops_status_board?select=${BOARD_COLS}&order_id=eq.${q}`)) || [])[0] || null;
+  let r;
+  try { r = await fetchRow(); } catch (e) { toast(e.message, "bad"); return; }
+  if (!r) { toast(`${orderId} is not on the Installation board (no PO in the app yet?)`, "bad"); return; }
+  const m = modal(`<div class="spread" style="margin-bottom:6px"><h3>${esc(r.order_id)} · ${esc(r.customer_name || "")}</h3>
+      <span class="row" style="gap:6px"><a class="btn ghost sm" href="#/status?order=${esc(r.order_id)}" target="_blank" rel="noopener">Installation ↗</a>
+      <button class="btn ghost sm" data-x>✕</button></span></div><div class="dhost"></div>`);
+  m.sheet.classList.add("wide");
+  const host = m.sheet.querySelector(".dhost");
+  let closed = false;
+  const close = () => { if (closed) return; closed = true; m.close(); if (onClose) onClose(); };
+  m.sheet.querySelector("[data-x]").onclick = close;
+  m.root.addEventListener("click", (e) => { if (e.target === m.root) close(); });
+  const reload = async () => {
+    try { const n = await fetchRow(); if (n) r = n; } catch (e) { /* keep the row we have */ }
+    if (!closed) await renderStatusPanel(host, r, reload);
+  };
+  await renderStatusPanel(host, r, reload);
+}
+
 /* The special requirements that actually apply to this order - what the installers need to have on
  * the van before they leave. */
 function specialChips(r) {

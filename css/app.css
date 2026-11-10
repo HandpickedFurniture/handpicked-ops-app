@@ -1021,3 +1021,7 @@ table.dense tr.exp-watch td{background:var(--warn-bg);}
 .tablewrap{overflow-x:auto;}
 .exp-line{padding:9px 0;border-bottom:1px solid var(--line);}
 .exp-line:last-child{border-bottom:0;}
+
+/* Planning: optional end day of a range (10 Nov 2026) */
+.planuntil{display:flex;flex-direction:column;align-items:flex-start;gap:2px;margin-left:8px}
+.planuntil .btn{padding:0 6px}

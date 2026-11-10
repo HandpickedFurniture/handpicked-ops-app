@@ -23,6 +23,8 @@ const KIND_KEY = {
   panel_plan: "doc.panel",
 };
 
+const HIDDEN_KINDS = new Set(["rail_checklist", "po_checklist"]);
+
 /* Newest PO version first, then the main report ahead of its checklists. */
 const KIND_RANK = { production_report: 0, rail_checklist: 1, panel_plan: 2, po_checklist: 3 };
 
@@ -73,7 +75,9 @@ export function docsPanel(orderId) {
     </div>`);
   const list = box.querySelector(".docs");
 
-  Promise.all([listDocs(orderId), docSummary(orderId)]).then(([rows, sum]) => {
+  Promise.all([listDocs(orderId), docSummary(orderId)]).then(([rows0, sum]) => {
+    // the rail checklist and the as-received PO checklist are no longer listed (user, 10 Nov 2026)
+    const rows = rows0.filter((d) => !HIDDEN_KINDS.has(d.doc_kind));
     const currentVersion = sum && sum.current_version;
     if (!rows.length) {
       list.innerHTML = `

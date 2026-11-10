@@ -1011,6 +1011,26 @@ which is amber and raises no flag. Do not loosen this: a list that names everyon
 bills to the app's own "Team bills" folder. The token is `drive.file`, so it cannot see a folder made
 by hand; see `drive-pdf-exports-folder` in the project notes.
 
+## 10 Nov 2026: shared step scheduler, ISR, MD Tailors, receiving without a PO
+
+SQL: `supabase/sql/20261110_stepper_shared_plans.sql`, `supabase/sql/20261110_live_isr_receipts_tailors.sql`
+(both applied). Every new table is read-only to the browser; writes go through SECURITY DEFINER
+functions that call `fn_live_guard()` (refuses read-only roles, records the caller's email).
+
+| What | Where |
+|---|---|
+| **Shared step-scheduler plan** - one row per date + city in `stepper_plan`; saved a second after each change with a change-log line per person (`stepper_change`); optimistic revisions, merged per order / per team on a clash; versions in `stepper_plan_version`; who else is on the day (`stepper_presence`, 15 s ping) | `js/stepper-sync.js` (+ `save(summary)` in `js/mod-stepper.js`) |
+| **Unknown location** - the resolver's city-centre fallback (confidence `none`) is never drawn as a location; "📍 pick on map" sets a pin, remembered for the address in `geo_place` (`fn_stepper_set_pin`) | `locHtml` / `startPick` in `js/mod-stepper.js` |
+| **Emaar** - tick box on every Stage 1 row, Stage 2 card and tray card; the tick is remembered per address (`emaar_address_mark`, read first by `fn_sched_is_emaar`); ~110 more Emaar names in `emaar_property` | `js/mod-stepper.js`, SQL |
+| **Check the 3D sheet again** - a panel of differences: time (Use 3D time / Keep plan time), on the plan but gone from the sheet (kept in `state.sheetGone` until Remove / Keep), on the sheet but not the plan | `checkSheet` / `renderDiff` in `js/mod-stepper.js` |
+| **ISR** (`#/isr`) - `isr_case` + `isr_event`; type, source, issue, what comes back / what is new, received / ready / return-to-supplier ticks; Stage 2 shows the open cards by readiness with what the 3D sheet says, drag onto a team (`fn_isr_schedule`) | `js/mod-isr.js`, `renderIsrTray` in `js/mod-stepper.js` |
+| **Stage 4** - a separate "Today's note" (`live_order.live_note`), "🧾 Adjustment / status" opens the Installation panel (`openInstallationPanel` in `js/mod-status.js`; its charges are linked by `fn_live_link_adjustments`), the daily invoicing confirmation (`fn_live_set_invoice`), and "⬇ Invoicing list" for Finance over any range (`v_live_invoicing`) | `js/mod-stepper-live.js` |
+| **Receiving before the PO** - `manual_receipt`; a deferred trigger on `receiving_expectations` matches typed lines to the PO when it arrives (fabric by code ignoring case/spaces/dashes, materials by description) and marks them received through `fn_ops_set_receiving` | `js/receive-nopo.js` (bar on top of Production) |
+| **MD Tailors** (`#/tailors`) - tailor per order (also a dropdown on Planning), American / Wave counts from the PO's stitched metres (editable), rates in `tailor_rate` (Ali 4 / 6, everyone else 5 / 7), payment status, SOA per tailor | `js/mod-tailors.js`, `v_md_tailors` |
+| Planning date range | `?until=` beside the day, `planUntil` in `js/mod-reports.js` |
+| PO tick box "Finance action done" | `line_review_mark` CHECK + `LINE_REVIEW_STATUSES` |
+| Production drawer: Status, Tailors First Floor and Production alerts tabs removed; Documents hide the rail and PO checklists | `js/drawer.js`, `js/docs.js` |
+
 ## Edge Functions
 
 The functions in `supabase/functions/` live in **this** repo because they exist only to serve this

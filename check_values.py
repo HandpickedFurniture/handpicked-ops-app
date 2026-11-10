@@ -28,7 +28,8 @@ EXPECTED = {
     "PREP_STAGES": {"cutting", "folding_packing", "stacking"},
     # line_review_mark.status. Unread is deliberately absent - it is the ABSENCE of a mark.
     "LINE_REVIEW_STATUSES": {"read", "follow_up_production", "follow_up_installation",
-                             "follow_up_procurement", "ask_coordinators", "installed"},
+                             "follow_up_procurement", "follow_up_accounts", "ask_coordinators", "installed",
+                             "finance_action_done"},
     # derived in v_ops_line_review, and filtered on with an overlap - a value that drifts out of
     # step with the view returns nothing rather than erroring
     "PROCUREMENT_REQS": {"roman_production", "pelmet", "eyelet"},

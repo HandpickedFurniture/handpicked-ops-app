@@ -24,6 +24,7 @@ import {
 import { micField, wireMics } from "./voice.js";
 import { photoStrip } from "./photos.js";
 import { docsPanel } from "./docs.js";
+import { orderIsrPanel } from "./mod-isr.js";
 
 const cache = new Map();
 
@@ -53,12 +54,11 @@ export async function renderDrawer(host, orderId, onDirty) {
   const TABS = [
     { id: "fab",  label: tr("col.fabrics"),   render: () => receivingTab(d, orderId, refresh, "order_fabric") },
     { id: "mat",  label: tr("col.recvMaterials"), render: () => receivingTab(d, orderId, refresh, "materials") },
-    // "Status" rather than "Production": inside an order's details, this tab is the per-panel stage,
-    // and the module it sits in is already called Production
-    { id: "prod", label: tr("d.statusTab"),   render: () => prepTab(d, orderId, refresh) },
-    { id: "disp", label: tr("disp.title"),    render: () => dispatchTab(d, orderId, refresh) },
-    { id: "alert",label: tr("d.prodAlerts"),  render: () => alertsTab(d) },
+    /* Status, Tailors First Floor and Production alerts came off the drawer 10 Nov 2026 (user). Their
+     * renderers (prepTab, dispatchTab, alertsTab) stay below unused, so putting a tab back is one line. */
     { id: "note", label: tr("d.comments"),    render: () => commentsTab(d, orderId, refresh) },
+    // the order's issue-resolution cases, raised and ticked off right here (user, 10 Nov 2026)
+    { id: "isr",  label: "🔁 ISR",            render: () => orderIsrPanel(orderId) },
     { id: "mail", label: tr("d.emails"),      render: () => emailsTab(d) },
     { id: "docs", label: tr("doc.title"),     render: () => docsPanel(orderId) },
   ];

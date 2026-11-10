@@ -93,6 +93,8 @@ export const APP_TILES = [
   { hash: "#/production", key: "nav.production", icon: "✂️",  desc: "home.dProduction" },
   { hash: "#/reports?rep=production", key: "nav.planning", icon: "🗂️", desc: "home.dPlanning" },
   { hash: "#/prep",       key: "nav.prep",       icon: "🧵",  desc: "home.dPrep" },
+  { hash: "#/isr",        key: "nav.isr",        icon: "🔁",  desc: "home.dIsr" },
+  { hash: "#/tailors",    key: "nav.tailors",    icon: "🪡",  desc: "home.dTailors" },
   { hash: "#/status",     key: "nav.status",     icon: "🚚",  desc: "home.dInstall" },
   { hash: "#/schedule",   key: "nav.schedule",   icon: "🗓️", desc: "home.dSchedule" },
   { hash: "#/stepper",    key: "nav.stepper",    icon: "🧭",  desc: "home.dStepper" },
