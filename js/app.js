@@ -34,6 +34,7 @@ import * as expenses from "./mod-expenses.js";
 import * as finance from "./mod-finance.js";
 import * as isr from "./mod-isr.js";
 import * as tailors from "./mod-tailors.js";
+import * as reviews from "./mod-reviews.js";
 
 /* Every screen is a top-level route. Only seven of them are in the ribbon.
  *
@@ -69,6 +70,8 @@ const ROUTES = {
   // Production's issue-resolution cards and the tailors' pay (10 Nov 2026)
   isr:        { key: "nav.isr",        render: (m) => isr.render(m) },
   tailors:    { key: "nav.tailors",    render: (m) => tailors.render(m) },
+  // 5-star reviews from the WhatsApp group "Fixer", per day and per person (10 Nov 2026)
+  reviews:    { key: "nav.reviews",    render: (m) => reviews.render(m) },
 };
 
 /* Six, in the order the day runs, and six is deliberate: seven was the most a phone showed without
@@ -252,7 +255,7 @@ function queueSheet() {
 
 const TAB_ICON = { home: "🏠", production: "✂️", prep: "🧵", status: "🚚", schedule: "🗓️", stepper: "🧭",
                    transfer: "📦", inventory: "🔩", po: "📄", chotu: "🗣️", menu: "🧭",
-                   dashboard: "📊", reports: "📈", eod: "🌙", audit: "📷", roles: "🔑", isr: "🔁", tailors: "🧵" };
+                   dashboard: "📊", reports: "📈", eod: "🌙", audit: "📷", roles: "🔑", isr: "🔁", tailors: "🧵", reviews: "⭐" };
 
 function paintTabs() {
   const { route: r, params } = readHash();

@@ -1031,12 +1031,32 @@ functions that call `fn_live_guard()` (refuses read-only roles, records the call
 | PO tick box "Finance action done" | `line_review_mark` CHECK + `LINE_REVIEW_STATUSES` |
 | Production drawer: Status, Tailors First Floor and Production alerts tabs removed; Documents hide the rail and PO checklists | `js/drawer.js`, `js/docs.js` |
 
+## Reviews (10 Nov 2026)
+
+`#/reviews`, a Home tile (⭐). When a customer leaves a 5-star review, a team member posts in the WhatsApp
+group **Fixer** (`120363427089622464@g.us`) the order number and the names of the people on that order,
+usually with a photo of the review. SQL: `supabase/sql/20261110_reviews.sql` (applied).
+
+| Step | Where |
+|---|---|
+| Copy the group every 5 minutes (pg_cron `handpicked-review-capture`, or "↻ Check Fixer now") into `review_message`; images to the private bucket `reviews`; Gemini reads each message (text + photo) into fixed fields only | Edge Function `review-capture` (gate: Vault `review_capture_secret`, via `fn_rev_run_capture`) |
+| Messages → reviews, one per order: a report is a message with an order number that the model calls a review, or (without the model) has a review word, or sits within 15 min of a review screenshot from the same sender. Each image goes to the nearest report from its sender; a screenshot nobody wrote an order for still becomes a review, "no order number" | `fn_rev_rebuild()`, re-runnable over all history |
+| Names → people: `team_members` (name, display name, first word), then `review_alias` ("Names to check" on the screen) | `fn_rev_person` |
+| Customer / city copied from `v_ops_order_roster` when the order is set | `fn_rev_fill_orders` |
+| Photos → Google Drive `Reviews/<YYYY-MM Month>/` (the app's own folder, drive.file scope) | `ingestion-agent/reviews_drive.py` in the 5-minute agent |
+| Screen: per-day line chart, people × months table + Excel, review list (photo, edit order / people / date / stars, ✓ lock, ✕ reject, add by hand) | `js/mod-reviews.js`, `v_review`, `v_review_person` |
+
+Counted = not rejected and 5 stars; a review whose stars nobody stated counts as 5. A review with two people
+counts once for each of them in the person table. Status: `auto` (the rebuild owns it), `confirmed` (a person
+changed or ticked it: the rebuild only refreshes its photos), `manual` (added by hand), `rejected`. Writes go
+through `fn_review_set` / `fn_review_add` / `fn_review_alias_set`, which refuse read-only roles (`fn_live_guard`).
+
 ## Edge Functions
 
 The functions in `supabase/functions/` live in **this** repo because they exist only to serve this
 app — `js/voice.js` calls `transcribe`, `js/mod-chotu.js` calls `chotu`, `js/mod-schedule.js` calls
 `sched-ask`, `js/photos.js` calls `photo-signed-url`, and `wa-inbound` / `wa-register` are Chotu's
-WhatsApp door (above). `expense-capture` is the morning copy behind Expense tracking. Deploy from the repo root, which is where the `supabase/` directory sits:
+WhatsApp door (above). `expense-capture` is the morning copy behind Expense tracking, and `review-capture` the 5-minute copy of the Fixer group behind Reviews. Deploy from the repo root, which is where the `supabase/` directory sits:
 
 ```bash
 supabase functions deploy chotu --project-ref jrevqijbzzwdcwxcnwfa
