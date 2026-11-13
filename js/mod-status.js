@@ -23,6 +23,7 @@ import { renderFilterBar, toQuery, deriveOptions, activeCount, writeHash } from 
 import { micField, wireMics } from "./voice.js";
 import { photoStrip } from "./photos.js";
 import { syncBar } from "./sync.js";
+import { render as renderIsrList, orderIsrPanel } from "./mod-isr.js";
 
 /* v_ops_status_board carries production_state but not the roster's fabric/tailor columns, so this
  * module opts into that one filter only - see OPTIONAL in filters.js. */
@@ -48,7 +49,9 @@ const BOARD_COLS = [
 let OPTIONS = null;
 export async function render(mount, state, setFilters) {
   if (!isSignedIn()) return;
-  mount.innerHTML = `<div class="sectionbar"><span></span><span id="stsync"></span></div>
+  // the ISR list moved here from Production (13 Nov 2026, user); old #/isr links redirect to it
+  if (state.params && state.params.get("view") === "isr") return renderIsrList(mount);
+  mount.innerHTML = `<div class="sectionbar"><div class="subtabs" style="margin:0"><button class="on">🚚 Installation board</button><a class="btn sm" href="#/status?view=isr">🔁 ISR · issue resolution</a></div><span id="stsync"></span></div>
                      <div id="fbar"></div><div id="extra"></div><div id="board"></div>`;
   $("#stsync", mount).appendChild(syncBar());
 
@@ -418,6 +421,10 @@ async function renderStatusPanel(host, r, reload) {
 
   /* ---- adjustments */
   wrap.appendChild(adjustmentsSection(r, adjustments, reload));
+
+  /* ---- the order's ISR cases with Production's answer (fabric, picture, ready) - here since 13 Nov 2026,
+   * so Stage 4's "Adjustment / status" shows them too */
+  wrap.appendChild(orderIsrPanel(r.order_id));
 
   /* ---- the one button that adds to either list
    *

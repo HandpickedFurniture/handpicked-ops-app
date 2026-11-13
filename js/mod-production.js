@@ -22,6 +22,13 @@ import {
 import { renderFilterBar, toQuery, deriveOptions, activeCount } from "./filters.js";
 import { renderDrawer, invalidate } from "./drawer.js";
 import { receiveBar } from "./receive-nopo.js";
+import { renderProduction as renderIsrProduction } from "./mod-isr.js";
+
+/* Two views (13 Nov 2026, user): the order roster, and the simple ISR view where the production
+ * coordinator answers each issue - fabric received yes / no, which fabric, a picture, Report ready. */
+const VIEW_TABS = (on) => `<div class="subtabs prodviews">
+  ${on === "isr" ? `<a class="btn sm" href="#/production">✂️ Orders</a><button class="on">🔁 ISR · fabric &amp; ready</button>`
+                 : `<button class="on">✂️ Orders</button><a class="btn sm" href="#/production?view=isr">🔁 ISR · fabric &amp; ready</a>`}</div>`;
 
 /* Which of the opt-in filters v_ops_order_roster can actually answer - see OPTIONAL in filters.js.
  * The roster is the only view carrying fabric_recv_state and dispatch_state. */
@@ -65,11 +72,12 @@ let REVIEW = {};         // order_id -> line-review roll-up, for the unread / fo
  * the order roster first. Old #/production?sec=prep links redirect (see app.js). */
 export async function render(mount, state, setFilters) {
   if (!isSignedIn()) return;
+  if (state.params && state.params.get("view") === "isr") return renderIsrProduction(mount);
   await renderList(mount, state, setFilters);
 }
 
 async function renderList(mount, state, setFilters) {
-  mount.innerHTML = `<div id="fbar"></div><div id="rosterbox"></div>`;
+  mount.innerHTML = `${VIEW_TABS("orders")}<div id="fbar"></div><div id="rosterbox"></div>`;
 
   // Derive the dropdown options once, from the whole roster, so filters offer every real value
   // rather than only those in the current page.

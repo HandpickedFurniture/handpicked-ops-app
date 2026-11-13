@@ -360,3 +360,26 @@
 .modal .sheet.wide{max-width:760px;width:96vw}
 /* Stage 2 order (10 Nov 2026): every block full width, stacked tray -> teams -> ISR -> Checks */
 .stp[data-stage="2"] .s2 > #stp-tray,.stp[data-stage="2"] .s2 > .isrtray,.stp[data-stage="2"] .s2 > .checkspanel{grid-column:1/-1}
+
+/* 13 Nov 2026 (user): Stage 2 internal scratch notes under the crew names; Production's ISR answer on the tray cards */
+.stp .team textarea.scratch{display:block;width:100%;box-sizing:border-box;margin:3px 0 4px;font:inherit;font-size:11.5px;
+  border:1px dashed #c9a93a;background:#fffbea;border-radius:5px;padding:3px 6px;resize:vertical;min-height:34px}
+.stp .team textarea.scratch:focus{outline:2px solid #e0c35a;background:#fff}
+.stp .isrcard .isrprod{margin:2px 0;font-size:11.5px}
+.stp .s4isr .isrboard{margin-top:4px}
+
+/* 13 Nov 2026 (user): next order for each team, and the optimiser's recommendation (Stage 1) */
+.stp .nextpanel,.stp .optpanel{margin-top:8px;padding:8px 10px}
+.stp .nph{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline;margin-bottom:4px}
+.stp .nprows{display:flex;flex-direction:column;gap:3px}
+.stp .nprow{font-size:12.5px;padding:3px 4px;border-radius:5px;line-height:1.8}
+.stp .nprow:hover{background:#f3f6fa}
+.stp .optpanel{border:1.5px solid #8a4fc7;background:#fbf8ff}
+.stp .optwarn{background:#fff4e1;border:1px solid #f0d29a;color:#7a4b00;border-radius:6px;padding:4px 8px;font-size:12px;margin:4px 0}
+.stp .optscroll{overflow-x:auto}
+.stp .opttab{border-collapse:collapse;font-size:12.5px;margin-top:4px;min-width:520px}
+.stp .opttab th,.stp .opttab td{padding:3px 10px;border-bottom:1px solid #e6e1ee;text-align:left;white-space:nowrap}
+.stp .opttab thead th{font-size:12px;color:#5b4b78}
+.stp .opttab td.good{color:var(--good);font-weight:600}
+.stp .optacts{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:6px;font-size:12.5px;align-items:center}
+.stp .optteams{margin-top:6px;font-size:12px;display:flex;flex-direction:column;gap:4px}

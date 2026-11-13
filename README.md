@@ -1023,13 +1023,44 @@ functions that call `fn_live_guard()` (refuses read-only roles, records the call
 | **Unknown location** - the resolver's city-centre fallback (confidence `none`) is never drawn as a location; "📍 pick on map" sets a pin, remembered for the address in `geo_place` (`fn_stepper_set_pin`) | `locHtml` / `startPick` in `js/mod-stepper.js` |
 | **Emaar** - tick box on every Stage 1 row, Stage 2 card and tray card; the tick is remembered per address (`emaar_address_mark`, read first by `fn_sched_is_emaar`); ~110 more Emaar names in `emaar_property` | `js/mod-stepper.js`, SQL |
 | **Check the 3D sheet again** - a panel of differences: time (Use 3D time / Keep plan time), on the plan but gone from the sheet (kept in `state.sheetGone` until Remove / Keep), on the sheet but not the plan | `checkSheet` / `renderDiff` in `js/mod-stepper.js` |
-| **ISR** (`#/isr`) - `isr_case` + `isr_event`; type, source, issue, what comes back / what is new, received / ready / return-to-supplier ticks; Stage 2 shows the open cards by readiness with what the 3D sheet says, drag onto a team (`fn_isr_schedule`) | `js/mod-isr.js`, `renderIsrTray` in `js/mod-stepper.js` |
+| **ISR** (`#/isr`, in Installation since 13 Nov - see below) - `isr_case` + `isr_event`; type, source, issue, what comes back / what is new, received / ready / return-to-supplier ticks; Stage 2 shows the open cards by readiness with what the 3D sheet says, drag onto a team (`fn_isr_schedule`) | `js/mod-isr.js`, `renderIsrTray` in `js/mod-stepper.js` |
 | **Stage 4** - a separate "Today's note" (`live_order.live_note`), "🧾 Adjustment / status" opens the Installation panel (`openInstallationPanel` in `js/mod-status.js`; its charges are linked by `fn_live_link_adjustments`), the daily invoicing confirmation (`fn_live_set_invoice`), and "⬇ Invoicing list" for Finance over any range (`v_live_invoicing`) | `js/mod-stepper-live.js` |
 | **Receiving before the PO** - `manual_receipt`; a deferred trigger on `receiving_expectations` matches typed lines to the PO when it arrives (fabric by code ignoring case/spaces/dashes, materials by description) and marks them received through `fn_ops_set_receiving` | `js/receive-nopo.js` (bar on top of Production) |
 | **MD Tailors** (`#/tailors`) - tailor per order (also a dropdown on Planning), American / Wave counts from the PO's stitched metres (editable), rates in `tailor_rate` (Ali 4 / 6, everyone else 5 / 7), payment status, SOA per tailor | `js/mod-tailors.js`, `v_md_tailors` |
 | Planning date range | `?until=` beside the day, `planUntil` in `js/mod-reports.js` |
 | PO tick box "Finance action done" | `line_review_mark` CHECK + `LINE_REVIEW_STATUSES` |
 | Production drawer: Status, Tailors First Floor and Production alerts tabs removed; Documents hide the rail and PO checklists | `js/drawer.js`, `js/docs.js` |
+
+## 13 Nov 2026: ISR moves to Installation, Production's fabric & ready view, Stage 2 scratch notes
+
+SQL: `supabase/sql/20261113_isr_fabric_ready.sql` (applied). `isr_case` gains `fabric_received` (null = not
+answered, false = No, true = Yes), `fabric_name`, `fabric_at`, `fabric_by`; written only by `fn_isr_fabric`.
+`order_photos` accepts context `isr` (context_id = ISR id); `v_isr_cases` gains `photo_count`.
+
+| What | Where |
+|---|---|
+| **ISR list** moved from Production to the Installation module: `#/status?view=isr` (old `#/isr` links redirect; the Home tile points there). The order's ISR cards are in the Installation panel (`openInstallationPanel`), which Stage 4's "Adjustment / status" also opens. The Production drawer's ISR tab is gone | `render` / `isrBoard` / `orderIsrPanel` in `js/mod-isr.js`, `js/mod-status.js` |
+| **Production > ISR · fabric & ready** (`#/production?view=isr`): one card per open ISR, four steps - fabric received Yes / No, which fabric, take a picture, Report ready (`fn_isr_flag` 'ready'; asks first if the fabric is not marked received). Saves on a card are queued: a blur save and a Yes tap fired together used to land out of order and wipe the Yes | `renderProduction` in `js/mod-isr.js` |
+| Production's answer on every ISR card: Stage 2 tray cards and team-card chips ("ISR #n · ready / fabric in / no fabric"), Stage 4 order chips, Stage 4's own ISR list for the day's city (under the live teams, `#stp-s4isr`), Installation ISR list | `productionLine` / `fabricState` in `js/mod-isr.js`, `isrProdHtml` in `js/mod-stepper.js`, `isrHtml` in `js/mod-stepper-live.js` |
+| **Stage 2 scratch notes**: a box under the crew names on each team card, internal only (never on WhatsApp, the PDF or Excel); kept in the shared plan as `notes.scratch[team]`, merged per team like the other notes | `textarea[data-tscratch]` in `js/mod-stepper.js` |
+
+## 13 Nov 2026: Step scheduler travel model, next order per team, optimiser
+
+SQL: `supabase/sql/20261113_geo_gazetteer_more.sql` (applied).
+
+**Why legs showed 5 minutes.** Half the 3D-sheet addresses (50 of 99 over 75 days) matched no community and
+had no pin, so `fn_sched_resolve_location` put them all on the city centre; two of them were 0 km apart and
+the same-place rule (5 min) fired. Two different addresses on one community centre did the same.
+
+| What | Where |
+|---|---|
+| ~80 more communities / buildings in `geo_community` (Springs, Palm, Boulevard Central, Serena, Radiant, Shakhbout ...): 82 of those 99 addresses now resolve. The resolver only takes a community from the order's own emirate ("Marina Heights" is in both) | SQL above |
+| Travel model: a leg to or from an UNKNOWN location = `travel.unknown_min` (35); different addresses on the same community centre = `same_community_min` (12); same address or two exact pins < 300 m = `same_place_min` (5); rush hour (`travel.peak`, 07:00-09:30, 16:30-19:30) x `peak_factor` (1.3). Every leg says which assumption it used ("location unknown", "same community", "rush hour") | `drive` / `baseLeg` in `js/mod-stepper.js`, settings in `sched_settings.stepper_rules.travel` |
+| **Next order for each team** (Stage 1): each team's last job end + drive (rush hour included) → the nearest order it can reach in time; teams served in the order they come free, so no order is offered twice; Assign one or all | `nextForTeams` |
+| **🧠 Best plan** (Stage 1): ~1,500-3,000 plans in 4 s - the plan on screen, appointment-order greedy, nearest-next, shuffled greedy - each improved by moving / swapping orders between teams, then the best shaken and improved again; seeded by date + city. Cost per team: time change x20/min, free-hour start x2, past day end x50, driving x1 (home x0.5), waiting x0.3, Emaar crew 25, scaffolding 10, named-crew people rule 200. Shows the plan on screen vs the top 3; "Use this plan" replaces the assignments (one Undo puts them back) | `optimise` / `optHtml` / `useOptPlan` |
+
+Still not real road data: travel is straight line x road factor by distance band, plus a 15-minute buffer. A routing
+service (Google / OSRM) would need the addresses or pins sent out, which has not been agreed.
 
 ## Reviews (10 Nov 2026)
 

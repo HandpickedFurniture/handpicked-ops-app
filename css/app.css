@@ -1025,3 +1025,16 @@ table.dense tr.exp-watch td{background:var(--warn-bg);}
 /* Planning: optional end day of a range (10 Nov 2026) */
 .planuntil{display:flex;flex-direction:column;align-items:flex-start;gap:2px;margin-left:8px}
 .planuntil .btn{padding:0 6px}
+
+/* ---------------------------------------------------------------- ISR (13 Nov 2026)
+ * Production's simple view (#/production?view=isr): four numbered steps per card. */
+.btn.danger{background:var(--danger);color:#fff;border-color:var(--danger);}
+.isrpcard.isready{border-left:5px solid var(--ok);}
+.isrpq{display:flex;flex-direction:column;gap:8px;margin-top:10px;}
+.isrpstep{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.isrpn{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;
+  background:var(--brand);color:#fff;font-size:12px;font-weight:700;flex:none;}
+.isrpl{font-weight:700;font-size:13px;min-width:120px;}
+.isrseg{display:flex;gap:4px;flex-wrap:wrap;}
+.isrprodline{margin-top:6px;font-size:13px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+.subtabs a.btn{border-radius:999px;}

@@ -32,7 +32,6 @@ import * as audit from "./mod-audit.js";
 import * as roles from "./mod-roles.js";
 import * as expenses from "./mod-expenses.js";
 import * as finance from "./mod-finance.js";
-import * as isr from "./mod-isr.js";
 import * as tailors from "./mod-tailors.js";
 import * as reviews from "./mod-reviews.js";
 
@@ -67,8 +66,7 @@ const ROUTES = {
   finance:    { key: "nav.finance",    render: (m, s) => finance.render(m, s) },
   // the crews' float, bills, advances and fuel (4 Nov 2026); ops only
   expenses:   { key: "nav.expenses",   render: (m) => expenses.render(m) },
-  // Production's issue-resolution cards and the tailors' pay (10 Nov 2026)
-  isr:        { key: "nav.isr",        render: (m) => isr.render(m) },
+  // the tailors' pay (10 Nov 2026). ISR lives in Installation (#/status?view=isr) since 13 Nov 2026
   tailors:    { key: "nav.tailors",    render: (m) => tailors.render(m) },
   // 5-star reviews from the WhatsApp group "Fixer", per day and per person (10 Nov 2026)
   reviews:    { key: "nav.reviews",    render: (m) => reviews.render(m) },
@@ -127,6 +125,9 @@ function redirectFor(name, params) {
     q.delete("rep");
     return to(INSIGHT_SECS.includes(sec) ? sec : "dashboard");
   }
+
+  // ISR moved from Production to the Installation module (13 Nov 2026, user)
+  if (name === "isr") { q.set("view", "isr"); return to("status"); }
 
   // Preparation was a sub-tab of Production; it is its own tab now
   if (name === "production" && params.get("sec") === "prep") { q.delete("sec"); return to("prep"); }

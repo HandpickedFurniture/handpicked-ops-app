@@ -1,19 +1,29 @@
-/* ISR - issue resolution (#/isr), part of Production. 10 Nov 2026 (user).
+/* ISR - issue resolution. 10 Nov 2026 (user); moved 13 Nov 2026 (user).
  *
  * One card per issue. Two people feed it:
  *   the INSTALLATION coordinator writes the issue - order, type, source, what it is, what is coming
  *     back from site (curtain / blind / track) and what new has to arrive (fabric / blind / track /
  *     motor ...);
- *   the PRODUCTION coordinator ticks it off - received back, ready, and "return to the fabric
- *     supplier" when something has to go back.
- * Readiness (waiting -> received back -> ready) is what the installation coordinator filters on in
- * Stage 2 of the Step scheduler, where a card is dragged onto a team's day (fn_isr_schedule).
+ *   the PRODUCTION coordinator answers it - fabric received yes / no, which fabric, a picture, and
+ *     "report ready" (and "return to the fabric supplier" when something has to go back).
  *
- * Every write is a fn_isr_* function (SQL 20261110_live_isr_receipts_tailors.sql); the tables are
- * read-only to the browser. The history of a card (isr_event) names who did what.
+ * Where it is shown (13 Nov 2026, user):
+ *   Installation module  #/status?view=isr - the full list, raise / edit / done (render, isrBoard)
+ *   Step scheduler       Stage 2 tray cards (drag onto a team) and Stage 4 below the live teams
+ *                        (isrBoard with the city fixed)
+ *   Production           #/production?view=isr - the SIMPLE view: one card per open ISR with Yes / No,
+ *                        which fabric, take a picture, Report ready (renderProduction)
+ *   Installation panel   the order's own ISR cards (orderIsrPanel), also what Stage 4's
+ *                        "Adjustment / status" opens
+ * The old #/isr link redirects to the Installation view; the Production drawer no longer has the tab.
+ *
+ * Every write is a fn_isr_* function (SQL 20261110_live_isr_receipts_tailors.sql and
+ * 20261113_isr_fabric_ready.sql); the tables are read-only to the browser. The history of a card
+ * (isr_event) names who did what. Photos are order_photos rows, context 'isr', context_id = ISR id.
  */
 import { api, apiAll, rpc, isSignedIn, isViewer } from "./api.js";
-import { esc, el, toast, loading, modal, fmtDate, fmtDateTime, today } from "./ui.js";
+import { esc, el, toast, loading, modal, fmtDate, fmtDateTime, confirmSheet } from "./ui.js";
+import { photoStrip } from "./photos.js";
 
 export const ISR_TYPES = [
   ["on_the_spot", "On the spot"], ["new_fabric", "New fabric"], ["planned_alteration", "Planned alteration"],
@@ -24,55 +34,94 @@ export const ISR_SOURCES = [
 const label = (list, v) => (list.find((x) => x[0] === v) || [v, v || "—"])[1];
 const READY = { waiting: ["Waiting", "warn"], received: ["Received back", "info"], ready: ["Ready", "ok"] };
 const STATUS = { open: ["Open", "warn"], scheduled: ["Scheduled", "info"], done: ["Done", "ok"], cancelled: ["Cancelled", "mute"] };
-const chipH = (t, tone) => `<span class="chip ${tone || "mute"}">${esc(t)}</span>`;
+const chipH = (t, tone, title) => `<span class="chip ${tone || "mute"}"${title ? ` title="${esc(title)}"` : ""}>${esc(t)}</span>`;
 const who = (e) => String(e || "").split("@")[0];
+const photoMeta = (r) => ({ context: "isr", context_id: r.id, order_id: r.order_id, context_label: `ISR #${r.id}` });
 
-let F = { status: "active", readiness: "", city: "", type: "", source: "", q: "" };
+/* Production's answer in one line - shared by every place an ISR card is drawn. `tone` maps this
+ * file's chip tones onto the step scheduler's (it calls the green one "good"). */
+export function fabricState(r) {
+  if (r.fabric_received === true) return { text: "Fabric received", tone: "ok" };
+  if (r.fabric_received === false) return { text: "Fabric NOT received", tone: "bad" };
+  return { text: "Fabric: not answered yet", tone: "mute" };
+}
+export function productionLine(r, tone = (t) => t) {
+  const f = fabricState(r);
+  const by = r.fabric_by ? `${who(r.fabric_by)} · ${fmtDateTime(r.fabric_at)}` : "";
+  return [
+    chipH(f.text, tone(f.tone), by),
+    r.fabric_name ? `<b>${esc(r.fabric_name)}</b>` : "",
+    Number(r.photo_count) ? chipH(`📷 ${r.photo_count}`, tone("info"), "Pictures from Production") : "",
+    r.ready ? chipH(`✓ Ready${r.ready_by ? " · " + who(r.ready_by) : ""}`, tone("ok"), r.ready_at ? fmtDateTime(r.ready_at) : "")
+            : chipH("Not reported ready", tone("warn")),
+  ].filter(Boolean).join(" ");
+}
 
+/* ================================================================ Installation: the full list */
 export async function render(mount) {
   if (!isSignedIn()) return;
-  mount.innerHTML = `<div class="sectionbar"><div class="subtabs"><a href="#/production">✂️ Production</a><button class="on">🔁 ISR · all orders</button></div></div>
-    <div class="card isrhead"></div><div id="isrlist"></div>`;
-  const head = mount.querySelector(".isrhead"), list = mount.querySelector("#isrlist");
-  const sel = (name, opts, cur) => `<select name="${name}">${opts.map(([v, l]) => `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
-  head.innerHTML = `<div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
-      <h3 style="margin:0">ISR · issue resolution</h3>
-      ${isViewer() ? "" : `<button class="btn primary" data-new>＋ New ISR</button>`}</div>
-    <div class="fgrid" style="margin-top:8px">
-      <div><label class="f">Status</label>${sel("status", [["active", "Open + scheduled"], ["open", "Open"], ["scheduled", "Scheduled"], ["done", "Done"], ["cancelled", "Cancelled"], ["", "All"]], F.status)}</div>
-      <div><label class="f">Readiness</label>${sel("readiness", [["", "Any"], ["waiting", "Waiting"], ["received", "Received back"], ["ready", "Ready"], ["return", "To return to supplier"]], F.readiness)}</div>
-      <div><label class="f">City</label>${sel("city", [["", "Both"], ["Dubai", "Dubai"], ["Abu Dhabi", "Abu Dhabi"]], F.city)}</div>
-      <div><label class="f">Type</label>${sel("type", [["", "Any"], ...ISR_TYPES], F.type)}</div>
-      <div><label class="f">Source</label>${sel("source", [["", "Any"], ...ISR_SOURCES], F.source)}</div>
-      <div><label class="f">Search</label><input name="q" value="${esc(F.q)}" placeholder="order, customer, issue"></div>
-    </div>`;
-  head.querySelectorAll("select,input").forEach((i) => i.addEventListener(i.tagName === "INPUT" ? "input" : "change", () => {
-    F[i.name] = i.value; paintList(list);
-  }));
-  const nb = head.querySelector("[data-new]");
-  if (nb) nb.addEventListener("click", () => editCase(null, () => load(list)));
-  await load(list);
+  mount.innerHTML = `<div class="sectionbar"><div class="subtabs"><a class="btn sm" href="#/status">🚚 Installation board</a><button class="on">🔁 ISR · issue resolution</button></div></div>`;
+  mount.appendChild(isrBoard());
 }
 
-let ROWS = [];
-async function load(list) {
-  loading(true, "Loading ISR…");
-  try { ROWS = await apiAll("/rest/v1/v_isr_cases?select=*&order=id.desc"); }
-  catch (e) { loading(false); list.innerHTML = `<div class="card"><span class="err">${esc(e.message)}</span></div>`; return; }
-  loading(false);
-  paintList(list);
-}
-function paintList(list) {
-  const q = F.q.trim().toLowerCase();
-  const rows = ROWS.filter((r) =>
-    (F.status === "" || (F.status === "active" ? ["open", "scheduled"].includes(r.status) : r.status === F.status)) &&
-    (!F.readiness || (F.readiness === "return" ? r.return_supplier : r.readiness === F.readiness)) &&
-    (!F.city || r.city_any === F.city) && (!F.type || r.isr_type === F.type) && (!F.source || r.source === F.source) &&
-    (!q || [r.order_id, r.customer_any, r.issue, r.expected_back, r.expected_new].join(" ").toLowerCase().includes(q)));
-  const cnt = (k) => ROWS.filter((r) => ["open", "scheduled"].includes(r.status) && r.readiness === k).length;
-  list.innerHTML = `<div class="muted" style="margin:4px 2px 8px">${rows.length} shown · open: ${cnt("waiting")} waiting, ${cnt("received")} received back, ${cnt("ready")} ready</div>`;
-  if (!rows.length) { list.appendChild(el(`<div class="card"><span class="muted">No ISR matches.</span></div>`)); return; }
-  rows.forEach((r) => list.appendChild(card(r, () => load(list))));
+/* The list with its filters, as one element. opts.city fixes the city (Stage 4 shows only the day's
+ * city); opts.title replaces the heading. Each board keeps its own filters. */
+export function isrBoard(opts = {}) {
+  const F = { status: "active", readiness: "", city: opts.city || "", type: "", source: "", q: "" };
+  let ROWS = [];
+  const box = el(`<div class="isrboard"><div class="card isrhead"></div><div class="isrlist"></div></div>`);
+  const head = box.querySelector(".isrhead"), list = box.querySelector(".isrlist");
+  const sel = (name, o, cur) => `<select name="${name}">${o.map(([v, l]) => `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
+  head.innerHTML = `<div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <h3 style="margin:0">${esc(opts.title || "ISR · issue resolution")}</h3>
+      <span class="row" style="gap:6px"><button class="btn sm ghost" data-reload title="Reload">↻</button>
+      ${isViewer() ? "" : `<button class="btn primary" data-new>＋ New ISR</button>`}</span></div>
+    <div class="fgrid" style="margin-top:8px">
+      <div><label class="f">Status</label>${sel("status", [["active", "Open + scheduled"], ["open", "Open"], ["scheduled", "Scheduled"], ["done", "Done"], ["cancelled", "Cancelled"], ["", "All"]], F.status)}</div>
+      <div><label class="f">Readiness</label>${sel("readiness", [["", "Any"], ["waiting", "Waiting"], ["received", "Received back"], ["ready", "Ready"], ["fab_yes", "Fabric received"], ["fab_no", "Fabric not received"], ["fab_none", "Fabric not answered"], ["return", "To return to supplier"]], F.readiness)}</div>
+      ${opts.city ? "" : `<div><label class="f">City</label>${sel("city", [["", "Both"], ["Dubai", "Dubai"], ["Abu Dhabi", "Abu Dhabi"]], F.city)}</div>`}
+      <div><label class="f">Type</label>${sel("type", [["", "Any"], ...ISR_TYPES], F.type)}</div>
+      <div><label class="f">Source</label>${sel("source", [["", "Any"], ...ISR_SOURCES], F.source)}</div>
+      <div><label class="f">Search</label><input name="q" value="${esc(F.q)}" placeholder="order, customer, issue, fabric"></div>
+    </div>`;
+  head.querySelectorAll("select,input").forEach((i) => i.addEventListener(i.tagName === "INPUT" ? "input" : "change", () => {
+    F[i.name] = i.value; paint();
+  }));
+  const load = async () => {
+    list.innerHTML = `<span class="muted">Loading…</span>`;
+    try { ROWS = await apiAll("/rest/v1/v_isr_cases?select=*&order=id.desc"); }
+    catch (e) { list.innerHTML = `<div class="card"><span class="err">${esc(e.message)}</span></div>`; return; }
+    paint();
+  };
+  const readyOk = (r) => {
+    switch (F.readiness) {
+      case "": return true;
+      case "return": return r.return_supplier;
+      case "fab_yes": return r.fabric_received === true;
+      case "fab_no": return r.fabric_received === false;
+      case "fab_none": return r.fabric_received == null;
+      default: return r.readiness === F.readiness;
+    }
+  };
+  function paint() {
+    const q = F.q.trim().toLowerCase();
+    const mine = ROWS.filter((r) => !F.city || r.city_any === F.city);
+    const rows = mine.filter((r) =>
+      (F.status === "" || (F.status === "active" ? ["open", "scheduled"].includes(r.status) : r.status === F.status)) &&
+      readyOk(r) && (!F.type || r.isr_type === F.type) && (!F.source || r.source === F.source) &&
+      (!q || [r.order_id, r.customer_any, r.issue, r.expected_back, r.expected_new, r.fabric_name].join(" ").toLowerCase().includes(q)));
+    const act = mine.filter((r) => ["open", "scheduled"].includes(r.status));
+    const cnt = (k) => act.filter((r) => r.readiness === k).length;
+    list.innerHTML = `<div class="muted" style="margin:4px 2px 8px">${rows.length} shown · open: ${cnt("waiting")} waiting, ${cnt("received")} received back, ${cnt("ready")} ready · fabric received on ${act.filter((r) => r.fabric_received === true).length} of ${act.length}</div>`;
+    if (!rows.length) { list.appendChild(el(`<div class="card"><span class="muted">No ISR matches.</span></div>`)); return; }
+    rows.forEach((r) => list.appendChild(card(r, load)));
+  }
+  head.querySelector("[data-reload]").addEventListener("click", load);
+  const nb = head.querySelector("[data-new]");
+  if (nb) nb.addEventListener("click", () => editCase(null, load, opts.city ? { city: opts.city } : null));
+  box.reload = load;
+  load();
+  return box;
 }
 
 function card(r, reload) {
@@ -88,10 +137,12 @@ function card(r, reload) {
     <div class="grid2" style="margin-top:6px">
       <div><label class="f">Coming back from site</label><div>${r.expected_back ? esc(r.expected_back) : `<span class="muted">—</span>`}</div></div>
       <div><label class="f">New to arrive</label><div>${r.expected_new ? esc(r.expected_new) : `<span class="muted">—</span>`}</div></div></div>
+    <div class="isrprodline"><span class="muted" style="font-size:12px">Production says:</span> ${productionLine(r)}</div>
+    <div data-photos></div>
     ${r.return_supplier && r.return_note ? `<div class="banner warn" style="margin-top:6px">Return to supplier: ${esc(r.return_note)}</div>` : ""}
     <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
-      <span class="muted" style="font-size:12px">Production:</span>
-      ${tick("received", r.received, "Received", r.received_by, r.received_at)}
+      <span class="muted" style="font-size:12px">Ticks:</span>
+      ${tick("received", r.received, "Received back", r.received_by, r.received_at)}
       ${tick("ready", r.ready, "Ready", r.ready_by, r.ready_at)}
       ${tick("return_supplier", r.return_supplier, "Return to supplier", r.return_by, r.return_at)}
       <span style="flex:1"></span>
@@ -101,6 +152,8 @@ function card(r, reload) {
         : `<button class="btn sm" data-flag="reopen" data-on="1">↺ Reopen</button>`}`}
       <button class="btn sm ghost" data-hist>History</button>
     </div><div class="isrhist" hidden></div></div>`);
+  // pictures Production took (and anybody else's), viewable here; the camera follows the role
+  if (Number(r.photo_count) || !ro) c.querySelector("[data-photos]").appendChild(photoStrip(photoMeta(r), { label: "Photo" }));
   c.querySelectorAll("[data-flag]").forEach((b) => b.addEventListener("click", async () => {
     const flag = b.dataset.flag, on = b.dataset.on === "1";
     let note = null;
@@ -113,16 +166,16 @@ function card(r, reload) {
   }));
   const eb = c.querySelector("[data-edit]");
   if (eb) eb.addEventListener("click", () => editCase(r, reload));
-  c.querySelector("[data-hist]").addEventListener("click", async () => {
-    const h = c.querySelector(".isrhist");
-    if (!h.hidden) { h.hidden = true; return; }
-    h.hidden = false; h.innerHTML = `<span class="muted">Loading…</span>`;
-    try {
-      const ev = await api(`/rest/v1/isr_event?select=at,who,kind,detail&isr_id=eq.${r.id}&order=at.desc`) || [];
-      h.innerHTML = ev.map((e) => `<div><span class="muted">${esc(fmtDateTime(e.at))}</span> <b>${esc(who(e.who))}</b> · ${esc(evText(e))}</div>`).join("") || `<span class="muted">Nothing yet</span>`;
-    } catch (e) { h.innerHTML = `<span class="err">${esc(e.message)}</span>`; }
-  });
+  c.querySelector("[data-hist]").addEventListener("click", () => toggleHistory(c.querySelector(".isrhist"), r.id));
   return c;
+}
+async function toggleHistory(h, id) {
+  if (!h.hidden) { h.hidden = true; return; }
+  h.hidden = false; h.innerHTML = `<span class="muted">Loading…</span>`;
+  try {
+    const ev = await api(`/rest/v1/isr_event?select=at,who,kind,detail&isr_id=eq.${id}&order=at.desc`) || [];
+    h.innerHTML = ev.map((e) => `<div><span class="muted">${esc(fmtDateTime(e.at))}</span> <b>${esc(who(e.who))}</b> · ${esc(evText(e))}</div>`).join("") || `<span class="muted">Nothing yet</span>`;
+  } catch (e) { h.innerHTML = `<span class="err">${esc(e.message)}</span>`; }
 }
 function evText(e) {
   const d = e.detail || {}, on = d.on ? "ticked" : "unticked";
@@ -130,7 +183,9 @@ function evText(e) {
     case "created": return "raised the ISR";
     case "edited": return "edited the details";
     case "received": return `${on} received back`;
-    case "ready": return `${on} ready`;
+    case "ready": return d.on ? "reported it ready" : "took back 'ready'";
+    case "fabric": return d.received === true ? `fabric received${d.fabric ? ": " + d.fabric : ""}`
+      : d.received === false ? `fabric NOT received${d.fabric ? " (" + d.fabric + ")" : ""}` : `fabric answer cleared${d.fabric ? " (" + d.fabric + ")" : ""}`;
     case "return_supplier": return `${on} return to supplier${d.note ? ": " + d.note : ""}`;
     case "done": return d.on ? "marked done" : "reopened";
     case "cancelled": return d.on ? "cancelled" : "reopened";
@@ -149,13 +204,118 @@ function ask(title, val) {
   });
 }
 
-/* One order's ISR cases, for the ISR tab inside the order's details (Production). Same cards and the
- * same controls as the full list; "+ New ISR" starts with this order filled in. */
+/* ================================================================ Production: the simple view
+ * One card per open ISR and four things to do on it: fabric received Yes / No, which fabric, take a
+ * picture, Report ready. Nothing else - raising and editing an ISR is the Installation coordinator's,
+ * in the Installation module. */
+const PF = { show: "todo", city: "", q: "" };
+export async function renderProduction(mount) {
+  if (!isSignedIn()) return;
+  mount.innerHTML = `<div class="sectionbar"><div class="subtabs"><a class="btn sm" href="#/production">✂️ Orders</a><button class="on">🔁 ISR · fabric &amp; ready</button></div></div>
+    <div class="card isrphead"></div><div class="isrplist"></div>`;
+  const head = mount.querySelector(".isrphead"), list = mount.querySelector(".isrplist");
+  const seg = (name, opts) => `<div class="isrseg" data-seg="${name}">${opts.map(([v, l]) =>
+    `<button class="btn sm ${PF[name] === v ? "accent" : ""}" data-v="${esc(v)}">${esc(l)}</button>`).join("")}</div>`;
+  let ROWS = [];
+  const paintHead = () => {
+    head.innerHTML = `<div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:center">
+        <h3 style="margin:0">ISR · fabric &amp; ready</h3>
+        <button class="btn sm ghost" data-reload>↻ Reload</button></div>
+      <div class="muted" style="font-size:12.5px;margin:4px 0 8px">For each issue: has the fabric come? Which fabric? Take a picture, then press <b>Report ready</b>. Installation sees it at once on the ISR cards (Step scheduler Stage 2 and Stage 4, and the Installation module).</div>
+      <div class="row" style="gap:10px;flex-wrap:wrap;align-items:center">
+        ${seg("show", [["todo", "To do"], ["ready", "Reported ready"], ["all", "All open"]])}
+        ${seg("city", [["", "Both cities"], ["Dubai", "Dubai"], ["Abu Dhabi", "Abu Dhabi"]])}
+        <input name="q" value="${esc(PF.q)}" placeholder="Search order, customer, fabric" style="max-width:260px">
+      </div>`;
+    head.querySelectorAll("[data-seg] button").forEach((b) => b.addEventListener("click", () => {
+      PF[b.closest("[data-seg]").dataset.seg] = b.dataset.v; paintHead(); paint();
+    }));
+    head.querySelector("[name=q]").addEventListener("input", (e) => { PF.q = e.target.value; paint(); });
+    head.querySelector("[data-reload]").addEventListener("click", load);
+  };
+  const paint = () => {
+    const q = PF.q.trim().toLowerCase();
+    const open = ROWS.filter((r) => (!PF.city || r.city_any === PF.city));
+    const rows = open.filter((r) => (PF.show === "all" || (PF.show === "ready" ? r.ready : !r.ready)) &&
+      (!q || [r.order_id, r.customer_any, r.issue, r.expected_new, r.fabric_name].join(" ").toLowerCase().includes(q)));
+    list.innerHTML = `<div class="muted" style="margin:4px 2px 8px">${rows.length} shown · ${open.filter((r) => !r.ready).length} to do, ${open.filter((r) => r.ready).length} reported ready</div>`;
+    if (!rows.length) { list.appendChild(el(`<div class="card"><span class="muted">${PF.show === "todo" ? "Nothing waiting on Production." : "No ISR matches."}</span></div>`)); return; }
+    rows.forEach((r) => list.appendChild(prodCard(r, load)));
+  };
+  const load = async () => {
+    loading(true, "Loading ISR…");
+    try { ROWS = await apiAll("/rest/v1/v_isr_cases?select=*&status=in.(open,scheduled)&order=id.desc"); }
+    catch (e) { loading(false); list.innerHTML = `<div class="card"><span class="err">${esc(e.message)}</span></div>`; return; }
+    loading(false);
+    paint();
+  };
+  paintHead();
+  await load();
+}
+
+function prodCard(r, reload) {
+  const ro = isViewer(), fr = r.fabric_received;
+  const c = el(`<div class="card isrpcard ${r.ready ? "isready" : ""}">
+    <div class="spread"><div><b>ISR #${r.id} · ${esc(r.order_id)}</b> ${esc(r.customer_any || "")} <span class="muted">${esc(r.city_any || "")}</span></div>
+      <div>${r.sched_day ? chipH(`scheduled ${fmtDate(r.sched_day)}${r.sched_team ? ", Team " + r.sched_team : ""}`, "info") : chipH("not scheduled yet", "mute")}</div></div>
+    <div class="isrtext">${esc(r.issue)}</div>
+    ${r.expected_new ? `<div style="font-size:13px;margin-top:4px"><span class="muted">New to arrive:</span> ${esc(r.expected_new)}</div>` : ""}
+    ${r.expected_back ? `<div style="font-size:13px"><span class="muted">Coming back from site:</span> ${esc(r.expected_back)}</div>` : ""}
+    <div class="isrpq">
+      <div class="isrpstep"><span class="isrpn">1</span><span class="isrpl">Fabric received?</span>
+        <button class="btn ${fr === true ? "accent" : ""}" data-fab="yes" ${ro ? "disabled" : ""} aria-pressed="${fr === true}">✓ Yes</button>
+        <button class="btn ${fr === false ? "danger" : ""}" data-fab="no" ${ro ? "disabled" : ""} aria-pressed="${fr === false}">✕ No</button>
+        ${r.fabric_by ? `<span class="muted" style="font-size:12px">${esc(who(r.fabric_by))} · ${esc(fmtDateTime(r.fabric_at))}</span>` : ""}</div>
+      <div class="isrpstep"><span class="isrpn">2</span><span class="isrpl">Which fabric</span>
+        <input data-fname value="${esc(r.fabric_name || "")}" placeholder="Fabric name / code" ${ro ? "disabled" : ""} style="flex:1;min-width:160px"></div>
+      <div class="isrpstep"><span class="isrpn">3</span><span class="isrpl">Picture</span><span data-photos style="flex:1"></span></div>
+      <div class="isrpstep"><span class="isrpn">4</span><span class="isrpl">Ready</span>
+        ${r.ready ? `${chipH(`✓ Reported ready · ${who(r.ready_by)} · ${fmtDateTime(r.ready_at)}`, "ok")} ${ro ? "" : `<button class="btn sm ghost" data-unready>Undo</button>`}`
+          : `<button class="btn primary" data-ready ${ro ? "disabled" : ""}>✓ Report ready</button>`}</div>
+    </div></div>`);
+  c.querySelector("[data-photos]").appendChild(photoStrip(photoMeta(r), { label: "Take a picture", onChange: () => { r.photo_count = Number(r.photo_count || 0) + 1; } }));
+  const nameIn = c.querySelector("[data-fname]");
+  /* Saves run ONE AFTER ANOTHER. Typing a fabric and then tapping Yes fires the field's change (on
+   * blur) and the click together; sent side by side, the blur's "keep the answer as it is" landed
+   * after the Yes and wiped it (seen 13 Nov 2026). Queued, the Yes is always the last word. */
+  let chain = Promise.resolve(), pending = 0;
+  const saveFabric = (received) => {
+    pending++;
+    chain = chain.then(async () => {
+      try {
+        await rpc("fn_isr_fabric", { p_id: r.id, p_received: received, p_fabric: nameIn.value });
+        r.fabric_received = received;
+        toast(received === true ? "Fabric received" : received === false ? "Fabric not received" : "Saved", "ok");
+      } catch (e) { toast(e.message || String(e), "bad"); }
+      if (--pending === 0) reload();
+    });
+  };
+  c.querySelectorAll("[data-fab]").forEach((b) => b.addEventListener("click", () => saveFabric(b.dataset.fab === "yes")));
+  // the fabric name saves when the field is left, keeping whatever Yes / No is already set
+  nameIn.addEventListener("change", () => { if (nameIn.value.trim() !== (r.fabric_name || "")) saveFabric(r.fabric_received ?? null); });
+  const rb = c.querySelector("[data-ready]");
+  if (rb) rb.addEventListener("click", async () => {
+    if (r.fabric_received !== true &&
+        !await confirmSheet("Report ready without the fabric?", "The fabric is not marked received on this ISR. Report it ready anyway?")) return;
+    try { await rpc("fn_isr_flag", { p_id: r.id, p_flag: "ready", p_on: true, p_note: null }); toast("Reported ready", "ok"); reload(); }
+    catch (e) { toast(e.message || String(e), "bad"); }
+  });
+  const ub = c.querySelector("[data-unready]");
+  if (ub) ub.addEventListener("click", async () => {
+    try { await rpc("fn_isr_flag", { p_id: r.id, p_flag: "ready", p_on: false, p_note: null }); toast("Ready taken back", "ok"); reload(); }
+    catch (e) { toast(e.message || String(e), "bad"); }
+  });
+  return c;
+}
+
+/* ================================================================ one order's ISR
+ * For the Installation panel of an order (which Stage 4's "Adjustment / status" also opens). Same
+ * cards and controls as the full list; "+ New ISR" starts with this order filled in. */
 export function orderIsrPanel(orderId) {
-  const box = el(`<div class="dsec"><div class="spread"><h4>ISR · issue resolution</h4>
+  const box = el(`<div class="dsec"><div class="spread"><h4>🔁 ISR · issue resolution</h4>
       ${isViewer() ? "" : `<button class="btn sm primary" data-new>＋ New ISR for ${esc(orderId)}</button>`}</div>
     <div data-list><span class="muted">Loading…</span></div>
-    <div class="muted" style="font-size:12px;margin-top:6px">Every open ISR is also in Stage 2 of the Step scheduler, to drag onto a team.</div></div>`);
+    <div class="muted" style="font-size:12px;margin-top:6px">Every open ISR is also in Stage 2 of the Step scheduler, to drag onto a team, and Production answers it under Production › ISR.</div></div>`);
   const list = box.querySelector("[data-list]");
   const load1 = async () => {
     let rows = [];

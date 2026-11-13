@@ -20,6 +20,7 @@ import { el, loading, toast, downloadXlsx } from "./ui.js";
 import { buildDay, CITY_CENTRE } from "./stepper-facts.js";
 import * as live from "./mod-stepper-live.js";   // Stage 4: the live day
 import * as sync from "./stepper-sync.js";       // the plan is shared between people (10 Nov 2026)
+import { isrBoard, fabricState } from "./mod-isr.js";   // ISR list in Stage 4, Production's answer on Stage 2 cards (13 Nov 2026)
 
 let R = null, BASE = null, ROSTER = null;                    // sched_settings stepper_rules / stepper_roster
 const DAYS = {};                                              // date -> {facts, held, inst, date_label, synced_at}
@@ -45,6 +46,7 @@ const teamColor = n => PALETTE[(Number(n) - 1 + PALETTE.length * 10) % PALETTE.l
 const slotsNow = () => [...new Set(IDS.map(i => F[i].sheet_slot))].sort();
 // F[i].sheet_slot is the 3D sheet's time; F[i].slot is the (editable) working time
 function buildF(){
+  LEG.clear();                                    // locations may have changed (pins, refreshed sheet)
   F = clone(DAY.facts);
   (state.added || []).forEach(i => { if (DAY.held[i]) { F[i] = clone(DAY.held[i]); F[i].hold = true; } });
   Object.entries(state.extra || {}).forEach(([i, f]) => { F[i] = clone(f); F[i].manual = true; });
@@ -65,7 +67,7 @@ function buildF(){
   // a saved plan can name an order the refreshed 3D sheet no longer has; drop it instead of crashing on F[id]
   if (state.assign){
     for (const t in state.assign) state.assign[t] = state.assign[t].filter(i => F[i]);
-    state.waveIds = (state.waveIds || []).filter(i => F[i]); state.history = (state.history || []).filter(h => F[h.id]);
+    state.waveIds = (state.waveIds || []).filter(i => F[i]); state.history = (state.history || []).filter(h => h.bulk || F[h.id]);
   }
 }
 let hadLocal = false;
@@ -157,19 +159,54 @@ function curId(){ return IDS.includes(state.cur) ? state.cur : (queue()[0] || nu
 const teamOf = n => state.teams.find(t => t.team === Number(n));
 const tname = n => (teamOf(n) || {}).name || ("Team " + n);
 
-/* ---------------- travel: the day's matrix where it exists, else straight-line + the same speed bands ---------------- */
+/* ---------------- travel: the day's matrix where it exists, else straight-line + the same speed bands ----------------
+ * 13 Nov 2026 (user: "many times the distance between two locations is assumed to be just 5 minutes").
+ * The 5 minutes was the same-place rule firing for points that are NOT one place:
+ *   - every address the resolver could not place sits on the city centre, so two of them were 0 km apart.
+ *     Now a leg to or from an UNKNOWN location is a typical city leg (travel.unknown_min, 35), flagged;
+ *   - two different addresses resolved to the same community centre were also 0 km apart. Now that is a
+ *     short drive inside the community (travel.same_community_min, 12); only the same address, or two exact
+ *     pins under 300 m apart, is the same place (5);
+ *   - rush hour (travel.peak, 07:00-09:30 and 16:30-19:30) makes the drive slower (travel.peak_factor 1.3).
+ * drive() returns [minutes, km, note]; note says which assumption made the number. */
 const tkOf = x => x === "BASE" ? "BASE" : (F[x].manual ? null : (F[x].hold ? "H" + x : x));
 const ptOf = x => x === "BASE" ? [BASE.lat, BASE.lng] : (F[x].lat != null ? [F[x].lat, F[x].lng] : (CITY_CENTRE[F[x].city] || [BASE.lat, BASE.lng]));
-function drive(a, b){
-  const ka = tkOf(a), kb = tkOf(b);
-  if (ka && kb && T[ka] && T[ka][kb] != null) return [T[ka][kb], (KM[ka] || {})[kb] || 0];
-  const A = ptOf(a), B = ptOf(b), rad = Math.PI / 180, dl = (B[0] - A[0]) * rad, dg = (B[1] - A[1]) * rad;
-  const h = Math.sin(dl / 2) ** 2 + Math.cos(A[0] * rad) * Math.cos(B[0] * rad) * Math.sin(dg / 2) ** 2;
-  const d = 2 * 6371 * Math.asin(Math.sqrt(h)), tr = R.travel;
-  if (d < tr.same_place_km) return [tr.same_place_min, 0];
-  const band = tr.bands.find(x => x.max_km == null || d <= x.max_km), road = d * band.road_factor;
-  return [Math.round(road / band.kmh * 60 + tr.buffer_min), Math.round(road * 10) / 10];
+const normAddr = s => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const EXACT = new Set(["manual", "link", "plus code", "low"]);       // a real pin, not a community centre
+const LEG = new Map();                                                 // a -> b without rush hour; cleared by buildF
+function baseLeg(a, b){
+  const k = a + ">" + b; if (LEG.has(k)) return LEG.get(k);
+  const tr = R.travel; let out;
+  if (a === b) out = [0, 0, ""];
+  else if ((a !== "BASE" && F[a].loc_unknown) || (b !== "BASE" && F[b].loc_unknown))
+    out = [tr.unknown_min ?? 35, tr.unknown_km ?? 18, "location unknown"];
+  else {
+    const A = ptOf(a), B = ptOf(b), rad = Math.PI / 180, dl = (B[0] - A[0]) * rad, dg = (B[1] - A[1]) * rad;
+    const h = Math.sin(dl / 2) ** 2 + Math.cos(A[0] * rad) * Math.cos(B[0] * rad) * Math.sin(dg / 2) ** 2;
+    const d = 2 * 6371 * Math.asin(Math.sqrt(h));
+    if (d < tr.same_place_km){
+      const same = a !== "BASE" && b !== "BASE" && normAddr(F[a].address) && normAddr(F[a].address) === normAddr(F[b].address);
+      const exact = (a === "BASE" || EXACT.has(F[a].loc_confidence)) && (b === "BASE" || EXACT.has(F[b].loc_confidence));
+      out = same || exact ? [tr.same_place_min, 0, "same place"] : [tr.same_community_min ?? 12, 1, "same community"];
+    } else {
+      const band = tr.bands.find(x => x.max_km == null || d <= x.max_km), road = d * band.road_factor;
+      out = [road / band.kmh * 60, Math.round(road * 10) / 10, ""];      // driving only; the buffer is added in drive()
+    }
+  }
+  LEG.set(k, out); return out;
 }
+function inPeak(clock){
+  return clock != null && (R.travel.peak || []).some(([s, e]) => clock >= mins(s) && clock < mins(e));
+}
+function drive(a, b, clock){
+  const ka = tkOf(a), kb = tkOf(b);
+  if (ka && kb && T[ka] && T[ka][kb] != null) return [T[ka][kb], (KM[ka] || {})[kb] || 0, ""];
+  const [m, km, note] = baseLeg(a, b);
+  if (note) return [m, km, note];                                      // flat assumptions: no buffer, no rush hour
+  const pk = inPeak(clock) ? (R.travel.peak_factor || 1) : 1;
+  return [Math.round(m * pk + R.travel.buffer_min), km, pk > 1 ? "rush hour" : ""];
+}
+const legNote = s => s.tnote ? ` · ${s.tnote === "location unknown" ? "location unknown, assumed" : s.tnote}` : "";
 
 /* ---------------- timing (same model as the Team Board / sched_eval.py) ---------------- */
 // Nothing is ever moved EARLIER than its appointment unless "allow earlier" is on, and the first-wave
@@ -185,17 +222,17 @@ function simulate(seq){
   if (seq.length) clock = Math.max(mins(BASE.depart_earliest || "07:00"), earliest(seq[0]) - drive("BASE", seq[0])[0]);
   const depart = clock;
   for (const id of seq){
-    const f = F[id], [tr, dkm] = drive(prev, id); travel += tr; km += dkm;
+    const f = F[id], [tr, dkm, tnote] = drive(prev, id, clock); travel += tr; km += dkm;
     /* ETA typed by the user: the team is on site at that time, whatever the drive and appointment say */
     const eo = state.eta && state.eta[id], arrive0 = clock + tr;
     const start = eo ? mins(eo) : Math.max(arrive0, earliest(id)), arrive = eo ? start : arrive0;
     const delay = f.slot && !f.flex ? start - mins(f.slot) : 0;          // + = later than the appointment
     const late = delay > FREE_LATE ? delay : 0, minor = delay > 0 && !late ? delay : 0;
     const end = start + f.minutes, limit = f.villa ? mins(R.villa_work_end) : mins(R.work_end);
-    stops.push({id, eta_set: !!eo, from: prev, travel: tr, km: dkm, arrive, start, end, wait: start - arrive, delay, late, minor, over: Math.max(0, end - limit)});
+    stops.push({id, eta_set: !!eo, from: prev, travel: tr, km: dkm, tnote, arrive, start, end, wait: start - arrive, delay, late, minor, over: Math.max(0, end - limit)});
     clock = end; prev = id;
   }
-  const back = seq.length ? drive(prev, "BASE")[0] : 0;
+  const back = seq.length ? drive(prev, "BASE", clock)[0] : 0;
   return {stops, depart, home: seq.length ? clock + back : null, back, travel, km,
     orders: seq.length, windows: seq.reduce((a, i) => a + F[i].windows, 0), work: seq.reduce((a, i) => a + F[i].minutes, 0),
     free: seq.length ? clock : null, cities: [...new Set(seq.map(i => F[i].city))]};
@@ -227,7 +264,7 @@ function candidates(id){
     const prevId = idx > 0 ? nseq[idx - 1] : null, prevStop = idx > 0 ? after.stops[idx - 1] : null;
     let score = (driveOut(after) - driveOut(before)) + 0.5 * st.wait + (pen(after) - pen(before)) + 3 * seq.length;
     const why = [];
-    if (prevId) why.push(`${st.travel} min drive (${st.km} km) from ${prevId}, free ${hm(prevStop.end)}`);
+    if (prevId) why.push(`${st.travel} min drive (${st.km} km${st.tnote ? ", " + st.tnote : ""}) from ${prevId}, free ${hm(prevStop.end)}`);
     else why.push(`first job of the day, leaves ${hm(after.depart)}`);
     why.push(`arrives ${hm(st.arrive)}`);
     let verdict = "good", vtxt = "on time";
@@ -257,6 +294,9 @@ function assignTo(id, team){
 }
 function undo(){
   const h = state.history.pop(); if (!h) return;
+  // a whole plan put in by the optimiser comes back out in one step
+  if (h.bulk){ state.assign = h.bulk; state.teams.forEach(t => { state.assign[t.team] = (state.assign[t.team] || []).filter(i => F[i]); });
+    state.cur = null; save("Undo: the optimised plan taken back out"); paint(); return; }
   for (const t in state.assign) state.assign[t] = state.assign[t].filter(i => i !== h.id);
   if (h.was) state.assign[h.was] = insertAt(state.assign[h.was] || [], h.id);
   state.cur = h.id; save(`Undo: ${h.id} back to ${h.was ? tname(h.was) : "no team"}`); paint();
@@ -300,7 +340,7 @@ function deleteTeam(n){
   const gone = tname(n);
   state.teams = state.teams.filter(t => t.team !== n); delete state.assign[n];
   state.history.forEach(h => { if (Number(h.was) === n) h.was = null; });
-  if (state.notes) delete state.notes.team[n];
+  if (state.notes){ delete state.notes.team[n]; if (state.notes.scratch) delete state.notes.scratch[n]; }
   hiddenTeams.delete(n); delArmed = null; save(`Deleted ${gone}`); paint();
 }
 let delArmed = null, delTimer = null;            // same two-press confirm as Start again
@@ -437,7 +477,7 @@ function renderStage1(){
         <td><select data-team-for="${oid}" aria-label="Team for ${oid}">${optsFor(oid)}</select></td></tr>`; }).join("")}
     </tbody></table></div>`;
   const gone = state.removed.map(i => DAY.facts[i] || DAY.held[i]).filter(f => f && f.city === UI.city);
-  $("s1").innerHTML = head + captionHtml() + focus + `<div class="panel" style="padding:0;margin-top:8px">${table}</div>
+  $("s1").innerHTML = head + captionHtml() + `<div id="stp-optbox">${optHtml()}</div>` + focus + nextHtml() + `<div class="panel" style="padding:0;margin-top:8px">${table}</div>
     ${gone.length ? `<div class="muted" style="font-size:12px;margin-top:6px">Removed from this list: ${gone.map(f => `<span class="chip">${esc(f.order_id)} ${esc(f.customer)} <button class="lnk" data-restore="${esc(f.order_id)}">restore</button></span>`).join(" ")}</div>` : ""}
     <div class="muted" style="font-size:12px;margin-top:6px">Start times come from the 3D sheet${DAY.synced_at ? " (synced " + String(DAY.synced_at).slice(0, 16).replace("T", " ") + " UTC)" : ""}${edited ? `; ${edited} edited here` : ""}. Edit a time and the end time and team options update. The first-wave (${state.wave}) orders are never moved earlier.</div>`;
   const tw = $("tw"); if (tw) tw.scrollTop = keep;
@@ -496,12 +536,12 @@ function renderStage2(){
     let body = seq.length ? "" : `<div class="empty">No orders. Drag one here.</div>`;
     r.stops.forEach((s, i) => {
       const f = F[s.id];
-      body += `<p class="drv">${i === 0 ? `leave ${hm(r.depart)} · ` : ""}🚐 ${s.travel} min · ${s.km} km</p>
+      body += `<p class="drv">${i === 0 ? `leave ${hm(r.depart)} · ` : ""}🚐 ${s.travel} min · ${s.km} km${legNote(s)}</p>
       <div class="stop ${f.emaar ? (f.maybe ? "emaar maybe" : "emaar") : ""} ${f.kind === "ISR" ? "isr" : ""}" draggable="true" data-id="${s.id}" data-team="${t.team}" style="--tc:${tc}">
         <div class="l1"><span class="sheett" title="Time on the 3D sheet"><span>3D</span><b>${esc(f.sheet_slot)}</b></span>${f.slot !== f.sheet_slot ? `<em class="youset" title="You changed the time">→ ${esc(f.slot)}</em>` : ""}<span class="who" title="${esc(s.id + " " + f.customer)}"><span class="oid">${s.id}</span> ${esc(f.customer)}</span><button class="lnk rmx" data-remove="${s.id}" title="Remove from this day's plan (you can restore it above)" aria-label="Remove ${s.id}">✕</button></div>
         <div class="pt">Appt <input type="time" step="300" class="tin" value="${esc(f.slot)}" data-time="${s.id}" draggable="false" title="Change the appointment time" aria-label="Start time of ${s.id}"> · Planned <b>${hm(s.start)}–${hm(s.end)}</b> · ETA <input type="time" step="300" class="tin" value="${hm(s.arrive)}" data-eta="${s.id}" draggable="false" title="Change when the team arrives and starts" aria-label="ETA of ${s.id}">${s.eta_set ? ` <button class="lnk" data-etareset="${s.id}" draggable="false">reset</button>` : ""} <label class="isrtog"><input type="checkbox" data-isr="${s.id}" draggable="false" ${f.kind === "ISR" ? "checked" : ""}>ISR</label>${s.delay > 0 ? ` <span class="chip ${s.late ? "bad" : "warn"}">+${s.delay}</span>` : ""}${s.over ? ` <span class="chip bad">after limit</span>` : ""}</div>
         <div class="ad" title="${esc(f.address)}">${esc(f.address)}</div>
-        <div class="locl">${locHtml(s.id, true)}${f.gone3d ? ' <span class="chip bad">not on the 3D sheet now</span>' : ""}${f.isr_id ? ` <span class="chip">ISR #${f.isr_id}</span>` : ""}</div>
+        <div class="locl">${locHtml(s.id, true)}${f.gone3d ? ' <span class="chip bad">not on the 3D sheet now</span>' : ""}${f.isr_id ? ` ${isrChip(f.isr_id)}` : ""}</div>
         <div class="jw2"><label class="etog ${f.emaar ? "on" : ""}" draggable="false" title="${f.maybe ? "The address MIGHT be Emaar: tick or untick to decide" : "Tick if this is an Emaar property (the card turns yellow; remembered for the address)"}"><input type="checkbox" data-emaar="${s.id}" draggable="false" ${f.emaar ? "checked" : ""}>${f.maybe ? "Emaar?" : "Emaar"}</label> · ${workLineHtml(s.id)}</div>
         ${specialsHtml(s.id)}
         <input class="onote2" data-onote="${s.id}" data-team="${t.team}" draggable="false" value="${esc(notes().order[s.id] || "")}" placeholder="Note (goes on WhatsApp)" aria-label="Note for ${s.id}"></div>`;
@@ -510,13 +550,19 @@ function renderStage2(){
     return `<article class="team" data-team="${t.team}" style="--tc:${tc}">
       <div class="th"><input class="nm" list="stp-crews" value="${esc(t.name)}" data-tname="${t.team}" aria-label="Name of team ${t.team}" placeholder="Type a name, or pick a crew">${state.teams.length > 1 ? `<button class="lnk tdel ${armed ? "armed" : ""}" data-delteam="${t.team}" title="Delete this team${seq.length ? "; its orders go back to Not on a team" : ""}" aria-label="Delete ${esc(t.name)}">${armed ? `Delete? ${seq.length} order${seq.length > 1 ? "s" : ""} go back` : "✕"}</button>` : ""}</div>
       <input class="mem" list="stp-crews" value="${esc((t.members || []).join(" & "))}" data-tmem="${t.team}" aria-label="Members of team ${t.team}" placeholder="Members, e.g. Ikbal & Kaleem">
+      <textarea class="scratch" data-tscratch="${t.team}" rows="2" draggable="false" placeholder="Internal scratch notes (only here - never sent to the team)" aria-label="Internal scratch notes for team ${t.team}">${esc((notes().scratch || {})[t.team] || "")}</textarea>
       <div class="metrics"><span><b>${r.orders}</b> jobs</span><span><b class="nwin">${r.windows}</b> win</span><span><b>${(r.work / 60).toFixed(1)}</b> h</span>${r.orders ? `<span><b>${hm(r.depart)}</b>–<b>${hm(r.home)}</b></span>` : ""}</div>
       ${rules.map(([lv, tx]) => `<div><span class="chip ${lv === "bad" ? "bad" : "warn"}">${esc(tx)}</span></div>`).join("")}
       ${body}</article>`;
   }).join("");
   $("teams").innerHTML = teamsHtml;
   renderIsrTray();
-  if (!ISRC.rows || Date.now() - ISRC.at > 60000) loadIsr().then(() => { if (state.stage === 2) renderIsrTray(); });
+  // the team cards' "ISR #n · ready" chips need the rows too: redraw once they land, unless somebody is typing there
+  if (!ISRC.rows || Date.now() - ISRC.at > 60000) loadIsr().then(() => {
+    if (state.stage !== 2) return;
+    const tm = $("teams");
+    if (tm && !tm.contains(document.activeElement) && Object.values(F).some(f => f.isr_id)) renderStage2(); else renderIsrTray();
+  });
 }
 
 /* ---------------- ISR cards (Production > ISR), in Stage 2 (user, 10 Nov 2026) ----------------
@@ -528,9 +574,21 @@ const ISR_TYPE = {on_the_spot: "On the spot", new_fabric: "New fabric", planned_
 const ISR_SRC = {production: "Production issue", installation: "Installation issue", consultation: "Consultation issue", client_change_of_mind: "Client change of mind", fabric: "Fabric issue", others_kurtains: "Others - Kurtains"};
 async function loadIsr(){
   try {
-    ISRC.rows = await api(`/rest/v1/v_isr_cases?select=id,order_id,customer_any,city_any,address,isr_type,source,issue,expected_back,expected_new,readiness,return_supplier,status,sched_day,sched_city,sched_team&status=in.(open,scheduled)&order=id.desc`) || [];
+    ISRC.rows = await api(`/rest/v1/v_isr_cases?select=id,order_id,customer_any,city_any,address,isr_type,source,issue,expected_back,expected_new,readiness,return_supplier,status,sched_day,sched_city,sched_team,ready,ready_by,ready_at,fabric_received,fabric_name,fabric_by,fabric_at,photo_count&status=in.(open,scheduled)&order=id.desc`) || [];
     ISRC.at = Date.now(); ISRC.err = "";
   } catch (e) { ISRC.err = (e && e.message) || "Could not load the ISR cards"; ISRC.rows = ISRC.rows || []; }
+}
+/* Production's answer (Production > ISR · fabric & ready): fabric yes / no, which fabric, pictures, ready */
+const who1 = e => String(e || "").split("@")[0];
+function isrProdHtml(r){
+  const f = fabricState(r), tone = {ok: "good", bad: "bad", mute: "", info: "", warn: "warn"};
+  return `<div class="isrprod"><span class="chip ${tone[f.tone]}" title="${esc(r.fabric_by ? who1(r.fabric_by) + " " + String(r.fabric_at || "").slice(0, 16).replace("T", " ") : "Production has not answered yet")}">${esc(f.text)}</span>${r.fabric_name ? ` <b>${esc(r.fabric_name)}</b>` : ""}${Number(r.photo_count) ? ` <span class="chip" title="Pictures from Production - open the ISR list to see them">📷 ${r.photo_count}</span>` : ""} ${r.ready ? `<span class="chip good" title="${esc(String(r.ready_at || "").slice(0, 16).replace("T", " "))}">✓ ready · ${esc(who1(r.ready_by))}</span>` : `<span class="chip warn">not reported ready</span>`}</div>`;
+}
+function isrChip(id){
+  const r = (ISRC.rows || []).find(x => x.id === id);
+  if (!r) return `<span class="chip">ISR #${id}</span>`;
+  const f = fabricState(r);
+  return `<span class="chip ${r.ready ? "good" : f.tone === "bad" ? "bad" : "warn"}" title="${esc(f.text + (r.fabric_name ? ": " + r.fabric_name : "") + (r.ready ? " · reported ready" : " · not reported ready"))}">ISR #${id} · ${r.ready ? "ready" : f.tone === "ok" ? "fabric in" : f.tone === "bad" ? "no fabric" : "waiting"}</span>`;
 }
 function isrOnPlan(id){ return Object.keys(F).find(i => F[i].isr_id === id) || null; }
 function renderIsrTray(){
@@ -549,7 +607,7 @@ function renderIsrTray(){
   box.innerHTML = `<div class="trh"><h2>ISR cards (${show.length}${show.length !== mine.length ? " of " + mine.length : ""})</h2>
       <span class="trb"><label class="muted">Readiness <select id="stp-isrfilter">
         ${[["all", "All"], ["waiting", "Waiting"], ["received", "Received back"], ["ready", "Ready"], ["return", "To return to supplier"]].map(([v, l]) => `<option value="${v}" ${f === v ? "selected" : ""}>${l}${v === "all" ? "" : " (" + cnt(v) + ")"}</option>`).join("")}</select></label>
-      <button class="btn small" data-isrreload="1">↻</button> <a class="btn small" href="#/isr" target="_blank" rel="noopener">Open ISR list ↗</a></span></div>
+      <button class="btn small" data-isrreload="1">↻</button> <a class="btn small" href="#/status?view=isr" target="_blank" rel="noopener">Open ISR list ↗</a></span></div>
     ${ISRC.err ? `<div class="chip bad">${esc(ISRC.err)}</div>` : ""}
     <div class="isrcards">${show.length ? show.map(r => { const on = isrOnPlan(r.id), rd = RD[r.readiness] || RD.waiting;
       return `<div class="isrcard ${on ? "onplan" : ""}" draggable="${on ? "false" : "true"}" data-id="isr:${r.id}" title="${on ? "Already on the plan" : "Drag onto a team"}">
@@ -557,6 +615,7 @@ function renderIsrTray(){
         <div class="muted" style="font-size:11.5px">${esc(ISR_TYPE[r.isr_type] || r.isr_type)} · ${esc(ISR_SRC[r.source] || r.source)}${r.sched_day ? ` · scheduled ${esc(r.sched_day)}${r.sched_city ? " " + esc(r.sched_city) : ""}` : ""}</div>
         <div class="isrissue">${esc(r.issue)}</div>
         ${r.expected_back || r.expected_new ? `<div class="muted" style="font-size:11.5px">${r.expected_back ? "Back from site: " + esc(r.expected_back) : ""}${r.expected_back && r.expected_new ? " · " : ""}${r.expected_new ? "New: " + esc(r.expected_new) : ""}</div>` : ""}
+        ${isrProdHtml(r)}
         <div>${on3d(r)}${on ? ` <span class="chip good">on the plan (${esc(on)})</span>` : ""}</div></div>`; }).join("")
       : `<span class="muted">No ${f === "all" ? "" : "such "}open ISR for ${esc(UI.city)}.</span>`}</div>`;
 }
@@ -748,10 +807,223 @@ function assignAllSuggested(){
   go(2);
   return n;
 }
+/* ---------------- next order for each team (user, 13 Nov 2026) ----------------
+ * "Look at the end time of the previous order, calculate the travel time, and match the closest order."
+ * For every team: where its last job ends and when, the drive from there (rush hour included) to each order
+ * still on no team, and the nearest one it can reach in time - no time change, inside the working day.
+ * Teams are served in the order they come free, so two teams never get the same order. An order nobody can
+ * reach in time is offered only when nothing else fits, and is marked. */
+function nextForTeams(){
+  const left = new Set(queue()), out = [];
+  const teams = state.teams.map(t => { const seq = state.assign[t.team] || [], r = simulate(seq);
+    return {t, seq, free: seq.length ? r.free : null, last: seq.length ? seq[seq.length - 1] : null}; })
+    .sort((a, b) => (a.free ?? -1) - (b.free ?? -1) || a.t.team - b.t.team);
+  for (const x of teams){
+    let best = null;
+    for (const id of left){
+      const r = simulate(x.seq.concat([id])), st = r.stops[r.stops.length - 1];
+      const ok = !st.late && !st.over;
+      // nearest first; idle time at the door counts a quarter, so a close order four hours away does not win
+      const cost = st.travel + 0.25 * Math.max(0, st.wait) + (ok ? 0 : 1000 + st.late * 20 + st.over * 50);
+      if (!best || cost < best.cost) best = {id, st, ok, cost};
+    }
+    if (!best) break;
+    left.delete(best.id);
+    out.push({team: x.t.team, from: x.last, free: x.free, ...best});
+  }
+  return out.sort((a, b) => a.team - b.team);
+}
+function nextHtml(){
+  if (!queue().length || !state.teams.length) return "";
+  const nx = nextForTeams();
+  if (!nx.length) return "";
+  return `<div class="panel nextpanel"><div class="nph"><b>Next order for each team</b> <span class="muted">where its last job ends → drive → the nearest order it can reach in time</span>
+      <button class="btn small" id="stp-b-nextall" title="Give every team its next order below, in one go">Assign all ${nx.length}</button></div>
+    <div class="nprows">${nx.map(n => { const f = F[n.id], st = n.st;
+      return `<div class="nprow" data-hot="${n.team}"><span class="sw" style="background:${teamColor(n.team)}"></span><b>${esc(tname(n.team))}</b>
+        <span class="muted">${n.from ? `free ${hm(n.free)} at ${esc(n.from)}` : `no job yet, leaves ${hm(st.arrive - st.travel)}`}</span> →
+        <b>${esc(n.id)}</b> ${esc(f.customer)} <span class="muted">appt ${esc(f.slot)}</span>
+        · 🚐 ${st.travel} min${st.tnote ? ` <span class="muted">(${esc(st.tnote)})</span>` : ""} · arrives ${hm(st.arrive)}${st.wait > 15 ? `, waits ${Math.round(st.wait)} min` : ""}
+        ${n.ok ? (st.minor ? `<span class="chip warn">+${st.minor} min</span>` : `<span class="chip good">on time</span>`) : `<span class="chip bad">${st.late ? "TIME CHANGE +" + st.late : "after the day limit"}</span>`}
+        <button class="btn small" data-assignnext="${esc(n.id)}" data-team="${n.team}">Assign</button></div>`; }).join("")}</div></div>`;
+}
+function assignNextAll(){
+  const nx = nextForTeams(); if (!nx.length) return;
+  nx.forEach(n => { state.assign[n.team] = (state.assign[n.team] || []).concat([n.id]); state.history.push({id: n.id, team: n.team, was: null}); });
+  state.cur = null; save(`Gave ${nx.length} team${nx.length > 1 ? "s" : ""} their next order`); paint();
+}
+
+/* ---------------- optimiser: many plans, the best one recommended (user, 13 Nov 2026) ----------------
+ * "Make multiple permutations and iterations, and then recommend an optimum plan."
+ * Several hundred starting plans are built - the plan on screen, appointment-order greedy, nearest-next per
+ * team (the rule above), shuffled orders with random tie-breaks - and each is improved by local search: move
+ * one order to its best place on any team, swap two orders between teams, until nothing improves. Then the
+ * best few are shaken (a few random moves) and improved again. It runs for about 4 seconds, seeded by
+ * date + city so the same day gives the same answer. Same number of teams as the plan on screen; a team
+ * can end up empty.
+ *
+ * Cost of a plan, in minutes (lower is better), summed per team so a move only re-costs two teams:
+ *   time change (start > 1 h after the appointment) x20 per minute, a start inside the free hour x2,
+ *   past the end of the working day x50, driving x1 (the drive home x0.5), waiting at a door x0.3,
+ *   each crew carrying an Emaar job 25, scaffolding 10, a named crew's people rule broken 200. */
+const OPT = {busy: false, res: null, progress: "", show: null};
+function rng(seed){ let a = seed >>> 0; return () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function hashStr(s){ let h = 2166136261; for (const c of String(s)) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0; }
+async function optimise(budgetMs = 4000){
+  if (OPT.busy) return; OPT.busy = true; OPT.res = null; OPT.show = null; paintOpt();
+  const ids = IDS.slice(), teams = state.teams.map(t => t.team), rand = rng(hashStr(UI.date + UI.city));
+  const SIM = new Map(), TC = new Map();
+  const sim = seq => { const k = seq.join(","); let r = SIM.get(k); if (!r){ r = simulate(seq); SIM.set(k, r); } return r; };
+  const teamCost = (tn, seq) => {
+    if (!seq.length) return 0;
+    const k = tn + "|" + seq.join(","); let c = TC.get(k); if (c != null) return c;
+    const r = sim(seq);
+    c = r.stops.reduce((a, x) => a + x.late * 20 + x.minor * 2 + x.over * 50 + x.travel + 0.3 * Math.max(0, x.wait), 0) + 0.5 * r.back;
+    if (seq.some(i => F[i].emaar)) c += 25;
+    if (seq.some(i => F[i].scaffolding)) c += 10;
+    c += crewRules(teamOf(tn), seq).filter(x => x[0] === "bad").length * 200;
+    TC.set(k, c); return c;
+  };
+  const total = P => teams.reduce((a, t) => a + teamCost(t, P[t]), 0);
+  const bestPos = (tn, seq, id) => { let bp = null, bc = Infinity;
+    for (let i = 0; i <= seq.length; i++){ const s2 = seq.slice(0, i).concat([id], seq.slice(i)), c = teamCost(tn, s2); if (c < bc){ bc = c; bp = s2; } }
+    return [bp, bc]; };
+  const insertAll = (P, order, noise) => { for (const id of order){ let bt = null, bs = null, bd = Infinity;
+      for (const t of teams){ const [s2, c] = bestPos(t, P[t], id), d = c - teamCost(t, P[t]) + (noise ? noise * rand() * 30 : 0); if (d < bd){ bd = d; bt = t; bs = s2; } }
+      P[bt] = bs; } return P; };
+  const empty = () => Object.fromEntries(teams.map(t => [t, []]));
+  const bySlot = () => ids.slice().sort((a, b) => F[a].slot.localeCompare(F[b].slot) || rand() - 0.5);
+  const nearestNext = noise => {                 // the "next order for each team" rule, run to the end
+    const P = empty(), left = new Set(ids);
+    while (left.size){
+      const tf = teams.map(t => [t, P[t].length ? sim(P[t]).free : -1]).sort((a, b) => a[1] - b[1]);
+      let placed = false;
+      for (const [t] of tf){ let best = null, bc = Infinity;
+        for (const id of left){ const r = sim(P[t].concat([id])), st = r.stops[r.stops.length - 1];
+          const c = st.travel + 0.25 * Math.max(0, st.wait) + (st.late || st.over ? 1000 + st.late * 20 + st.over * 50 : 0) + noise * rand() * 20;
+          if (c < bc){ bc = c; best = id; } }
+        if (best && bc < 1000){ P[t] = P[t].concat([best]); left.delete(best); placed = true; break; }
+      }
+      if (!placed){ insertAll(P, [...left], 0); break; }   // nobody reaches the rest in time: cheapest insertion
+    }
+    return P;
+  };
+  const improve = P => {                          // relocate + swap until no move helps
+    let better = true, guard = 0;
+    while (better && guard++ < 60){
+      better = false;
+      for (const id of ids.slice().sort(() => rand() - 0.5)){
+        const from = teams.find(t => P[t].includes(id)); if (from == null) continue;
+        const rest = P[from].filter(i => i !== id), saved = teamCost(from, P[from]) - teamCost(from, rest);
+        let bt = null, bs = null, gain = 0.01;
+        for (const t of teams){ const cur = t === from ? rest : P[t], [s2, c] = bestPos(t, cur, id), add = c - teamCost(t, cur);
+          if (saved - add > gain){ gain = saved - add; bt = t; bs = s2; } }
+        if (bt != null){ P[from] = rest; P[bt] = bs; better = true; }
+      }
+      for (let a = 0; a < teams.length; a++) for (let b = a + 1; b < teams.length; b++){
+        const ta = teams[a], tb = teams[b];
+        for (const x of P[ta].slice()) for (const y of P[tb].slice()){
+          if (!P[ta].includes(x) || !P[tb].includes(y)) continue;
+          const ra = P[ta].filter(i => i !== x), rb = P[tb].filter(i => i !== y);
+          const [na, ca] = bestPos(ta, ra, y), [nb, cb] = bestPos(tb, rb, x);
+          if (ca + cb < teamCost(ta, P[ta]) + teamCost(tb, P[tb]) - 0.01){ P[ta] = na; P[tb] = nb; better = true; }
+        }
+      }
+    }
+    return P;
+  };
+  const shake = (P, k) => { const Q = Object.fromEntries(teams.map(t => [t, P[t].slice()]));
+    for (let i = 0; i < k; i++){ const id = ids[Math.floor(rand() * ids.length)], from = teams.find(t => Q[t].includes(id)), to = teams[Math.floor(rand() * teams.length)];
+      if (from == null || to === from) continue; Q[from] = Q[from].filter(x => x !== id); Q[to] = bestPos(to, Q[to], id)[0]; }
+    return Q; };
+  const sig = P => teams.map(t => P[t].slice().sort().join(",")).filter(Boolean).sort().join(" | ");
+  const pool = new Map();                         // signature (who is with whom) -> best version of that plan
+  const keep = P => { const c = total(P), s = sig(P), o = pool.get(s); if (!o || c < o.cost) pool.set(s, {P: Object.fromEntries(teams.map(t => [t, P[t].slice()])), cost: c}); };
+
+  const t0 = performance.now(); let tries = 0;
+  const current = Object.fromEntries(teams.map(t => [t, (state.assign[t] || []).filter(i => ids.includes(i))]));
+  const placedNow = new Set(Object.values(current).flat());
+  // the plan on screen is compared even when some orders are not on a team yet (it then looks cheaper than it is)
+  const unplaced = ids.filter(i => !placedNow.has(i)).length, curCost = placedNow.size ? total(current) : null;
+  const starts = [
+    () => insertAll(Object.fromEntries(teams.map(t => [t, current[t].slice()])), ids.filter(i => !placedNow.has(i)), 0),
+    () => insertAll(empty(), bySlot(), 0),
+    () => nearestNext(0),
+  ];
+  try {
+    while (ids.length && performance.now() - t0 < budgetMs * 0.7 && tries < 600){
+      const k = tries++;
+      const P = k < starts.length ? starts[k]()
+        : k % 3 === 0 ? nearestNext(1) : k % 3 === 1 ? insertAll(empty(), bySlot(), 1) : insertAll(empty(), ids.slice().sort(() => rand() - 0.5), 0.5);
+      keep(improve(P));
+      if (k % 4 === 3){ OPT.progress = `Tried ${tries} plans…`; paintOpt(); await new Promise(r => setTimeout(r, 0)); }
+    }
+    let elite = [...pool.values()].sort((a, b) => a.cost - b.cost).slice(0, 5);
+    while (performance.now() - t0 < budgetMs && elite.length){        // shake the best ones and improve again
+      const e = elite[Math.floor(rand() * elite.length)];
+      keep(improve(shake(e.P, 2 + Math.floor(rand() * 3)))); tries++;
+      if (tries % 4 === 0){ elite = [...pool.values()].sort((a, b) => a.cost - b.cost).slice(0, 5); OPT.progress = `Tried ${tries} plans…`; paintOpt(); await new Promise(r => setTimeout(r, 0)); }
+    }
+    const top = [...pool.values()].sort((a, b) => a.cost - b.cost).slice(0, 3);
+    OPT.res = {tries, ms: Math.round(performance.now() - t0), top: top.map(x => ({...x, m: planMetrics(x.P)})),
+      cur: curCost != null ? {cost: curCost, m: planMetrics(current), unplaced} : null, unknown: ids.filter(i => F[i].loc_unknown), key: scopeKey()};
+  } catch (e) { OPT.res = {err: (e && e.message) || String(e), key: scopeKey()}; }
+  OPT.busy = false; OPT.progress = ""; paint();
+}
+function planMetrics(P){
+  const m = {teams: 0, late: 0, lateMin: 0, minor: 0, over: 0, drive: 0, km: 0, wait: 0, emaar: 0, home: 0};
+  for (const t of state.teams){ const seq = P[t.team] || []; if (!seq.length) continue;
+    const r = simulate(seq); m.teams++;
+    r.stops.forEach(x => { if (x.late){ m.late++; m.lateMin += x.late; } if (x.minor) m.minor++; m.over += x.over; m.wait += Math.max(0, x.wait); });
+    m.drive += r.travel; m.km += r.km; m.home = Math.max(m.home, r.home || 0);
+    if (seq.some(i => F[i].emaar)) m.emaar++;
+  }
+  m.km = Math.round(m.km); m.wait = Math.round(m.wait); m.over = Math.round(m.over);
+  return m;
+}
+function useOptPlan(n){
+  const o = OPT.res && OPT.res.top[n]; if (!o) return;
+  state.history.push({bulk: clone(state.assign)});
+  state.teams.forEach(t => { state.assign[t.team] = (o.P[t.team] || []).slice(); });
+  state.cur = null; hot = null; OPT.res = null;
+  save(`Used optimised plan ${n + 1} (${o.m.teams} teams, ${o.m.late} time change${o.m.late === 1 ? "" : "s"}, ${o.m.drive} min driving)`);
+  go(2);
+}
+function optHtml(){
+  if (OPT.busy) return `<div class="panel optpanel"><b>🧠 Finding the best plan…</b> <span class="muted">${esc(OPT.progress)}</span></div>`;
+  const r = OPT.res; if (!r || r.key !== scopeKey()) return "";
+  if (r.err) return `<div class="panel optpanel"><b>The optimiser stopped:</b> ${esc(r.err)} <button class="lnk" data-optclose="1">close</button></div>`;
+  if (!r.top.length) return `<div class="panel optpanel">No ${esc(UI.city)} orders to plan. <button class="lnk" data-optclose="1">close</button></div>`;
+  const cols = [...(r.cur ? [{label: r.cur.unplaced ? `Plan on screen (${r.cur.unplaced} not on a team)` : "Plan on screen", m: r.cur.m, cost: r.cur.cost}] : []),
+    ...r.top.map((x, i) => ({label: i ? `Option ${i + 1}` : "★ Recommended", m: x.m, cost: x.cost, n: i}))];
+  const row = (lbl, f, good) => `<tr><th>${lbl}</th>${cols.map(c => `<td class="${good && good(c.m) ? "good" : ""}">${f(c.m)}</td>`).join("")}</tr>`;
+  const sh = OPT.show, U = r.unknown;
+  return `<div class="panel optpanel"><div class="nph"><b>🧠 Best plan from ${r.tries} plans tried</b> <span class="muted">${(r.ms / 1000).toFixed(1)} s · each plan improved by moving and swapping orders between teams</span>
+      <button class="lnk" data-optclose="1" style="margin-left:auto">close</button></div>
+    ${U.length ? `<div class="optwarn">⚠ ${U.length} order${U.length > 1 ? "s have" : " has"} no known location (${U.map(esc).join(", ")}): every drive to or from ${U.length > 1 ? "them" : "it"} is assumed ${R.travel.unknown_min ?? 35} min. Pick ${U.length > 1 ? "them" : "it"} on the map (📍) and run again for a better plan.</div>` : ""}
+    <div class="optscroll"><table class="opttab"><thead><tr><th></th>${cols.map(c => `<th>${esc(c.label)}</th>`).join("")}</tr></thead><tbody>
+      ${row("Teams used", m => m.teams)}
+      ${row("Time changes (more than 1 h late)", m => m.late ? `${m.late} (${m.lateMin} min)` : "0", m => !m.late)}
+      ${row("Starts inside the free hour", m => m.minor)}
+      ${row("Past the end of the day", m => m.over ? m.over + " min" : "0", m => !m.over)}
+      ${row("Driving", m => `${m.drive} min · ${m.km} km`)}
+      ${row("Waiting at doors", m => m.wait + " min")}
+      ${row("Emaar crews", m => m.emaar)}
+      ${row("Last team home", m => m.home ? hm(m.home) : "—")}
+    </tbody></table></div>
+    <div class="optacts">${r.top.map((x, i) => `<span><b>${i ? "Option " + (i + 1) : "★ Recommended"}</b> score ${Math.round(x.cost)}${r.cur && !r.cur.unplaced ? ` (plan on screen ${Math.round(r.cur.cost)})` : ""}
+      <button class="btn small ${i === 0 ? "primary" : ""}" data-optuse="${i}">Use this plan</button> <button class="lnk" data-optshow="${i}">${sh === i ? "hide" : "see"} teams</button></span>`).join("")}</div>
+    ${sh != null && r.top[sh] ? `<div class="optteams">${state.teams.filter(t => (r.top[sh].P[t.team] || []).length).map(t => { const seq = r.top[sh].P[t.team], s = simulate(seq);
+      return `<div><span class="sw" style="background:${teamColor(t.team)}"></span><b>${esc(t.name)}</b> <span class="muted">leave ${hm(s.depart)}, home ${hm(s.home)}</span> ${s.stops.map(x => `<span class="chip ${x.late ? "bad" : x.minor ? "warn" : ""}" title="${esc(F[x.id].customer + " · " + F[x.id].address)}">${esc(F[x.id].slot)} ${esc(x.id)} · 🚐${x.travel}${x.tnote === "location unknown" ? "?" : ""}</span>`).join(" → ")}</div>`; }).join("")}</div>` : ""}
+    <div class="muted" style="font-size:11.5px;margin-top:4px">"Use this plan" replaces this day's team assignments and opens Stage 2; Undo puts the old plan back. Crew names stay on their team numbers.</div></div>`;
+}
+function paintOpt(){ const x = $("optbox"); if (x) x.innerHTML = optHtml(); }
+
 const playCtl = () => `<span class="playctl">
     ${playing ? `<button class="btn small primary" id="stp-b-pause">⏸ Pause</button>` : `<button class="btn small primary" id="stp-b-play" ${queue().length ? "" : "disabled"}>▶ Play</button>`}
     <button class="btn small" id="stp-b-step" ${playing || !queue().length ? "disabled" : ""} title="Place just the next order, with the explanation">⏭ Step</button>
     <button class="btn small" id="stp-b-allgo" ${!queue().length ? "disabled" : ""} title="Put every remaining order on its suggested team, without the narration, and open Stage 2">⏩ Assign all suggested → Stage 2</button>
+    <button class="btn small primary" id="stp-b-opt" ${OPT.busy || !IDS.length ? "disabled" : ""} title="Try hundreds of plans (moving and swapping orders between the teams) and recommend the best one">🧠 Best plan</button>
     <label class="muted" title="Read the reasoning out loud"><input type="checkbox" id="stp-voice" ${UI.voice ? "checked" : ""}> 🔊 voice</label>
     <select id="stp-rate" aria-label="Speed">${[0.8, 1, 1.2, 1.5].map(r => `<option value="${r}" ${Number(UI.rate || 1) === r ? "selected" : ""}>${r}×</option>`).join("")}</select></span>`;
 
@@ -1075,7 +1347,7 @@ function drawMap(force){
       if (id && ll(id) && c){
         const best = c.rank === 1;
         L.polyline([p, ll(id)], {color: teamColor(t.team), weight: best || isHot ? 5 : 2.5, opacity: best || isHot ? 0.95 : 0.5, dashArray: best ? null : "6 7"}).addTo(layer);
-        legLabel(p, ll(id), `${c.st.travel}m · ${c.st.km}km`, teamColor(t.team));
+        legLabel(p, ll(id), `${c.st.travel}m${c.st.tnote === "location unknown" ? "?" : ""} · ${c.st.km}km`, teamColor(t.team));
       }
       if (p) pts.push({p, rank: c ? c.rank : 99});
     }
@@ -1094,7 +1366,7 @@ function drawMap(force){
       r.stops.forEach((s, i) => {
         const p = ll(s.id); if (!p){ noPin.push(s.id); return; }
         line.push(p); all.push(p);
-        if (last) legLabel(last, p, `${s.travel}m · ${s.km}km`, teamColor(t.team));
+        if (last) legLabel(last, p, `${s.travel}m${s.tnote === "location unknown" ? "?" : ""} · ${s.km}km`, teamColor(t.team));
         last = p;
         L.marker(p, {icon: pinIcon(i + 1, teamColor(t.team), F[s.id].emaar ? (F[s.id].maybe ? "emaar maybe" : "emaar") : "", plab(s.id, s.start)), zIndexOffset: 400}).addTo(layer)
           .bindPopup(`<b>${esc(t.name)} · stop ${i + 1}</b><br><b>${s.id}</b> ${esc(F[s.id].customer)}<br>${esc(F[s.id].address)}<br>${F[s.id].slot} → ${hm(s.start)}–${hm(s.end)}<br>
@@ -1303,7 +1575,18 @@ function renderRibbon(){
     gone.map(f => item(f, "data-restore", f.order_id, "removed here")).join("") +
     (canRefresh ? ` <button class="lnk" data-refresh="1">↻ Check the 3D sheet again</button>` : "");
 }
+/* Stage 4 ISR list (13 Nov 2026, user): the same list as Installation > ISR, this city only, under the
+ * live teams. Its own element, made once per day + city, so the 20-second live repaint never touches it. */
+let s4IsrKey = "";
+function renderStage4Isr(){
+  const host = $("s4isr"); if (!host) return;
+  const k = UI.date + "|" + UI.city;
+  if (s4IsrKey === k && host.firstChild){ return; }
+  s4IsrKey = k; host.innerHTML = "";
+  host.appendChild(isrBoard({city: UI.city, title: `ISR · issue resolution · ${UI.city}`}));
+}
 function renderStage4(){
+  renderStage4Isr();
   live.render({root: ROOT, day: UI.date, city: UI.city, payload,
     held: () => Object.values(DAY.held).filter(h => h.city === UI.city),
     active: () => !!state && state.stage === 4 && /^#\/stepper/.test(location.hash)});
@@ -1374,6 +1657,15 @@ on("click", e => {
   if (idOf(b) === "b-pause") stopPlay();
   if (idOf(b) === "b-step"){ haltPlay(); stepOnce(false); }
   if (idOf(b) === "b-allgo") assignAllSuggested();
+  // 13 Nov 2026: next order per team, and the optimiser
+  if (idOf(b) === "b-opt"){ haltPlay(); optimise(); return; }
+  if (idOf(b) === "b-nextall"){ assignNextAll(); return; }
+  if (b.dataset.assignnext){ const id = b.dataset.assignnext, tn = Number(b.dataset.team);
+    state.assign[tn] = (state.assign[tn] || []).filter(i => i !== id).concat([id]); state.history.push({id, team: tn, was: null});
+    state.cur = null; save(`${id} → ${tname(tn)} (next for the team)`); paint(); return; }
+  if (b.dataset.optuse != null){ useOptPlan(Number(b.dataset.optuse)); return; }
+  if (b.dataset.optshow != null){ const n = Number(b.dataset.optshow); OPT.show = OPT.show === n ? null : n; paintOpt(); return; }
+  if (b.dataset.optclose){ OPT.res = null; paintOpt(); return; }
   if (idOf(b) === "b-xlsx") xlsxPlan();
   if (idOf(b) === "b-pdf") pdfOnePager();
   if (idOf(b) === "b-dl"){
@@ -1423,6 +1715,8 @@ on("change", e => {
 on("input", e => {
   const el = e.target, n = notes();
   let line = "";
+  // Stage 2 scratch notes (13 Nov 2026, user): internal, shared with whoever opens the day, never on WhatsApp
+  if (el.matches("textarea[data-tscratch]")){ (n.scratch = n.scratch || {})[el.dataset.tscratch] = el.value; save(`Scratch note for ${tname(el.dataset.tscratch)}`, "note"); return; }
   if (el.matches("[data-tnote]")){ n.team[el.dataset.tnote] = el.value; line = `Note for ${tname(el.dataset.tnote)}: ${el.value}`; }
   else if (el.matches("input[data-onote]")){ n.order[el.dataset.onote] = el.value; line = `Note ${el.dataset.onote}: ${el.value}`; }
   else return;
@@ -1493,6 +1787,7 @@ const SKELETON = `<div class="stp" data-stage="1">
   </section>
   <section class="s3" id="stp-s3" style="margin-top:12px"></section>
   <section class="s4" id="stp-s4" style="margin-top:12px"></section>
+  <section class="s4 s4isr" id="stp-s4isr" style="margin-top:12px"></section>
 </div>
 <div id="stp-addpanel" class="smodal" hidden><div class="modalbox" id="stp-addbody"></div></div>
 </div>`;

@@ -24,7 +24,6 @@ import {
 import { micField, wireMics } from "./voice.js";
 import { photoStrip } from "./photos.js";
 import { docsPanel } from "./docs.js";
-import { orderIsrPanel } from "./mod-isr.js";
 
 const cache = new Map();
 
@@ -57,8 +56,8 @@ export async function renderDrawer(host, orderId, onDirty) {
     /* Status, Tailors First Floor and Production alerts came off the drawer 10 Nov 2026 (user). Their
      * renderers (prepTab, dispatchTab, alertsTab) stay below unused, so putting a tab back is one line. */
     { id: "note", label: tr("d.comments"),    render: () => commentsTab(d, orderId, refresh) },
-    // the order's issue-resolution cases, raised and ticked off right here (user, 10 Nov 2026)
-    { id: "isr",  label: "🔁 ISR",            render: () => orderIsrPanel(orderId) },
+    /* The ISR tab moved to the Installation module 13 Nov 2026 (user). Production answers each ISR in
+     * its own simple view, Production > ISR · fabric & ready (renderProduction in mod-isr.js). */
     { id: "mail", label: tr("d.emails"),      render: () => emailsTab(d) },
     { id: "docs", label: tr("doc.title"),     render: () => docsPanel(orderId) },
   ];

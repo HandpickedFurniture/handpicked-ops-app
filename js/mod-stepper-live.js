@@ -43,7 +43,7 @@ const STATUS = {
 const DONE = new Set(["completed", "partial", "failed", "rescheduled", "removed"]);
 
 let CX = null;                       // {root, day, city, held(), payload()}
-let LV = {key: "", teams: [], orders: [], adjs: [], events: [], charges: null, at: null, err: "", busy: false, showLog: false, showOff: false};
+let LV = {key: "", teams: [], orders: [], adjs: [], events: [], isr: [], charges: null, at: null, err: "", busy: false, showLog: false, showOff: false};
 let timer = null, ticker = null;
 
 const $ = id => CX.root.querySelector("#stp-" + id);
@@ -54,13 +54,16 @@ const isToday = () => CX.day === new Date(Date.now() + 4 * 3600e3).toISOString()
 /* ---------------- data ---------------- */
 async function fetchAll(){
   const q = `day=eq.${CX.day}&city=eq.${encodeURIComponent(CX.city)}`;
-  const [teams, orders, adjs, events] = await Promise.all([
+  // open ISR cases with Production's answer, for the chip on each live order (13 Nov 2026); never fatal
+  const isrP = api(`/rest/v1/v_isr_cases?select=id,order_id,ready,fabric_received,fabric_name,photo_count&status=in.(open,scheduled)`).catch(() => []);
+  const [teams, orders, adjs, events, isr] = await Promise.all([
     api(`/rest/v1/live_team?select=*&${q}&order=team.asc`),
     api(`/rest/v1/live_order?select=*&${q}&order=team.asc.nullsfirst,seq.asc`),
     api(`/rest/v1/v_live_adjustments?select=*&${q}&order=created_at.asc`),
     api(`/rest/v1/live_event?select=*&${q}&order=at.desc&limit=40`),
+    isrP,
   ]);
-  return {teams: teams || [], orders: orders || [], adjs: adjs || [], events: events || []};
+  return {teams: teams || [], orders: orders || [], adjs: adjs || [], events: events || [], isr: isr || []};
 }
 async function refresh(quiet){
   if (!CX || LV.busy) return;
@@ -137,6 +140,15 @@ function invoiceHtml(o, ro){
   return `<div class="linv"><span class="lil">Invoice</span>${seg("inv", "ready", "✓ Ready", "good")}${seg("inv", "not_ready", "Not ready", "bad")}
     <span class="lil">Adjustment</span>${seg("adj", "none", "None", "good")}${seg("adj", "has", "Yes", "warn")}${hint} ${by}</div>`;
 }
+/* the order's open ISR: what Production said (fabric, pictures, ready); the full card is in the ISR list below */
+function isrHtml(o){
+  const rs = (LV.isr || []).filter(r => r.order_id === o.order_id);
+  return rs.map(r => {
+    const fab = r.fabric_received === true ? "fabric received" : r.fabric_received === false ? "fabric NOT received" : "fabric not answered";
+    const cls = r.ready ? "good" : r.fabric_received === false ? "bad" : "warn";
+    return `<span class="chip ${cls}" title="Production: ${esc(fab)}${r.fabric_name ? " (" + esc(r.fabric_name) + ")" : ""}${Number(r.photo_count) ? ", " + r.photo_count + " picture(s)" : ""}">🔁 ISR #${r.id} · ${r.ready ? "ready" : esc(fab)}${Number(r.photo_count) ? " · 📷" + r.photo_count : ""}</span>`;
+  }).join(" ");
+}
 function orderHtml(o, off){
   const s = STATUS[o.status] || STATUS.pending, ro = isViewer() || off;
   const times = `${esc(o.plan_start || "—")}–${esc(o.plan_end || "—")}`;
@@ -145,7 +157,7 @@ function orderHtml(o, off){
   return `<li class="lo st-${o.status}" data-oid="${esc(o.order_id)}">
     <div class="lo-top"><span class="lt">${times}</span><span class="lj"><b>${esc(o.order_id)}</b> ${esc(o.customer || "")}</span>
       ${o.emaar ? `<span class="chip emaar">E</span>` : ""}${o.added_live ? `<span class="chip hot">added live</span>` : ""}
-      <span class="chip ${s.cls}">${s.label}</span>${lateInfo(o)}${apptNote}</div>
+      <span class="chip ${s.cls}">${s.label}</span>${lateInfo(o)}${apptNote} ${isrHtml(o)}</div>
     <div class="ja">${esc(o.address || "")}${o.phone ? ` · <a href="tel:${esc(o.phone)}">${esc(o.phone)}</a>` : ""}</div>
     ${o.scope ? `<div class="jw">${esc(o.scope)}</div>` : ""}
     ${o.reason ? `<div class="lreason">${o.status === "removed" ? "Removed" : s.label}: ${esc(o.reason)}${o.resched_to ? ` → <b>${esc(o.resched_to)}</b>` : ""}</div>` : ""}
