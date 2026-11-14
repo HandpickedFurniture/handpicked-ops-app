@@ -1244,15 +1244,17 @@ function pdfOnePager(){
     if (!/^\d+$/.test(String(o.order_id))) return "Visit"; return "New"; };
   const hmOnly = (s) => String(s || "").slice(0, 5);
   const row = (o, first, span, t) => {
-    const f = F[o.order_id] || {}, est = o.est_min || 0, jt = jobType(o), st = hmOnly(o.planned_start) || String(o.time || "").split(/\s*[-–]\s*/)[0];
-    const timeCell = `<span class="t1">${esc(st)}</span>${est ? `<span class="t2"> – ${esc(hmOnly(o.planned_end))}</span><div class="t3">est ${est} min</div>` : ""}`;
+    const f = F[o.order_id] || {}, est = o.est_min || 0, jt = jobType(o), st = String(o.time || "").split(/\s*[-–]\s*/)[0].slice(0, 5) || hmOnly(o.planned_start);
+    /* user, 14 Nov 26: the PDF shows the 3D-sheet time (or the time edited in the app), never the plan ETA; end = that start + the estimate */
+    const endM = est && /^\d{1,2}:\d{2}$/.test(st) ? (Number(st.split(":")[0]) * 60 + Number(st.split(":")[1]) + est) : null, endS = endM == null ? "" : String(Math.floor(endM / 60)).padStart(2, "0") + ":" + String(endM % 60).padStart(2, "0");
+    const timeCell = `<span class="t1">${esc(st)}</span>${endS ? `<span class="t2"> – ${esc(endS)}</span><div class="t3">est ${est} min</div>` : ""}`;
     const pin = o.lat != null && o.lng != null, addr = esc(o.address || "");
     const addrCell = pin ? `<a href="https://www.google.com/maps?q=${o.lat},${o.lng}">${addr}</a>` : `${addr} <span class="np">(no pin)</span>`;
-    const notes = [o.note, o.emaar ? (f.maybe ? "EMAAR?" : "EMAAR") : "", o.late_min > 0 ? `plan ETA ${hmOnly(o.eta)} (+${o.late_min} min)` : ""].filter(Boolean).map(esc).join(" · ");
+    const notes = [o.note, o.emaar ? (f.maybe ? "EMAAR?" : "EMAAR") : ""].filter(Boolean).map(esc).join(" · ");
     const mem = t.members.length ? t.members.join(" & ") : "";
     let label = t.name; t.members.forEach(m => { label = label.split(m).join(""); }); label = label.replace(/\s*&\s*/g, " ").replace(/\s{2,}/g, " ").trim() || t.name;
     const teamCell = first ? `<td class="tm" rowspan="${span}"><b>${esc(label)}</b><div>${esc(mem)}</div><span class="city">${esc(UI.city)}</span></td>` : "";
-    return `<tr class="${first ? "first" : ""}">${teamCell}<td class="tc">${timeCell}</td><td class="oid">${esc(o.order_id)}</td><td><span class="pill ${JOB[jt] || "j-new"}">${jt}</span></td>
+    return `<tr class="${first ? "first" : ""}">${teamCell}<td class="tc">${timeCell}</td><td class="oid">${f.kind === "ISR" ? "ISR " : ""}${esc(o.order_id)}</td><td><span class="pill ${JOB[jt] || "j-new"}">${jt}</span></td>
       <td class="sc">${o.scope ? esc(o.scope) : ""}</td><td class="dt">${detailIcons(o)}</td><td>${esc(o.customer || "")}${o.phone ? " " + esc(o.phone) : ""}</td><td>${addrCell}</td><td>${notes}</td></tr>`; };
   const rows = P.teams.map(t => t.orders.map((o, i) => row(o, i === 0, t.orders.length, t)).join("")).join("");
   const planDate = d.toLocaleDateString("en-GB", {day: "numeric", month: "short", year: "2-digit"});
@@ -1281,7 +1283,7 @@ function pdfOnePager(){
     td a{color:#14202e}.np{color:#c0392b}
   </style></head><body>
     <div class="hd"><h1>Installation schedule · ${esc(d.toLocaleDateString("en-GB", {weekday: "long", day: "2-digit", month: "long", year: "numeric"}))}</h1>
-      <div class="sub">${P.teams.length} teams · ${jobs} jobs<br>Team Board plan ${esc(planDate)} (${esc(UI.city)}) + 3D sheet details; end times are estimates</div></div>
+      <div class="sub">${P.teams.length} teams · ${jobs} jobs<br>Team Board plan ${esc(planDate)} (${esc(UI.city)}) + 3D sheet times; end times are estimates</div></div>
     <table id="g"><thead><tr><th>Team</th><th>Time</th><th>Order</th><th>Job</th><th>Scope of work</th><th>Order details</th><th>Customer</th><th>Address</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>
     <div class="lg">${ICON_LEGEND.map(([ic, w]) => `<span class="ic"><i>${ic}</i> ${w}</span>`).join("")}</div>
     <script>
