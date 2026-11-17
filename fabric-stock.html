@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fabric Stock Status</title>
+<meta name="robots" content="noindex">
+<!-- Public page (no login yet) for suppliers and staff to feed fabric availability. 17 Nov 2026.
+     Talks only to the edge function fabric-stock; see supabase/functions/fabric-stock/index.ts. -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#f5f6f8; --card:#fff; --ink:#1b1f24; --muted:#5f6b7a; --line:#dde2e8;
+  --brand:#1f5fa8; --brand-ink:#fff; --yes:#16794a; --yes-bg:#e3f4ea; --no:#b42318; --no-bg:#fde7e5;
+  --warn-bg:#fff6dc; --warn:#8a5a00; --focus:#7fb0ef;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#121417; --card:#1b1f24; --ink:#e8ebef; --muted:#9aa5b1; --line:#2f353d;
+    --brand:#5b9be6; --brand-ink:#0d1117; --yes:#5fd39a; --yes-bg:#173527; --no:#ff8a80; --no-bg:#3b1d1b;
+    --warn-bg:#3a3018; --warn:#f2c76b; --focus:#3d6ea8;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#121417; --card:#1b1f24; --ink:#e8ebef; --muted:#9aa5b1; --line:#2f353d;
+  --brand:#5b9be6; --brand-ink:#0d1117; --yes:#5fd39a; --yes-bg:#173527; --no:#ff8a80; --no-bg:#3b1d1b;
+  --warn-bg:#3a3018; --warn:#f2c76b; --focus:#3d6ea8;
+}
+*{box-sizing:border-box}
+:root{color-scheme:light dark}
+a{color:var(--brand)}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding-bottom:90px}
+header{background:var(--card);border-bottom:1px solid var(--line);padding:14px 16px;position:sticky;top:0;z-index:5}
+.wrap{max-width:1000px;margin:0 auto}
+h1{font-size:19px;margin:0 0 10px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+label.f{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted);flex:1 1 160px;min-width:0}
+select,input[type=text],input[type=number],input[type=search]{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:100%;min-width:0}
+select:focus,input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+#supplier{font-size:17px;font-weight:600}
+button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:8px 12px}
+button.primary{background:var(--brand);border-color:var(--brand);color:var(--brand-ink);font-weight:600}
+button:disabled{opacity:.5;cursor:default}
+main{padding:12px 16px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px}
+.stats{display:flex;flex-wrap:wrap;gap:6px;font-size:13px}
+.chip{border:1px solid var(--line);border-radius:999px;padding:4px 10px;background:var(--card);cursor:pointer}
+.chip.on{background:var(--brand);border-color:var(--brand);color:var(--brand-ink)}
+.muted{color:var(--muted)}
+.small{font-size:12px}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+th{font-size:12px;color:var(--muted);font-weight:600;background:var(--bg);cursor:pointer;user-select:none;white-space:nowrap}
+th.nosort{cursor:default}
+tr.dirty td{background:var(--warn-bg)}
+td.code{font-weight:600;white-space:nowrap}
+.yn{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.yn button{border:0;border-radius:0;padding:6px 12px;background:transparent}
+.yn button+button{border-left:1px solid var(--line)}
+.yn button.y.on{background:var(--yes-bg);color:var(--yes);font-weight:700}
+.yn button.n.on{background:var(--no-bg);color:var(--no);font-weight:700}
+td input.qty{width:90px}
+td input.note{min-width:120px}
+.badge{display:inline-block;font-size:12px;border-radius:6px;padding:2px 7px;font-weight:600}
+.badge.y{background:var(--yes-bg);color:var(--yes)} .badge.n{background:var(--no-bg);color:var(--no)} .badge.u{background:var(--bg);color:var(--muted)}
+#savebar{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:10px 16px;display:none;z-index:6}
+#savebar.show{display:block}
+#msg{margin:8px 0 0;font-size:13px}
+#msg.err{color:var(--no)} #msg.ok{color:var(--yes)}
+.preview{max-height:280px;overflow:auto;margin-top:8px}
+.preview table{font-size:13px}
+details summary{cursor:pointer;font-weight:600}
+.empty{padding:30px;text-align:center;color:var(--muted)}
+/* phone: table becomes cards */
+@media (max-width:700px){
+  table.main thead{display:none}
+  header{position:static}
+  table.main,table.main tbody{display:block;width:100%}
+  table.main tr{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;border-bottom:1px solid var(--line);padding:8px 4px}
+  table.main td{display:block;border:0;padding:4px 6px;min-width:0}
+  table.main td.code,table.main td:nth-child(4),table.main td:nth-child(5){grid-column:1 / -1}
+  table.main td.empty{grid-column:1 / -1}
+  table.main td[data-l]::before{content:attr(data-l);display:block;font-size:11px;color:var(--muted)}
+  td input.qty,td input.note{width:100%}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>Fabric stock status</h1>
+    <div class="row">
+      <label class="f" style="flex:1 1 200px">Supplier
+        <select id="supplier"><option value="">Loading suppliers…</option></select>
+      </label>
+      <label class="f">Your name / company
+        <input type="text" id="by" maxlength="80" placeholder="e.g. Ahmed, FD Textiles" autocomplete="name">
+      </label>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div id="intro" class="panel">
+    <b>How it works.</b> Pick your supplier code above to see all your fabrics. For each fabric tap
+    <b>Yes</b> or <b>No</b> for availability and, if you can, type the metres in stock. Then press
+    <b>Save</b>. You can also upload an Excel or CSV file instead.
+  </div>
+
+  <div id="work" hidden>
+    <details class="panel" id="uploadBox">
+      <summary>Upload a file instead (Excel or CSV)</summary>
+      <p class="small muted" style="margin:8px 0">
+        The file needs a column with the <b>fabric code</b>, and an <b>available</b> column (Yes / No) and/or a
+        <b>quantity</b> column (metres). An optional <b>note</b> column is kept too. If only quantity is given,
+        more than 0 counts as available and 0 as not available.
+        Easiest: <a href="#" id="tpl">download your list as a template</a>, fill it in and upload it back.
+      </p>
+      <input type="file" id="file" accept=".xlsx,.xls,.csv">
+      <div id="upInfo" class="small" style="margin-top:8px"></div>
+      <div id="upPreview" class="preview"></div>
+      <div class="row" style="margin-top:8px">
+        <button class="primary" id="upSave" hidden>Save uploaded rows</button>
+        <button id="upCancel" hidden>Cancel</button>
+      </div>
+    </details>
+
+    <div class="panel">
+      <div class="row" style="margin-bottom:8px">
+        <label class="f" style="flex:2 1 200px">Search code
+          <input type="search" id="q" placeholder="e.g. 523B">
+        </label>
+        <label class="f">Sort by
+          <select id="sort">
+            <option value="code">Fabric code</option>
+            <option value="upd_desc">Last update (newest first)</option>
+            <option value="upd_asc">Last update (oldest / never first)</option>
+            <option value="status">Availability (Yes, No, not updated)</option>
+            <option value="qty_desc">Quantity (most first)</option>
+          </select>
+        </label>
+        <label class="f">Updated
+          <select id="age">
+            <option value="">Any time</option>
+            <option value="1">Today</option>
+            <option value="7">Last 7 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="old7">Not in last 7 days (or never)</option>
+          </select>
+        </label>
+      </div>
+      <div class="stats" id="chips"></div>
+    </div>
+
+    <table class="main">
+      <thead><tr>
+        <th data-s="code">Fabric code</th>
+        <th class="nosort">Available?</th>
+        <th data-s="qty_desc">Qty (m)</th>
+        <th class="nosort">Note</th>
+        <th data-s="upd_desc">Last update</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div id="more" class="row" style="justify-content:center;margin-top:10px"></div>
+  </div>
+</main>
+
+<div id="savebar"><div class="wrap row" style="justify-content:space-between">
+  <span id="dirtyTxt"></span>
+  <span class="row"><button id="discard">Undo changes</button><button class="primary" id="save">Save</button></span>
+</div><div class="wrap"><div id="msg"></div></div></div>
+
+<script>
+(() => {
+  const API = "https://jrevqijbzzwdcwxcnwfa.supabase.co/functions/v1/fabric-stock";
+  const PAGE = 200;
+  const $ = (id) => document.getElementById(id);
+  const store = {
+    get(k){ try { return localStorage.getItem(k); } catch { return null; } },
+    set(k,v){ try { localStorage.setItem(k,v); } catch {} },
+  };
+
+  let suppliers = [], rows = [], dirty = new Map(), filter = "all", shown = PAGE, pending = null;
+
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  function when(ts){
+    if (!ts) return "";
+    const d = new Date(ts), days = Math.floor((Date.now() - d) / 864e5);
+    const date = d.toLocaleDateString("en-GB", { day:"numeric", month:"short", year: d.getFullYear() === new Date().getFullYear() ? undefined : "numeric" });
+    const time = d.toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit" });
+    return (days === 0 && d.getDate() === new Date().getDate() ? "Today " + time : date + " " + time);
+  }
+  function setMsg(t, cls){ const m = $("msg"); m.textContent = t || ""; m.className = cls || ""; if (t) $("savebar").classList.add("show"); }
+
+  async function api(qs, body){
+    const r = await fetch(API + (qs || ""), body ? { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(body) } : { cache: "no-store" });
+    let data = null; try { data = await r.json(); } catch {}
+    if (!r.ok) throw new Error((data && data.error) || ("Could not reach the server (" + r.status + ")"));
+    return data;
+  }
+
+  // ---------- suppliers ----------
+  async function loadSuppliers(){
+    try {
+      suppliers = await api("?action=suppliers");
+      const sel = $("supplier");
+      sel.innerHTML = '<option value="">— Choose supplier —</option>' + suppliers.map(s =>
+        '<option value="' + esc(s.code) + '">' + esc(s.code === "OTHER" ? "Other collections" : s.code) + "  (" + s.fabrics + " fabrics" + (s.updated ? ", " + s.updated + " updated" : "") + ")</option>").join("");
+      const want = (new URLSearchParams(location.search).get("supplier") || store.get("fs.supplier") || "").toUpperCase();
+      if (want && suppliers.some(s => s.code === want)) { sel.value = want; loadList(); }
+    } catch (e) { $("supplier").innerHTML = '<option value="">Could not load suppliers</option>'; alert(e.message); }
+  }
+
+  async function loadList(){
+    const code = $("supplier").value;
+    if (dirty.size && !confirm("You have unsaved changes. Discard them?")) { $("supplier").value = rows.supplier || ""; return; }
+    dirty.clear(); updateBar(); clearUpload();
+    if (!code) { $("work").hidden = true; $("intro").hidden = false; return; }
+    store.set("fs.supplier", code);
+    const u = new URL(location.href); u.searchParams.set("supplier", code); history.replaceState(null, "", u);
+    $("rows").innerHTML = '<tr><td colspan="5" class="empty">Loading…</td></tr>';
+    $("work").hidden = false; $("intro").hidden = true;
+    try { rows = await api("?action=list&supplier=" + encodeURIComponent(code)); rows.supplier = code; }
+    catch (e) { $("rows").innerHTML = '<tr><td colspan="5" class="empty">' + esc(e.message) + "</td></tr>"; return; }
+    shown = PAGE; render();
+  }
+
+  // ---------- current value of a row (saved value overlaid with unsaved edits) ----------
+  const cur = (r) => Object.assign({}, r, dirty.get(r.code) || {});
+  const statusOf = (r) => r.available === true ? "y" : r.available === false ? "n" : "u";
+
+  function visible(){
+    const q = $("q").value.trim().toUpperCase(), age = $("age").value, now = Date.now();
+    let list = rows.map(cur).filter(r => {
+      if (q && !r.code.includes(q)) return false;
+      if (filter !== "all" && statusOf(r) !== filter) return false;
+      if (age) {
+        const t = r.updated_at ? new Date(r.updated_at).getTime() : 0;
+        if (age === "old7") { if (t && now - t < 7 * 864e5) return false; }
+        else if (!t || now - t > (+age) * 864e5 || (age === "1" && new Date(t).toDateString() !== new Date().toDateString())) return false;
+      }
+      return true;
+    });
+    const s = $("sort").value, t = (r) => r.updated_at ? new Date(r.updated_at).getTime() : 0;
+    const rank = { y:0, n:1, u:2 };
+    list.sort((a, b) =>
+      s === "upd_desc" ? t(b) - t(a) || a.code.localeCompare(b.code) :
+      s === "upd_asc"  ? t(a) - t(b) || a.code.localeCompare(b.code) :
+      s === "status"   ? rank[statusOf(a)] - rank[statusOf(b)] || a.code.localeCompare(b.code) :
+      s === "qty_desc" ? (b.qty_m ?? -1) - (a.qty_m ?? -1) || a.code.localeCompare(b.code) :
+      a.code.localeCompare(b.code, undefined, { numeric: true }));
+    return list;
+  }
+
+  function render(){
+    const all = rows.map(cur), n = { all: all.length, y:0, n:0, u:0 };
+    all.forEach(r => n[statusOf(r)]++);
+    $("chips").innerHTML = [["all","All"],["y","Available"],["n","Not available"],["u","Not updated yet"]]
+      .map(([k, l]) => '<button class="chip' + (filter === k ? " on" : "") + '" data-f="' + k + '">' + l + " · " + n[k] + "</button>").join("");
+    const list = visible();
+    if (!list.length) { $("rows").innerHTML = '<tr><td colspan="5" class="empty">No fabrics match.</td></tr>'; $("more").innerHTML = ""; return; }
+    $("rows").innerHTML = list.slice(0, shown).map(r => {
+      const st = statusOf(r), d = dirty.has(r.code);
+      return '<tr data-c="' + esc(r.code) + '"' + (d ? ' class="dirty"' : "") + ">" +
+        '<td class="code" data-l="Fabric">' + esc(r.code) + (r.roll_width_cm ? ' <span class="small muted">' + (+r.roll_width_cm) + " cm</span>" : "") + "</td>" +
+        '<td data-l="Available?"><span class="yn"><button class="y' + (st === "y" ? " on" : "") + '" data-a="y">Yes</button><button class="n' + (st === "n" ? " on" : "") + '" data-a="n">No</button></span></td>' +
+        '<td data-l="Qty (m)"><input class="qty" type="number" min="0" step="0.1" inputmode="decimal" value="' + (r.qty_m ?? "") + '" placeholder="—"></td>' +
+        '<td data-l="Note"><input class="note" type="text" maxlength="300" value="' + esc(r.note) + '" placeholder="optional"></td>' +
+        '<td data-l="Last update" class="small">' + (d ? "<b>Not saved yet</b>" : r.updated_at ? esc(when(r.updated_at)) + '<br><span class="muted">' + esc(r.updated_by) + (r.source === "upload" ? " · file" : "") + "</span>" : '<span class="badge u">never</span>') + "</td></tr>";
+    }).join("");
+    $("more").innerHTML = list.length > shown ? '<button id="moreBtn">Show more (' + (list.length - shown) + " left)</button>" : "";
+  }
+
+  function edit(code, patch){
+    const base = rows.find(r => r.code === code);
+    const next = Object.assign({}, dirty.get(code) || {}, patch);
+    const norm = (k, v) => k === "note" ? String(v ?? "").trim() : (v ?? null);
+    const same = ["available","qty_m","note"].every(k => norm(k, k in next ? next[k] : base[k]) === norm(k, base[k]));
+    if (same) dirty.delete(code); else dirty.set(code, next);
+    const tr = document.querySelector('tr[data-c="' + CSS.escape(code) + '"]');
+    if (tr) {
+      const r = cur(base), st = statusOf(r);
+      tr.classList.toggle("dirty", dirty.has(code));
+      tr.querySelector(".y").classList.toggle("on", st === "y");
+      tr.querySelector(".n").classList.toggle("on", st === "n");
+      tr.lastElementChild.innerHTML = dirty.has(code) ? "<b>Not saved yet</b>" : (base.updated_at ? esc(when(base.updated_at)) + '<br><span class="muted">' + esc(base.updated_by) + "</span>" : '<span class="badge u">never</span>');
+    }
+    updateBar();
+  }
+
+  function updateBar(){
+    const n = dirty.size;
+    $("dirtyTxt").textContent = n ? n + " unsaved change" + (n > 1 ? "s" : "") : "";
+    $("savebar").classList.toggle("show", n > 0 || !!$("msg").textContent);
+    $("save").disabled = !n;
+  }
+
+  async function save(list, source){
+    const by = $("by").value.trim();
+    if (!by) { $("by").focus(); setMsg("Please enter your name / company at the top first.", "err"); return null; }
+    store.set("fs.by", by);
+    const res = await api("", { action:"save", by, source, rows: list });
+    return res;
+  }
+
+  $("save").onclick = async () => {
+    const list = [...dirty.entries()].map(([code, p]) => { const r = Object.assign({}, rows.find(x => x.code === code), p); return { code, available: r.available ?? null, qty_m: r.qty_m ?? null, note: r.note || null }; });
+    $("save").disabled = true; setMsg("Saving…");
+    try {
+      const res = await save(list, "app"); if (!res) { $("save").disabled = false; return; }
+      dirty.clear(); setMsg("Saved " + res.saved + " fabric" + (res.saved === 1 ? "" : "s") + ".", "ok");
+      await reload();
+    } catch (e) { setMsg(e.message, "err"); $("save").disabled = false; }
+  };
+  $("discard").onclick = () => { dirty.clear(); setMsg(""); updateBar(); render(); };
+
+  async function reload(){
+    try { rows = Object.assign(await api("?action=list&supplier=" + encodeURIComponent(rows.supplier)), { supplier: rows.supplier }); } catch {}
+    render(); updateBar();
+  }
+
+  // ---------- events ----------
+  $("supplier").onchange = loadList;
+  $("by").value = store.get("fs.by") || "";
+  ["q","sort","age"].forEach(id => $(id).addEventListener("input", () => { shown = PAGE; render(); }));
+  $("chips").onclick = (e) => { const b = e.target.closest("[data-f]"); if (b) { filter = b.dataset.f; shown = PAGE; render(); } };
+  document.querySelector("thead").onclick = (e) => { const th = e.target.closest("th[data-s]"); if (th) { $("sort").value = th.dataset.s; render(); } };
+  $("more").onclick = (e) => { if (e.target.id === "moreBtn") { shown += PAGE; render(); } };
+  $("rows").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-a]"); if (!b) return;
+    const code = b.closest("tr").dataset.c, r = cur(rows.find(x => x.code === code));
+    const want = b.dataset.a === "y";
+    const patch = { available: r.available === want ? null : want };
+    if (want === false && r.qty_m) patch.qty_m = 0;            // "No" with metres typed -> 0 m
+    if (want === true && r.qty_m === 0) patch.qty_m = null;    // "Yes" after 0 m -> quantity unknown
+    if ("qty_m" in patch) b.closest("tr").querySelector(".qty").value = patch.qty_m ?? "";
+    edit(code, patch);
+  });
+  $("rows").addEventListener("input", (e) => {
+    const tr = e.target.closest("tr"); if (!tr) return;
+    const code = tr.dataset.c;
+    if (e.target.classList.contains("qty")) {
+      const v = e.target.value === "" ? null : Math.max(0, +e.target.value);
+      const patch = { qty_m: Number.isFinite(v) ? v : null };
+      if (v !== null && Number.isFinite(v)) patch.available = v > 0;
+      edit(code, patch);
+    } else if (e.target.classList.contains("note")) edit(code, { note: e.target.value });
+  });
+  window.addEventListener("beforeunload", (e) => { if (dirty.size) { e.preventDefault(); e.returnValue = ""; } });
+
+  // ---------- upload ----------
+  const YES = /^(y|yes|available|avail|in stock|instock|true|1|ok|✓|✔)$/i, NO = /^(n|no|not available|na|n\/a|out|out of stock|oos|false|0|nil|x|✗|✘)$/i;
+  function pickCol(headers, tests){ for (const t of tests) { const i = headers.findIndex(h => t.test(h)); if (i >= 0) return i; } return -1; }
+  function clearUpload(){ pending = null; $("file").value = ""; $("upInfo").textContent = ""; $("upPreview").innerHTML = ""; $("upSave").hidden = $("upCancel").hidden = true; }
+
+  $("file").onchange = async () => {
+    const f = $("file").files[0]; if (!f) return;
+    $("upInfo").textContent = "Reading " + f.name + "…"; $("upPreview").innerHTML = "";
+    try {
+      const wb = XLSX.read(await f.arrayBuffer(), { type: "array" });
+      const known = new Set(rows.map(r => r.code));
+      let parsed = null;
+      for (const name of wb.SheetNames) {           // first sheet that has a code column wins
+        const aoa = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: "" });
+        for (let h = 0; h < Math.min(10, aoa.length); h++) {
+          const hd = aoa[h].map(x => String(x).trim().toLowerCase());
+          const ci = pickCol(hd, [/^(fabric )?code$/, /fabric.?code/, /^sku$/, /code/, /fabric/, /item/]);
+          if (ci < 0) continue;
+          const ai = pickCol(hd, [/avail/, /in.?stock/, /status/, /yes.?\/?.?no/]);
+          const qi = pickCol(hd, [/qty|quantity/, /met(er|re)s?|^m$|\(m\)/, /stock/, /balance/]);
+          const ni = pickCol(hd, [/note|remark|comment/]);
+          if (ai < 0 && qi < 0) continue;
+          parsed = { sheet: name, header: aoa[h], ci, ai: ai === qi ? -1 : ai, qi, ni, body: aoa.slice(h + 1) };
+          break;
+        }
+        if (parsed) break;
+      }
+      if (!parsed) throw new Error("Could not find a fabric code column plus an available or quantity column. Download the template to see the layout.");
+      const out = [], unknown = [], bad = [];
+      for (const r of parsed.body) {
+        const code = String(r[parsed.ci] ?? "").trim().toUpperCase(); if (!code) continue;
+        let available = null, qty = null;
+        if (parsed.qi >= 0 && String(r[parsed.qi]).trim() !== "") {
+          const n = parseFloat(String(r[parsed.qi]).replace(/,/g, ""));
+          if (Number.isFinite(n) && n >= 0) qty = Math.round(n * 100) / 100; else { const s = String(r[parsed.qi]).trim(); if (YES.test(s)) available = true; else if (NO.test(s)) available = false; else bad.push(code); }
+        }
+        if (parsed.ai >= 0) { const s = String(r[parsed.ai]).trim(); if (YES.test(s)) available = true; else if (NO.test(s)) available = false; else if (s) bad.push(code); }
+        if (available === null && qty !== null) available = qty > 0;
+        if (available === null && qty === null) continue;
+        const note = parsed.ni >= 0 ? String(r[parsed.ni] ?? "").trim().slice(0, 300) : (rows.find(x => x.code === code)?.note || "");
+        (known.has(code) ? out : unknown).push({ code, available, qty_m: qty, note: note || null });
+      }
+      pending = out;
+      $("upInfo").innerHTML = "Sheet <b>" + esc(parsed.sheet) + "</b>: <b>" + out.length + "</b> fabric" + (out.length === 1 ? "" : "s") + " of " + esc(rows.supplier) + " ready to save." +
+        (unknown.length ? '<br><span style="color:var(--warn)">' + unknown.length + " code(s) are not in the " + esc(rows.supplier) + " list and will be skipped: " + esc(unknown.slice(0, 15).map(u => u.code).join(", ")) + (unknown.length > 15 ? "…" : "") + "</span>" : "") +
+        (bad.length ? '<br><span style="color:var(--no)">' + bad.length + " row(s) had an availability we could not read (use Yes/No): " + esc(bad.slice(0, 10).join(", ")) + "</span>" : "");
+      $("upPreview").innerHTML = out.length ? "<table><thead><tr><th class=nosort>Code</th><th class=nosort>Available</th><th class=nosort>Qty (m)</th><th class=nosort>Note</th></tr></thead><tbody>" +
+        out.slice(0, 300).map(r => "<tr><td>" + esc(r.code) + '</td><td><span class="badge ' + (r.available ? "y\">Yes" : "n\">No") + "</span></td><td>" + (r.qty_m ?? "") + "</td><td>" + esc(r.note) + "</td></tr>").join("") + "</tbody></table>" : "";
+      $("upSave").hidden = $("upCancel").hidden = !out.length;
+    } catch (e) { $("upInfo").innerHTML = '<span style="color:var(--no)">' + esc(e.message) + "</span>"; }
+  };
+  $("upCancel").onclick = clearUpload;
+  $("upSave").onclick = async () => {
+    if (!pending || !pending.length) return;
+    $("upSave").disabled = true; setMsg("Saving upload…");
+    try {
+      const res = await save(pending, "upload"); if (!res) { $("upSave").disabled = false; return; }
+      clearUpload(); setMsg("Upload saved: " + res.saved + " fabric" + (res.saved === 1 ? "" : "s") + " updated" + (res.skipped.length ? ", " + res.skipped.length + " skipped" : "") + ".", "ok");
+      dirty.clear(); await reload();
+    } catch (e) { setMsg(e.message, "err"); }
+    $("upSave").disabled = false;
+  };
+  $("tpl").onclick = (e) => {
+    e.preventDefault();
+    const data = [["Fabric code","Available (Yes/No)","Quantity (m)","Note"]].concat(
+      rows.slice().sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))
+        .map(r => [r.code, r.available === true ? "Yes" : r.available === false ? "No" : "", r.qty_m ?? "", r.note || ""]));
+    const ws = XLSX.utils.aoa_to_sheet(data); ws["!cols"] = [{ wch: 18 }, { wch: 18 }, { wch: 14 }, { wch: 30 }];
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, rows.supplier);
+    XLSX.writeFile(wb, "Fabric_stock_" + rows.supplier + "_" + new Date().toISOString().slice(0, 10) + ".xlsx");
+  };
+
+  loadSuppliers();
+})();
+</script>
+</body>
+</html>

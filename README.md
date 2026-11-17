@@ -1082,6 +1082,26 @@ counts once for each of them in the person table. Status: `auto` (the rebuild ow
 changed or ticked it: the rebuild only refreshes its photos), `manual` (added by hand), `rejected`. Writes go
 through `fn_review_set` / `fn_review_add` / `fn_review_alias_set`, which refuse read-only roles (`fn_live_guard`).
 
+## Fabric stock status page (17 Nov 2026)
+
+`fabric-stock.html` — a standalone public page (NOT part of the ribbon app, no login yet) where suppliers
+and staff feed fabric availability: pick a supplier code (FD / ST / MCJ / FC ...), see every fabric of
+that supplier, tap Yes / No and/or type the metres in stock, Save. Or upload an Excel / CSV (code column +
+available and/or quantity column; "Download your list as a template" gives the right layout). Filter by
+availability and last-update age, sort by code / last update / availability / quantity.
+Link: `https://handpickedfurniture.github.io/handpicked-ops-app/fabric-stock.html?supplier=FD`.
+
+| Piece | Where |
+|---|---|
+| Fabric list = codes in `fabric_roll_widths` + codes ever ordered (`v_order_fabrics`); supplier = letter prefix (`fn_fabric_supplier_of`), named collections (HAVEN-AMBER ...) under OTHER | `v_fabric_master` |
+| Current status, one row per fabric; every save also appended to the log (undo a bad write from there) | `fabric_stock_status`, `fabric_stock_status_log` |
+| Read / save | `fn_fabric_stock_suppliers`, `fn_fabric_stock_list`, `fn_fabric_stock_save` (service_role only; unknown codes are skipped, max 5000 rows, name required) |
+| The only door for the public page: verify_jwt OFF, calls the three functions with the service role | Edge Function `fabric-stock` |
+
+anon has no grant on any of it (see the anon definer-view leak). Anyone with the link can write today — the
+"Your name / company" box is self-declared. Access control is the planned next step.
+SQL: `supabase/sql/20261117_fabric_stock_status.sql` (applied).
+
 ## Edge Functions
 
 The functions in `supabase/functions/` live in **this** repo because they exist only to serve this
