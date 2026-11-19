@@ -1037,7 +1037,7 @@ const ACTIONS = [
   {id: "checklist",title: "Send the checklist", about: "The checklist bucket PDFs for each team's jobs, posted after the schedule."},
   {id: "permits",  title: "Create Emaar permits", about: "One permit request for every Emaar order, using the crew's names.", needs: "emaar"},
   {id: "permitwa", title: "Send the Emaar permits to WhatsApp", about: "Each permit goes to the group of the team doing that order.", needs: "emaar"},
-  {id: "pdf",      title: "Generate the one-page schedule PDF", about: "A single A4 landscape page with every team's jobs, times, addresses and scope; ISR jobs have a dotted border. Runs last."},
+  {id: "pdf",      title: "Generate the one-page schedule PDF", about: "A single A4 landscape page: team, crew, order, customer, area, 3D-sheet time, scope counts (2L, 1L, blinds, scaffolding...) and notes. The same page goes to the Coordinators group. Runs last."},
 ];
 let picked = new Set();
 const notes = () => (state.notes = state.notes || {team: {}, order: {}});
@@ -1186,106 +1186,91 @@ function xlsxPlan(){
     .catch(e => toast("Excel export failed: " + e.message, "bad"));
 }
 
-/* Order details as icons for the one-pager (user, 6 Nov 26: "convert the order details into icons"). One chip per fact: icon + count.
- * Blackout / sheer counts are NOT shown (the layer counts replace them); the title attribute carries the plain words. */
-const ICON_LEGEND = [["🪟", "windows"], ["▌", "single layer"], ["▌▌", "double layer"], ["↪", "bend rail"], ["⚡", "motor"], ["🎛", "remote"], ["▤", "blinds"],
-  ["🔗", "tie belts Velcro"], ["🪝", "tie belts hook"], ["⛓", "pull cord track"], ["🪜", "tall ladder"], ["🏗", "scaffolding"], ["🏠", "villa"], ["🔁", "ISR / hanging"], ["⏩", "express"]];
-function detailIcons(o){
-  const f = F[o.order_id] || {}, sc = String(o.scope || ""), alerts = (o.installation_alert || []).map(String), chips = [], rest = [];
-  const chip = (ic, n, words, cls) => chips.push(`<span class="ic ${cls || ""}" title="${esc(words)}${n ? ": " + n : ""}"><i>${ic}</i>${n ? "<b>" + esc(String(n)) + "</b>" : ""}</span>`);
+/* Scope column of the one-pager: counts of work (user, 19 Nov 26: "instead of count of blackout, blinds, sheer put count of 2L, 1L,
+ * blinds, scaffolding etc"; Blackout / Sheer counts are never shown, user 6 Nov 26). Windows, N×2L, N×1L, blinds, bend rail, motor,
+ * remote, batons, pull cord, tall ladder, scaffolding, ISR. Layer counts come from the order's scope string (workLine); the rest from
+ * the installation alerts, with the scope string as the fallback. Returns [{t: text, warn: bool}].
+ * The OrderDispatch skill has the same logic in scripts/build_onepager.py (scope()): change one, change both. */
+function scopeParts(o){
+  const f = F[o.order_id] || {}, sc = String(o.scope || ""), alerts = (o.installation_alert || []).map(String), parts = [];
   const num = (re, txt) => { const m = re.exec(txt); return m ? Number(m[1]) : 0; };
-  const win = num(/^(\d+)\s*win/, sc); if (win) chip("🪟", win, "Windows");
-  const one = num(/(\d+)×1L/, sc), two = num(/(\d+)×2L/, sc);
-  if (one) chip("▌", one, "Single-layer windows"); if (two) chip("▌▌", two, "Double-layer windows");
-  let bend = 0, motor = 0, remote = 0, blinds = 0, velcro = 0, hook = 0, pull = 0, baton = 0; const pullTxt = [];
+  let bend = 0, motor = 0, remote = 0, blinds = 0, pull = 0, baton = 0, express = false;
   alerts.forEach(a => { let m;
+    if (/^(Blackout|Sheer)\s*:/i.test(a)) return;                          // replaced by the layer counts
     if ((m = /^Bend rail:\s*(\d+)/i.exec(a))) bend += +m[1];
     else if ((m = /^Motors?:\s*(\d+)/i.exec(a))) motor += +m[1];
     else if ((m = /^Remotes?:\s*(\d+)/i.exec(a))) remote += +m[1];
     else if ((m = /^Blinds[^:]*:\s*(\d+)/i.exec(a))) blinds += +m[1];
-    else if ((m = /^Tie belts Velcro:\s*(\d+)/i.exec(a))) velcro += +m[1];
-    else if ((m = /^Tie belts Hook:\s*(\d+)/i.exec(a))) hook += +m[1];
-    else if ((m = /^Pull cord tracks?:\s*(\d+)\s*(\(([^)]*)\))?/i.exec(a))) { pull += +m[1]; if (m[3]) pullTxt.push(m[3]); }
     else if ((m = /^Hand baton[^:]*:\s*(\d+)/i.exec(a))) baton += +m[1];
-    else if (/^(Blackout|Sheer)\s*:/i.test(a)) { /* replaced by the layer counts */ }
-    else if (/express/i.test(a)) chip("⏩", 0, "2-day express");
-    else rest.push(a); });
+    else if ((m = /^Pull cord tracks?:\s*(\d+)/i.exec(a))) pull += +m[1];
+    else if (/express/i.test(a)) express = true; });
   bend = bend || num(/bend rail ×(\d+)/i, sc); motor = motor || num(/motor ×(\d+)/i, sc); remote = remote || num(/remote ×(\d+)/i, sc);
   blinds = blinds || num(/(\d+) blinds?/i, sc);
-  if (bend) chip("↪", bend, "Bend rail"); if (motor) chip("⚡", motor, "Motor"); if (remote) chip("🎛", remote, "Remote"); if (blinds) chip("▤", blinds, "Blinds");
-  if (velcro) chip("🔗", velcro, "Tie belts Velcro"); if (hook) chip("🪝", hook, "Tie belts hook");
-  if (pull) chip("⛓", pull, "Pull cord track" + (pullTxt.length ? " (" + pullTxt.join("; ") + ")" : ""));
-  if (baton) chip("🥢", baton, "Hand baton");
-  const lad = num(/TALL LADDER ×(\d+)/i, sc) || (f.tall_ladder ? 1 : 0); if (lad) chip("🪜", lad, "Tall ladder");
-  if (/SCAFFOLD/i.test(sc) || f.scaffolding) chip("🏗", 0, "Scaffolding", "warn");
-  if (/villa/i.test(sc)) chip("🏠", 0, "Villa");
-  if (/ISR/.test(sc) || f.kind === "ISR") chip("🔁", 0, "ISR / hanging");
-  const text = rest.map(r => `<div class="dn">${esc(r)}</div>`).join("");
-  return chips.join("") + text;
+  const win = num(/^\s*(\d+)\s*win/, sc), two = num(/(\d+)×2L/, sc), one = num(/(\d+)×1L/, sc), lad = num(/TALL LADDER ×(\d+)/i, sc) || (f.tall_ladder ? 1 : 0);
+  const add = (t, warn) => parts.push({t, warn: !!warn});
+  if (/\bISR\b/.test(sc) || f.kind === "ISR") add("ISR");
+  if (win && /^\s*\d/.test(String(o.order_id))) add(`${win} win`);          // a bare window count on a visit / added job is the planner's placeholder
+  if (two) add(`${two}×2L`); if (one) add(`${one}×1L`);
+  if (blinds) add(`${blinds} blind${blinds === 1 ? "" : "s"}`);
+  if (bend) add(`bend rail ×${bend}`); if (motor) add(`motor ×${motor}`); if (remote) add(`remote ×${remote}`);
+  if (baton) add(`batons ×${baton}`); if (pull) add(`pull cord ×${pull}`);
+  if (lad) add(`tall ladder ×${lad}`, true);
+  if (/SCAFFOLD/i.test(sc) || f.scaffolding) add("scaffolding", true);
+  if (express) add("2-day express");
+  return parts;
 }
+const scopeHtml = o => scopeParts(o).map(p => p.warn ? `<span class="warn">${esc(p.t)}</span>` : esc(p.t)).join(", ");
 
 /* The one-page PDF uses the browser's print engine like every other PDF in this app (see printSheet in
  * ui.js): it lays out Arabic customer names and addresses, which an embedded-font PDF library cannot
  * without shipping fonts. A script shrinks the type until everything fits ONE landscape A4 page, then
- * calls print(); the person picks "Save as PDF". ISR jobs get a dotted border. */
+ * calls print(); the person picks "Save as PDF".
+ * Layout (user, 19 Nov 26: "the pdf that goes on coordinator whatsapp group is good - I want that on the application one pager"):
+ * the OrderDispatch skill's page - Team | Crew / leave | Order | Customer | Area | Time (3D sheet) | Scope | Notes, one row per job
+ * grouped by team, Emaar tag under the order, red "no pin", a Watch line under the table. Keep it in step with
+ * ~/.claude/skills/OrderDispatch/scripts/build_onepager.py, which makes the copy that goes to the Coordinators group. */
 function pdfOnePager(){
   const P = payload();
   if (!P.teams.length){ toast("No team has any orders yet.", ""); return; }
   const w = window.open("", "_blank");
   if (!w){ toast("The browser blocked the pop-up. Allow pop-ups for this site and try again.", "bad"); return; }
   const d = new Date(UI.date + "T00:00:00"), jobs = P.teams.reduce((a, t) => a + t.orders.length, 0);
-  /* Layout: ONE table, a row per job, grouped by team (the format the user picked from Team_Schedule_2026-11-04_v2.pdf):
-   * Team | Time (start big, end small, "est N min") | Order | Job pill | Scope | Customer | Address (map link) | Notes */
-  const JOB = {New: "j-new", Visit: "j-visit", Hanging: "j-hang", Partial: "j-part"};
-  // the stepper has no job-type field, so read it from what the coordinator wrote, then from the order itself
-  const jobType = (o) => { const txt = ((o.note || "") + " " + (o.installation_alert || []).join(" ")).toLowerCase(), f = F[o.order_id] || {};
-    if (/\bvisit\b/.test(txt)) return "Visit";
-    if (/\bpartial\b/.test(txt)) return "Partial"; if (/\bhanging\b/.test(txt) || f.kind === "ISR") return "Hanging";
-    if (!/^\d+$/.test(String(o.order_id))) return "Visit"; return "New"; };
   const hmOnly = (s) => String(s || "").slice(0, 5);
-  const row = (o, first, span, t) => {
-    const f = F[o.order_id] || {}, est = o.est_min || 0, jt = jobType(o), st = String(o.time || "").split(/\s*[-–]\s*/)[0].slice(0, 5) || hmOnly(o.planned_start);
+  const pinned = (o) => { const f = F[o.order_id] || {}; return f.lat != null && !f.loc_unknown; };
+  const row = (o, first, last, span, t) => {
+    const f = F[o.order_id] || {}, est = o.est_min || 0, st = String(o.time || "").split(/\s*[-–]\s*/)[0].slice(0, 5) || hmOnly(o.planned_start);
     /* user, 14 Nov 26: the PDF shows the 3D-sheet time (or the time edited in the app), never the plan ETA; end = that start + the estimate */
-    const endM = est && /^\d{1,2}:\d{2}$/.test(st) ? (Number(st.split(":")[0]) * 60 + Number(st.split(":")[1]) + est) : null, endS = endM == null ? "" : String(Math.floor(endM / 60)).padStart(2, "0") + ":" + String(endM % 60).padStart(2, "0");
-    const timeCell = `<span class="t1">${esc(st)}</span>${endS ? `<span class="t2"> – ${esc(endS)}</span><div class="t3">est ${est} min</div>` : ""}`;
-    const pin = o.lat != null && o.lng != null, addr = esc(o.address || "");
-    const addrCell = pin ? `<a href="https://www.google.com/maps?q=${o.lat},${o.lng}">${addr}</a>` : `${addr} <span class="np">(no pin)</span>`;
-    const notes = [o.note, o.emaar ? (f.maybe ? "EMAAR?" : "EMAAR") : ""].filter(Boolean).map(esc).join(" · ");
-    const mem = t.members.length ? t.members.join(" & ") : "";
-    let label = t.name; t.members.forEach(m => { label = label.split(m).join(""); }); label = label.replace(/\s*&\s*/g, " ").replace(/\s{2,}/g, " ").trim() || t.name;
-    const teamCell = first ? `<td class="tm" rowspan="${span}"><b>${esc(label)}</b><div>${esc(mem)}</div><span class="city">${esc(UI.city)}</span></td>` : "";
-    return `<tr class="${first ? "first" : ""}">${teamCell}<td class="tc">${timeCell}</td><td class="oid">${f.kind === "ISR" ? "ISR " : ""}${esc(o.order_id)}</td><td><span class="pill ${JOB[jt] || "j-new"}">${jt}</span></td>
-      <td class="sc">${o.scope ? esc(o.scope) : ""}</td><td class="dt">${detailIcons(o)}</td><td>${esc(o.customer || "")}${o.phone ? " " + esc(o.phone) : ""}</td><td>${addrCell}</td><td>${notes}</td></tr>`; };
-  const rows = P.teams.map(t => t.orders.map((o, i) => row(o, i === 0, t.orders.length, t)).join("")).join("");
-  const planDate = d.toLocaleDateString("en-GB", {day: "numeric", month: "short", year: "2-digit"});
+    const endM = est && /^\d{1,2}:\d{2}$/.test(st) ? (Number(st.split(":")[0]) * 60 + Number(st.split(":")[1]) + est) : null,
+      endS = endM == null ? "" : String(Math.floor(endM / 60)).padStart(2, "0") + ":" + String(endM % 60).padStart(2, "0");
+    const notes = [esc(o.note || ""), pinned(o) ? "" : `<span class="np">no pin</span>`].filter(Boolean).join("; ");
+    let label = t.name; t.members.forEach(m => { label = label.split(m).join(""); }); label = label.replace(/\s*&\s*/g, " ").replace(/[:+]/g, " ").replace(/\s{2,}/g, " ").trim() || t.name;
+    const teamCells = first ? `<td class="tm" rowspan="${span}">${esc(label)}</td><td class="cr" rowspan="${span}">${esc(t.members.join(" & "))}<div class="lv">leave ${esc(t.leave)}</div></td>` : "";
+    return `<tr class="${first ? "first" : ""}${last ? " last" : ""}">${teamCells}<td class="oid">${esc(o.order_id)}${o.emaar ? `<div class="em">[${f.maybe ? "Emaar?" : "Emaar"}]</div>` : ""}</td>
+      <td>${esc(o.customer || "")}</td><td>${esc(o.address || "")}</td><td class="tc">${esc(st)}${endS ? " - " + esc(endS) : ""}</td><td class="sc">${scopeHtml(o)}</td><td>${notes}</td></tr>`; };
+  const rows = P.teams.map(t => t.orders.map((o, i) => row(o, i === 0, i === t.orders.length - 1, t.orders.length, t)).join("")).join("");
+  const all = P.teams.flatMap(t => t.orders), emaar = all.filter(o => o.emaar).map(o => o.order_id);
+  const watch = [["No map pin", all.filter(o => !pinned(o)).map(o => o.order_id)],
+    ["Phone not in +971 format", all.filter(o => o.phone && !String(o.phone).startsWith("+")).map(o => o.order_id)]].filter(([, ids]) => ids.length);
   w.document.open();
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Schedule ${esc(UI.date)} ${esc(UI.city)}</title><style>
     @page{size:A4 landscape;margin:6mm}
     *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
     html,body{margin:0}
-    body{font:11px/1.25 "Noto Sans","Segoe UI",-apple-system,Roboto,"Noto Sans Arabic",Arial,sans-serif;color:#14202e;width:285mm}
-    .hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #14202e;padding-bottom:4px;margin-bottom:4px}
-    h1{font-size:1.7em;margin:0}.sub{color:#5f7480;font-size:.85em;text-align:right}
+    body{font:11px/1.25 "Noto Sans","Segoe UI",-apple-system,Roboto,"Noto Sans Arabic",Arial,sans-serif;color:#111827;width:285mm}
+    h1{font-size:1.6em;margin:0 0 2px}.sub{color:#374151;font-size:.8em;margin-bottom:5px}
     table{width:100%;border-collapse:collapse}
-    th{background:#14181c;color:#fff;text-align:left;font-size:.85em;padding:4px 5px;font-weight:600}
-    td{padding:3px 5px;border-bottom:1px solid #cfd4da;vertical-align:middle;overflow-wrap:anywhere}
-    tr.first td{border-top:2px solid #14181c}
-    td.tm{background:#f1eee8;border-right:1px solid #cfd4da;vertical-align:top;width:11%}
-    td.tm b{font-size:1em}.city{display:inline-block;background:#2e6f9e;color:#fff;border-radius:3px;font-size:.75em;padding:0 5px;margin-top:2px}
-    td.tc{width:12%;white-space:nowrap}.t1{font-size:1.9em;font-weight:800}.t2{font-size:.85em;font-weight:700}.t3{color:#5f7480;font-size:1.05em}
-    td.oid{font-weight:700;width:5%}td.sc{color:#33414f;font-size:.85em}
-    .pill{display:inline-block;border-radius:3px;font-size:.85em;padding:0 6px;white-space:nowrap}
-    .j-new{background:#d7efdb;color:#1f5130}.j-visit{background:#fbe7c0;color:#6b4a0c}.j-hang{background:#dcdcf2;color:#33337a}.j-part{background:#e4d6f3;color:#5a2a86}
-    td.sc{font-weight:700;width:12%}td.dt{width:20%}
-    .ic{display:inline-flex;align-items:center;gap:2px;border:1px solid #b9c2cc;border-radius:4px;padding:0 4px;margin:1px 2px 1px 0;background:#f7f8fa;white-space:nowrap}
-    .ic i{font-style:normal;font-size:1.15em}.ic b{font-size:1.05em}.ic.warn{background:#fde2e0;border-color:#c0392b}
-    .dn{font-size:.8em;color:#33414f}.lg{margin-top:4px;font-size:.8em;color:#33414f}.lg .ic{background:#fff}
-    td a{color:#14202e}.np{color:#c0392b}
+    th{background:#1f2937;color:#fff;text-align:left;font-size:.8em;padding:4px 5px;font-weight:700}
+    td{padding:2px 5px;border-bottom:1px solid #d1d5db;vertical-align:middle;overflow-wrap:anywhere;font-size:.85em}
+    tr.last td{border-bottom:1.5px solid #6b7280}
+    td.tm,td.cr{background:#f3f4f6}td.tm{font-weight:700;width:5%}td.cr{width:11%}.lv{color:#374151}
+    td.oid{font-weight:700;width:7%}.em{color:#b45309;font-weight:400}
+    td.tc{font-weight:700;white-space:nowrap;width:9%}td.sc{width:14%}
+    .warn{color:#b91c1c;font-weight:700}.np{color:#b91c1c}.watch{margin-top:5px;font-size:.8em;color:#374151}
   </style></head><body>
-    <div class="hd"><h1>Installation schedule · ${esc(d.toLocaleDateString("en-GB", {weekday: "long", day: "2-digit", month: "long", year: "numeric"}))}</h1>
-      <div class="sub">${P.teams.length} teams · ${jobs} jobs<br>Team Board plan ${esc(planDate)} (${esc(UI.city)}) + 3D sheet times; end times are estimates</div></div>
-    <table id="g"><thead><tr><th>Team</th><th>Time</th><th>Order</th><th>Job</th><th>Scope of work</th><th>Order details</th><th>Customer</th><th>Address</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>
-    <div class="lg">${ICON_LEGEND.map(([ic, w]) => `<span class="ic"><i>${ic}</i> ${w}</span>`).join("")}</div>
+    <h1>Installation schedule - ${esc(d.toLocaleDateString("en-GB", {weekday: "long", day: "numeric", month: "long", year: "numeric"}))} (${esc(UI.city)})</h1>
+    <div class="sub">${P.teams.length} teams, ${jobs} orders. 2L / 1L = windows with two / one layer. Times = 3D sheet booking; end = start + estimate. Emaar: ${emaar.length ? esc(emaar.join(", ")) : "none"}.</div>
+    <table id="g"><thead><tr><th>Team</th><th>Crew / leave</th><th>Order</th><th>Customer</th><th>Area</th><th>Time (3D sheet)</th><th>Scope</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>
+    ${watch.length ? `<div class="watch">Watch: ${watch.map(([k, ids]) => esc(k + ": " + ids.join(", "))).join(" | ")}</div>` : ""}
     <script>
       var fs = 12, max = 190 * 3.7795; // 190 mm of usable height, in CSS px
       function fit(){ document.body.style.fontSize = fs + "px";
