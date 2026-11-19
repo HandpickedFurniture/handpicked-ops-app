@@ -1107,6 +1107,13 @@ own `on_time` on all 1,493 rows. **`minutes_late` is the figure to use, not the 
 difference of full date-times, so a task marked arrived days later is correctly thousands of minutes late, while its
 `arrived` shows a small clock time.
 
+**Outcome filter (19 Nov 2026, user).** Toggle chips under the date/vertical/city filters, with live counts: *All*,
+*Successful*, *Failed*, *Arrived*. Nothing ticked = all; a first click narrows to that one, further clicks add or remove, and
+ticking every option (or un-ticking the last) returns to all. Only the three COUNTED outcomes are offered — Declined, Assigned,
+Accepted, Started and Cancelled have no real arrival time, so `v_punctuality` leaves them out whatever is ticked. The filter narrows
+the counted jobs only (tiles, charts, both tables, Excel; the Excel summary carries an "Outcomes counted" column); the "left out"
+note still counts what the view excluded. It is browser-side (`F.outcomes`, `outcomeOk`), not a database change.
+
 **First order = the sheet's `first_visit = 'yes'`**, which is the team's earliest job of the day (jobs booked at the same
 earliest slot all count). It is NOT "first visit to an order" despite the name; verified against "earliest slot among
 Successful / Failed / Arrived jobs of that fleet and day" on every counted row. Slots read "2:00" / "3:00" for PM.

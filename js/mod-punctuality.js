@@ -29,7 +29,7 @@ const pc = (k, n, dec = 0) => (n ? (100 * k / n).toFixed(dec) + "%" : "–");
 const pv = (k, n) => (n ? 100 * k / n : null);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-let F = { preset: "all", from: "", to: "", vertical: "", city: "", by: "overall", pop: "all", measure: 30, gran: "day", granPicked: false, teams: null, sort: { col: "n", dir: -1 } };
+let F = { preset: "all", from: "", to: "", vertical: "", city: "", by: "overall", pop: "all", measure: 30, gran: "day", granPicked: false, teams: null, outcomes: null, sort: { col: "n", dir: -1 } };
 let ROWS = [], RUN = null, SRCS = [], FIRST = "", LAST = "";
 const SLOT = new Map();          // team id -> palette slot
 
@@ -64,6 +64,14 @@ function applyPreset() {
 }
 
 const inScope = (r) => (!F.from || r.day >= F.from) && (!F.to || r.day <= F.to) && (!F.vertical || r.vertical === F.vertical) && (!F.city || r.city === F.city);
+/* Outcome filter (user, 19 Nov 2026). Only outcomes that are COUNTED can be picked: Successful, Failed and
+ * Arrived have a real arrival time, the rest are left out by the view whatever is ticked. F.outcomes is null
+ * for "all"; otherwise the ticked ones. It narrows the counted jobs only, so the "left out" note is unchanged. */
+const OUTCOME_ORDER = ["Successful", "Failed", "Arrived"];
+const outcomeOptions = () => [...new Set(ROWS.filter((r) => r.counted && r.outcome).map((r) => r.outcome))]
+  .sort((a, b) => ((OUTCOME_ORDER.indexOf(a) + 1) || 99) - ((OUTCOME_ORDER.indexOf(b) + 1) || 99) || a.localeCompare(b));
+const outcomeOk = (r) => !F.outcomes || F.outcomes.includes(r.outcome);
+const outcomeText = () => (F.outcomes ? F.outcomes.join(" + ") : "All");
 const bucketOf = (r) => (F.gran === "week" ? (r.week || monday(r.day)) : r.day);
 const bucketLabel = (b) => (F.gran === "week" ? "Wk " + short(b) : short(b));
 const partWeek = (b) => F.gran === "week" && LAST && isoShift(b, 6) > LAST;     // the sheets stop before the week ends
@@ -79,7 +87,7 @@ function agg(rows) {
 
 function paint(box) {
   const scoped = ROWS.filter(inScope);
-  const counted = scoped.filter((r) => r.counted);
+  const counted = scoped.filter((r) => r.counted && outcomeOk(r));
   box.innerHTML = "";
   box.appendChild(filterCard(box));
   if (!ROWS.length) {
@@ -114,6 +122,9 @@ function filterCard(box) {
   const cities = [...new Set(ROWS.map((r) => r.city))].sort();
   const bad = SRCS.filter((s) => s.last_error);
   const read = SRCS.map((s) => s.last_read_at).filter(Boolean).sort().pop();
+  const opts = outcomeOptions();
+  const inRange = ROWS.filter((r) => inScope(r) && r.counted);
+  const nOf = (o) => inRange.filter((r) => r.outcome === o).length;
   const card = el(`<div class="card"><div class="fgrid">
     <div><label class="f">From</label><input type="date" name="from" value="${esc(F.from)}" min="${esc(FIRST)}" max="${esc(LAST)}"></div>
     <div><label class="f">to</label><input type="date" name="to" value="${esc(F.to)}" min="${esc(FIRST)}" max="${esc(LAST)}"></div>
@@ -121,6 +132,9 @@ function filterCard(box) {
     <div><label class="f">City</label><select name="city"><option value="">All</option>${cities.map((c) => `<option ${c === F.city ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></div>
     <div><label class="f">Chart and table by</label><div class="seg" data-gran>
       <button data-g="day" class="${F.gran === "day" ? "on" : ""}">Day</button><button data-g="week" class="${F.gran === "week" ? "on" : ""}">Week</button></div></div></div>
+    <div style="margin-top:8px"><label class="f">Outcome <span class="muted" style="font-weight:400">(tick one or more)</span></label><div class="seg" data-out>
+      <button data-o="" class="${F.outcomes ? "" : "on"}">All <span style="opacity:.7">${inRange.length}</span></button>
+      ${opts.map((o) => `<button data-o="${esc(o)}" class="${F.outcomes && F.outcomes.includes(o) ? "on" : ""}" title="Jobs with outcome ${esc(o)} that have an arrival time">${esc(o)} <span style="opacity:.7">${nOf(o)}</span></button>`).join("")}</div></div>
     <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">
       <button class="btn sm ${F.preset === "7" ? "accent" : ""}" data-p="7">Last 7 days</button>
       <button class="btn sm ${F.preset === "30" ? "accent" : ""}" data-p="30">Last 30 days</button>
@@ -130,6 +144,18 @@ function filterCard(box) {
     ${bad.length ? `<div style="font-size:12px;color:#9a5b00;margin-top:6px">⚠ ${bad.map((s) => esc(`${s.vertical} ${s.city}: ${s.last_error}`)).join(" · ")}</div>` : ""}</div>`);
   card.querySelectorAll("input[type=date]").forEach((i) => i.addEventListener("change", () => { F[i.name] = i.value; F.preset = "custom"; paint(box); }));
   card.querySelectorAll("select").forEach((s) => s.addEventListener("change", () => { F[s.name] = s.value; paint(box); }));
+  // Nothing ticked = all. Ticking narrows to the ticked ones, so a first click on "Failed" means "only Failed",
+  // a second on "Arrived" means "Failed and Arrived", and un-ticking the last one goes back to all.
+  card.querySelectorAll("[data-o]").forEach((b) => b.addEventListener("click", () => {
+    const o = b.dataset.o;
+    if (!o) F.outcomes = null;
+    else {
+      const cur = F.outcomes || [];
+      const next = cur.includes(o) ? cur.filter((x) => x !== o) : [...cur, o];
+      F.outcomes = !next.length || next.length === opts.length ? null : opts.filter((x) => next.includes(x));
+    }
+    paint(box);
+  }));
   card.querySelectorAll("[data-g]").forEach((b) => b.addEventListener("click", () => { F.gran = b.dataset.g; F.granPicked = true; paint(box); }));
   card.querySelectorAll("[data-p]").forEach((b) => b.addEventListener("click", () => { F.preset = b.dataset.p; applyPreset(); paint(box); }));
   const rf = card.querySelector("[data-refresh]");
@@ -162,7 +188,7 @@ function statCard(counted) {
   const a = agg(counted);
   const tile = (n, l, sub) => `<div class="stat"><span class="sn">${n}</span><span class="sl">${l}</span>${sub ? `<div class="muted" style="font-size:11px;margin-top:2px">${sub}</div>` : ""}</div>`;
   return el(`<div class="card statrow" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
-    ${tile(a.n.toLocaleString("en-GB"), "jobs counted", `${a.n1.toLocaleString("en-GB")} of them a first order`)}
+    ${tile(a.n.toLocaleString("en-GB"), "jobs counted", `${a.n1.toLocaleString("en-GB")} of them a first order${F.outcomes ? ` · only ${esc(outcomeText())}` : ""}`)}
     ${tile(pc(a.a30, a.n, 1), "Punctuality30 · all orders", `${a.a30} of ${a.n} within 30 min`)}
     ${tile(pc(a.b30, a.n1, 1), "Punctuality30 · first order", `${a.b30} of ${a.n1} · ${delta(pv(a.b30, a.n1), pv(a.a30, a.n))}`)}
     ${tile(pc(a.a60, a.n, 1), "Punctuality60 · all orders", `${a.a60} of ${a.n} within 60 min`)}
@@ -446,7 +472,7 @@ function exportXlsx(groups, counted) {
     long.push({ [F.gran === "week" ? "Week starting" : "Date"]: b, [by === "Overall" ? "Group" : by]: s.name, "Jobs": a.n, "Punctuality30 %": num(a.a30, a.n), "Punctuality60 %": num(a.a60, a.n),
       "First-order jobs": a.n1, "First-order Punctuality30 %": num(a.b30, a.n1), "First-order Punctuality60 %": num(a.b60, a.n1) });
   }
-  const sum = sets.map((s) => { const a = agg(s.rows); return { [by === "Overall" ? "Group" : by]: s.name, "Jobs": a.n, "Punctuality30 %": num(a.a30, a.n), "Punctuality60 %": num(a.a60, a.n),
+  const sum = sets.map((s) => { const a = agg(s.rows); return { [by === "Overall" ? "Group" : by]: s.name, "Outcomes counted": outcomeText(), "Jobs": a.n, "Punctuality30 %": num(a.a30, a.n), "Punctuality60 %": num(a.a60, a.n),
     "First-order jobs": a.n1, "First-order Punctuality30 %": num(a.b30, a.n1), "First-order Punctuality60 %": num(a.b60, a.n1) }; });
   downloadXlsx(`punctuality_${F.by}_${F.from}_to_${F.to}.xlsx`, [{ name: "Summary", rows: sum }, { name: F.gran === "week" ? "By week" : "By date", rows: long.length ? long : [{ note: "No counted jobs in this range" }] }])
     .catch((e) => toast(e.message || String(e), "bad"));
@@ -461,6 +487,7 @@ function notesCard(scoped) {
     <ul style="margin:8px 0 0 18px;padding:0;font-size:13px;line-height:1.5">
       <li><b>A job counts</b> when the team reached site: outcome <i>Successful</i>, <i>Failed</i> or <i>Arrived</i>, with an arrival time.</li>
       <li><b>Left out${left ? " in this range" : ""}:</b> ${esc(left || "nothing")}. Declined, assigned, accepted and started have no arrival time yet; cancelled jobs carry an “arrived” time that is not a site arrival (many are hours off), and the sheet itself does not treat them as visits.</li>
+      <li><b>Outcome filter:</b> only Successful, Failed and Arrived can be picked, because only they have a real arrival time. Tick one or more to narrow every tile, chart and table to those outcomes; nothing ticked means all three.</li>
       <li><b>Punctuality30 / Punctuality60</b> = jobs where the arrival was no more than 30 / 60 minutes after the scheduled time, ÷ jobs counted. Arriving early counts as on time. The minutes come from the sheet's <i>minutes_late</i>, which compares full date-times (so a task marked arrived days later is correctly very late).</li>
       <li><b>First order</b> = the team's first job of the day (the sheet's <i>first_visit</i>; jobs booked at the same earliest time all count). It measures whether a team starts its day on time, free of delays carried over from earlier jobs.</li>
       <li><b>Teams</b> are Tookan agents tidied to T1, T2…: “Ejaz Ahmad” is Team 5. Dubai T1 and Abu Dhabi T1 are different agents, so they are different teams.</li>
