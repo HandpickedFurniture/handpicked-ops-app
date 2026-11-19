@@ -96,6 +96,7 @@ export const APP_TILES = [
   { hash: "#/status?view=isr", key: "nav.isr",   icon: "🔁",  desc: "home.dIsr" },
   { hash: "#/tailors",    key: "nav.tailors",    icon: "🪡",  desc: "home.dTailors" },
   { hash: "#/reviews",    key: "nav.reviews",    icon: "⭐",  desc: "home.dReviews" },
+  { hash: "#/punctuality", key: "nav.punctuality", icon: "⏱️", desc: "home.dPunctuality" },
   { hash: "#/status",     key: "nav.status",     icon: "🚚",  desc: "home.dInstall" },
   { hash: "#/schedule",   key: "nav.schedule",   icon: "🗓️", desc: "home.dSchedule" },
   { hash: "#/stepper",    key: "nav.stepper",    icon: "🧭",  desc: "home.dStepper" },

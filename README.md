@@ -1082,6 +1082,47 @@ counts once for each of them in the person table. Status: `auto` (the rebuild ow
 changed or ticked it: the rebuild only refreshes its photos), `manual` (added by hand), `rejected`. Writes go
 through `fn_review_set` / `fn_review_add` / `fn_review_alias_set`, which refuse read-only roles (`fn_live_guard`).
 
+## Punctuality (18 Nov 2026)
+
+`#/punctuality`, a Home tile (⏱️). How early or late each installation team arrives against the time the job
+was scheduled for, as **Punctuality30** (arrived no later than 30 min after the scheduled time) and
+**Punctuality60** (60 min), each for **all orders** and for each team's **first order of the day**, overall and
+by vertical (Kurtains / Floorz), city and team: two line charts (30 and 60) and a table by date (Day or Week).
+Source is three tabs of one Google Sheet (`1Abnk3vT…`, "anyone with the link") that are a Tookan export, one row
+per task. SQL: `supabase/sql/20261118_punctuality.sql` (applied).
+
+| Step | Where |
+|---|---|
+| Read the tabs every 3 h (pg_cron `handpicked-punctuality-sync` at :10, or "↻ Refresh from sheets", which waits for the new run row) and upsert on `(source, job_id)`; rows that left the sheet are deleted unless more vanished than remain (thin read) | Edge Function `punctuality-sync` (gate: Vault `punctuality_sync_secret`, via `fn_punct_run_sync`; added to the `fn_wa_secret` allow-list) |
+| Tabs to read = rows, not code: a new tab (say Floorz Abu Dhabi) is an `insert into punctuality_source` | `punctuality_source` |
+| One row per task; `punctuality_sync_run` logs each run and the screen shows the last read time and any error | `punctuality_job`, `punctuality_sync_run` |
+| **The rules, in one place** | `v_punctuality` (`counted`, `p30`, `p60`, `first_order`) |
+| Screen: stat tiles, Overall / By vertical / By city / By team, summary table (sortable, + Excel of everything), table by date | `js/mod-punctuality.js` |
+
+**What counts.** A job is counted when the team reached site: outcome Successful, Failed or Arrived, with a
+`minutes_late`. Not counted: Declined, Assigned, Accepted, Started (no arrival time yet) and **Cancelled** — it
+carries an "arrived" time, but 15 of 50 are more than 5 hours off the slot, and the sheet itself marks Cancelled
+`first_visit = n/a`. `p30` / `p60` = `minutes_late <= 30 / 60`; early counts as punctual. `p30` agrees with the sheet's
+own `on_time` on all 1,493 rows. **`minutes_late` is the figure to use, not the HH:MM `arrived` column**: it is a
+difference of full date-times, so a task marked arrived days later is correctly thousands of minutes late, while its
+`arrived` shows a small clock time.
+
+**First order = the sheet's `first_visit = 'yes'`**, which is the team's earliest job of the day (jobs booked at the same
+earliest slot all count). It is NOT "first visit to an order" despite the name; verified against "earliest slot among
+Successful / Failed / Arrived jobs of that fleet and day" on every counted row. Slots read "2:00" / "3:00" for PM.
+
+**Teams** are Tookan agents tidied to T1, T2… / Floorz1 (`labelOf`): "Handpicked  T1", "handpicked t10", "Handpicked 11"
+merge, and an agent named after a person ("Ejaz Ahmad") takes the label its own `fleet_id` carries elsewhere (T5). Dubai T1
+and Abu Dhabi T1 are different `fleet_id`s, so different teams; the screen writes them "T1 · Dubai" / "T1 · Abu Dhabi".
+
+**Design notes.** A team does only 1-4 jobs a day, so a daily team line jumps 0% ↔ 100%: **By team opens by Week** (until
+Day or Week is picked by hand), days under 3 jobs are hollow dots, and lines break where a group had no jobs. Charts are drawn at
+their display width so the labels stay 11px on a phone (the fixed-720 drawing the Reviews chart uses shrank them to ~6px).
+Colours are the dataviz reference palette in fixed order and follow the entity (Kurtains / Dubai blue, Floorz / Abu Dhabi
+orange; a team keeps its slot while selected; at most 8 teams on a chart). A chart's pointer maths must select
+`svg.chart`, not the first `svg` — the legend's line keys are SVGs too. Figures are verified to 0.1 pt against an independent
+calculation from the raw CSVs; display rounding of an exact .5 differs from Python's (10/16 shows 63%, not 62%).
+
 ## Fabric stock status page (17 Nov 2026)
 
 `fabric-stock.html` — a standalone public page (NOT part of the ribbon app, no login yet) where suppliers
@@ -1107,7 +1148,7 @@ SQL: `supabase/sql/20261117_fabric_stock_status.sql` (applied).
 The functions in `supabase/functions/` live in **this** repo because they exist only to serve this
 app — `js/voice.js` calls `transcribe`, `js/mod-chotu.js` calls `chotu`, `js/mod-schedule.js` calls
 `sched-ask`, `js/photos.js` calls `photo-signed-url`, and `wa-inbound` / `wa-register` are Chotu's
-WhatsApp door (above). `expense-capture` is the morning copy behind Expense tracking, and `review-capture` the 5-minute copy of the Fixer group behind Reviews. Deploy from the repo root, which is where the `supabase/` directory sits:
+WhatsApp door (above). `expense-capture` is the morning copy behind Expense tracking, and `review-capture` the 5-minute copy of the Fixer group behind Reviews; `punctuality-sync` reads the Tookan arrival sheets behind Punctuality (deployed 18 Nov 2026, version 2). Deploy from the repo root, which is where the `supabase/` directory sits:
 
 ```bash
 supabase functions deploy chotu --project-ref jrevqijbzzwdcwxcnwfa
