@@ -1124,8 +1124,9 @@ Successful / Failed / Arrived jobs of that fleet and day" on every counted row. 
 merge, and an agent named after a person ("Ejaz Ahmad") takes the label its own `fleet_id` carries elsewhere (T5). Dubai T1
 and Abu Dhabi T1 are different `fleet_id`s, so different teams; the screen writes them "T1 · Dubai" / "T1 · Abu Dhabi".
 
-**Design notes.** A team does only 1-4 jobs a day, so a daily team line jumps 0% ↔ 100%: **By team opens by Week** (until
-Day or Week is picked by hand), days under 3 jobs are hollow dots, and lines break where a group had no jobs. Charts are drawn at
+**Design notes.** A team does only 1-4 jobs a day, so a daily team line can jump 0% ↔ 100%. **By team still opens by Day** like every
+other view (USER 20 Nov 2026: "I need it by date"; it briefly opened by Week on its own, 18-19 Nov) and says so in a one-line hint; Week is one
+click and is kept across views. Days under 3 jobs are hollow dots, and lines break where a group had no jobs. Charts are drawn at
 their display width so the labels stay 11px on a phone (the fixed-720 drawing the Reviews chart uses shrank them to ~6px).
 Colours are the dataviz reference palette in fixed order and follow the entity (Kurtains / Dubai blue, Floorz / Abu Dhabi
 orange; a team keeps its slot while selected; at most 8 teams on a chart). A chart's pointer maths must select

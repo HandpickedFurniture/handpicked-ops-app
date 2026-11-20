@@ -29,7 +29,7 @@ const pc = (k, n, dec = 0) => (n ? (100 * k / n).toFixed(dec) + "%" : "–");
 const pv = (k, n) => (n ? 100 * k / n : null);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-let F = { preset: "all", from: "", to: "", vertical: "", city: "", by: "overall", pop: "all", measure: 30, gran: "day", granPicked: false, teams: null, outcomes: null, sort: { col: "n", dir: -1 } };
+let F = { preset: "all", from: "", to: "", vertical: "", city: "", by: "overall", pop: "all", measure: 30, gran: "day", teams: null, outcomes: null, sort: { col: "n", dir: -1 } };
 let ROWS = [], RUN = null, SRCS = [], FIRST = "", LAST = "";
 const SLOT = new Map();          // team id -> palette slot
 
@@ -156,7 +156,7 @@ function filterCard(box) {
     }
     paint(box);
   }));
-  card.querySelectorAll("[data-g]").forEach((b) => b.addEventListener("click", () => { F.gran = b.dataset.g; F.granPicked = true; paint(box); }));
+  card.querySelectorAll("[data-g]").forEach((b) => b.addEventListener("click", () => { F.gran = b.dataset.g; paint(box); }));
   card.querySelectorAll("[data-p]").forEach((b) => b.addEventListener("click", () => { F.preset = b.dataset.p; applyPreset(); paint(box); }));
   const rf = card.querySelector("[data-refresh]");
   if (rf) rf.addEventListener("click", () => refresh(rf, box));
@@ -210,19 +210,15 @@ function viewCard(box, counted) {
     <div class="row" style="gap:6px;align-items:center"><span class="muted" style="font-size:12px">Orders:</span><div class="seg" data-pop>
       <button data-k="all" class="${F.pop === "all" ? "on" : ""}">All orders</button><button data-k="first" class="${F.pop === "first" ? "on" : ""}">First order of the day</button></div></div>`}</div>
     ${F.by === "team" ? `<div data-chips style="margin-top:10px"></div>` : ""}</div>`);
-  // One team does only 1-4 jobs a day, so its daily line jumps between 0% and 100% and the chart is noise;
-  // by week it is a trend. Teams therefore open by week, unless Day or Week has been picked by hand.
-  card.querySelectorAll("[data-by] button").forEach((b) => b.addEventListener("click", () => {
-    F.by = b.dataset.k;
-    if (!F.granPicked) F.gran = F.by === "team" ? "week" : "day";
-    paint(box);
-  }));
+  // Every view keeps the Day / Week choice as it is. (Teams used to open by week on their own, because one
+  // team does only 1-4 jobs a day and its daily line jumps; the user wanted by date, 20 Nov 2026.)
+  card.querySelectorAll("[data-by] button").forEach((b) => b.addEventListener("click", () => { F.by = b.dataset.k; paint(box); }));
   card.querySelectorAll("[data-pop] button").forEach((b) => b.addEventListener("click", () => { F.pop = b.dataset.k; paint(box); }));
   const chips = card.querySelector("[data-chips]");
   if (chips) {
     const groups = groupsOf(counted);
     const sel = selectedTeams(groups);
-    chips.innerHTML = `<div class="muted" style="font-size:12px;margin-bottom:6px">On the chart (up to ${MAX_TEAMS}) - the tables below always list every team.${F.gran === "day" ? " <b>A team does only 1-4 jobs a day, so a daily line jumps between 0% and 100% - Week shows the trend.</b>" : ""}</div>
+    chips.innerHTML = `<div class="muted" style="font-size:12px;margin-bottom:6px">On the chart (up to ${MAX_TEAMS}) - the tables below always list every team.${F.gran === "day" ? " A team does only 1-4 jobs a day, so a daily line can jump between 0% and 100%; Week (top) shows the trend." : ""}</div>
       <div class="seg">${groups.map((g) => {
         const on = sel.includes(g.id), c = on ? PALETTE[SLOT.get(g.id)] : "transparent";
         return `<button data-team="${esc(g.id)}" class="${on ? "on" : ""}" title="${g.n} jobs counted"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${c};border:1.5px solid ${on ? "#fff" : "#8aa0ab"};margin-right:6px"></span>${esc(g.name)} <span style="opacity:.7">${g.n}</span></button>`;
