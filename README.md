@@ -1171,6 +1171,12 @@ only), and it returns `flags` (`noSpare`, `leadNotPossible`, `reducedHem`, `hemF
 core, add a case, copy it to the Chotu folder, run the skill's checks, redeploy Chotu (MCP, `verify_jwt: true`), mirror
 it in PFC — the skill's SKILL.md has the full list.
 
+**Proving a Chotu deploy.** Chotu is deployed by pasting its files into the Supabase MCP tool, so the probe now carries
+evidence: `POST {"probe":true}` (publishable key as Bearer + apikey) returns `system_sha` — the first 12 hex of the
+SHA-256 of the SYSTEM prompt — and `fabric_selftest` (8 known answers through the deployed fabric code).
+`node tools/chotu_deploy_check.mjs` prints what they must be for the repo copy. Version 14 (20 Nov 2026):
+`be592344b284`, 8/8, 17 intents.
+
 | | |
 |---|---|
 | Gathering (× adjusted width) | American / Pinch pleat / Eyelet / Ring **2.1**, Wave / Ripplefold **2.3** — editable per card |

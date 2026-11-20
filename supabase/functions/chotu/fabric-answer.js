@@ -193,3 +193,27 @@ export async function fabricAnswer(fields, { said = "", lang, lookupRoll } = {})
   if (L === T.en && r.working) say += ` ${r.working}.`;
   return { ...base, say, fields: { fabric: detail } };
 }
+
+/* A self-test for the probe after a deploy. Chotu is deployed by pasting these files into the Supabase
+ * MCP tool, not built from git, so this proves the deployed rules give the repo's answers. */
+const SELF = [
+  [{ width: "350 cm", height: 260, roll: 280 }, 8],
+  [{ width: 350, height: 266, roll: 280 }, 8],                       // exactly on the lead-band limit: fits
+  [{ width: 350, height: 260, roll: 280, bottom: "hemming" }, 9],
+  [{ width: 300, height: 270, roll: 300, style: "wave", bottom: "hemming" }, 7],
+  [{ width: 500, height: 200, roll: 300 }, 11],
+  [{ width: 200, height: 260, roll: 280, layer: "blackout" }, 6],
+  [{ width: 120, height: 150, roll: 280, style: "roman" }, 2],
+  [{ fabric_code: "fd533-3", width: "4 m", height: "2.7 m", style: "wave" }, 10],
+];
+export async function fabricSelfTest() {
+  const lookupRoll = async (c) => (c === "fd533-3" ? { roll: 320 } : null);
+  let passed = 0;
+  const failed = [];
+  for (const [f, want] of SELF) {
+    const a = await fabricAnswer(f, { lookupRoll });
+    const got = a.fields && a.fields.fabric ? a.fields.fabric.metres : null;
+    if (got === want) passed++; else failed.push(`${JSON.stringify(f)} -> ${got}`);
+  }
+  return { passed, of: SELF.length, failed };
+}

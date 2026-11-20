@@ -28,7 +28,7 @@
  */
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 // the fabricCalculation skill: Chotu parses, this code calculates (see fabric-answer.js)
-import { fabricAnswer } from "./fabric-answer.js";
+import { fabricAnswer, fabricSelfTest } from "./fabric-answer.js";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 
@@ -372,8 +372,14 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Not signed in" }, 401, headers);
   }
 
+  /* The probe proves a deploy: the prompt's fingerprint (compare with tools/chotu_deploy_check.mjs on the
+   * repo copy) and the fabric self-test. Chotu is pasted into the deploy tool, so this is the evidence the
+   * live function is the file in git. */
   if (body.probe) {
-    return json({ ok: !!API_KEY, model: MODEL, intents: INTENTS }, 200, headers);
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(SYSTEM));
+    const system_sha = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 12);
+    return json({ ok: !!API_KEY, model: MODEL, intents: INTENTS, system_sha,
+                  fabric_selftest: await fabricSelfTest() }, 200, headers);
   }
 
   const said = String(body.said ?? "").trim();
