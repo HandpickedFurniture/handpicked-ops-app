@@ -56,7 +56,7 @@ it is the Reports page `?rep=production`, so its ribbon entry carries its own ha
 active" test (`PLANNING_TAB` in `js/app.js`).
 
 Everything else is a real route reached from **Home**, which is the full index: Preparation,
-Inventory, Finance, Schedule, Transfers, Dashboard, Reports, End of day, Photo audit and Roles. The old `Insights` container is gone — it
+Inventory, Finance, Schedule, Transfers, Dashboard, Reports, End of day, Photo audit, Roles and (19 Nov 2026) Fabric calculation. The old `Insights` container is gone — it
 bundled five unrelated read-only screens behind one tab and buried the line-by-line PO review, the
 one screen coordinators work *through*, three clicks deep. That review is the **PO** tab now.
 
@@ -730,7 +730,7 @@ The stages sit at three different grains, because they are about three different
 
 `paid` is a rung above `qc_passed`, not a state beside it: settling with the last tailor closes
 production exactly as passing the check does. `order_dispatch` carries a payment axis of its own
-(`payment_status` / `paid_at`, read by the Dragon Mart report) and `fn_ops_set_dispatch` keeps the
+(`payment_status` / `paid_at`, read by the MD report — labelled "Dragon Mart" until 20 Nov 2026; its id and `?rep=dragonmart` links are unchanged) and `fn_ops_set_dispatch` keeps the
 two in step in both directions — moving a row back off `paid` returns it to `unpaid`.
 
 QC is deliberately a separate axis from status: a fabric can be both `received` and quality-checked.
@@ -850,6 +850,8 @@ js/mod-comments.js      module 8 - the line-by-line PO review
 js/mod-chotu.js         module 9 - the voice screen
 js/mod-finance.js       module 10 - the two finance grids
 js/mod-schedule.js      the schedule board
+js/mod-fabcalc.js       Fabric calculation: the screen (cards, fabric dropdown, totals, WhatsApp, Excel)
+js/fabric-calc-core.js  THE fabric rules + calc(), shared with Chotu (byte copy) and the fabricCalculation skill
 js/app.js               hash router
 check_i18n.py           key parity across the three languages
 check_values.py         every written value still matches its CHECK constraint
@@ -859,7 +861,7 @@ tools/check_columns.py  every column the app SELECTs still exists
 Run all three checkers after touching strings, vocabularies, a module or a view:
 
 ```bash
-python check_i18n.py && python check_values.py && python tools/check_columns.py
+python check_i18n.py && python check_values.py && python tools/check_columns.py && python tools/check_fabric_core.py
 ```
 
 `supabase/sql/` keeps the SQL applied outside the app's own migrations (issue flag, management
@@ -1129,6 +1131,72 @@ Colours are the dataviz reference palette in fixed order and follow the entity (
 orange; a team keeps its slot while selected; at most 8 teams on a chart). A chart's pointer maths must select
 `svg.chart`, not the first `svg` — the legend's line keys are SVGs too. Figures are verified to 0.1 pt against an independent
 calculation from the raw CSVs; display rounding of an exact .5 differs from Python's (10/16 shows 63%, not 62%).
+
+## Fabric calculation (19 Nov 2026)
+
+`#/fabcalc`, a Home tile (📐) beside Planning. A calculator, not a report: the sizes are typed in (adjusted width,
+adjusted height, style, lead band or hemming), and **nothing is written to the database**. One card per curtain
+(Window / room label, Fabric code, Quantity), a total across them and per fabric code, **Copy for WhatsApp** and
+**Excel**. The cards are kept in this browser only (`localStorage` `kops_fabcalc_v1`), so a reload does not lose them;
+Clear all empties them.
+
+**Fabric code is a searchable dropdown that also takes free entry (20 Nov 2026, user), and it fills the roll width.**
+The list is `v_fabric_master` (codes with a supplier prefix, most-used first by `order_lines`) merged with
+`fabric_roll_widths` (138 roll widths whose code has no supplier prefix, e.g. `304-39`, are not in the view): about
+4,900 codes, 4,473 with a roll width. Search ignores case, spaces, hyphens and dots ("fd533 3" finds FD533-3),
+starts-with before contains, 40 shown at a time. A code not in the list can be used as typed ("Use …"); it is
+upper-cased and stays on that card. Picking a code from the list **fills the roll width, which stays editable**: the
+hint under it says "✓ From the fabric list", or "Fabric list says 320 cm · Use it" once edited, or "New code" / "No roll
+width on file". Only a *different* code refills it; leaving the field on the same code keeps a hand-typed width. Excel
+carries both the roll width used and the list's. The list is cached in the browser (`kops_fabcalc_fabrics_v1`) so the
+dropdown works at once and offline, and re-read on every visit; the status line under the title says which copy is
+showing. **Read-only on purpose**: `fabric_roll_widths` feeds the cut sheets and panel plans on the next order rebuild,
+so neither a new code nor an edited width is ever written back from here.
+
+**The rules (user, 19–20 Nov 2026)** live in `js/fabric-calc-core.js` and nowhere else — a pure ES module (no
+imports, no DOM) that runs in the browser, in Deno and in Node. The screen imports it and its "How it is worked out"
+card is written from it. Since 20 Nov 2026 it is also the **fabricCalculation skill** (user: "I will require this on
+Chotu, in the chat and in the PFC order app"):
+
+| Where | How it uses the rules |
+|---|---|
+| This screen | imports `js/fabric-calc-core.js` |
+| **Chotu** (voice tab and WhatsApp) | intent `fabric_calc`. The model only copies the sizes AS SAID into fields; `supabase/functions/chotu/fabric-answer.js` converts units (a bare number under 20 is metres, and it says so), looks the roll width up as the caller (`fabric_roll_widths`, then `v_fabric_master` for "known, no width"), runs the rules and writes the reply in English, Hindi or Bengali. It goes back as a plain `answer`: nothing to confirm, nothing saved. Chotu deploys `fabric-calc-core.js` as a **byte copy** — `tools/check_fabric_core.py` fails if it drifts |
+| Chat | `~/.claude/skills/fabricCalculation/` — `calc.mjs` imports this file by path; `cases.json` holds 34 worked cases every implementation must pass; `chotu_test.mjs` tests Chotu's answers |
+| PFC sales app | its own `fabricPlan()` and SQL `fabric_plan()`, checked against the same cases (`calc.mjs --pfc`, `--pfc-sql`) |
+
+The core also takes the PFC inputs: **Roman** (×1) and a **blackout** layer are always hemmed (lead band is for sheers
+only), and it returns `flags` (`noSpare`, `leadNotPossible`, `reducedHem`, `hemForced`, `wouldFitReduced`,
+`invertedLess`) beside the English warnings, so a caller can say them in its own words. To change a rule: edit the
+core, add a case, copy it to the Chotu folder, run the skill's checks, redeploy Chotu (MCP, `verify_jwt: true`), mirror
+it in PFC — the skill's SKILL.md has the full list.
+
+| | |
+|---|---|
+| Gathering (× adjusted width) | American / Pinch pleat / Eyelet / Ring **2.1**, Wave / Ripplefold **2.3** — editable per card |
+| Hemming | bottom 8 cm, sides 4 cm (sides are a listed term; no formula adds them) |
+| Round up | to the next **whole metre** (7.35 m → 8 m), straight and inverted alike (user, 20 Nov 2026) |
+| Straight · lead band | only if height **≤** roll width − 14 cm (14 cm tape at the top). Fabric = round up (width × gathering) |
+| Straight · hemming | only if height **≤** roll width − 30 cm (16 cm hemming + 14 cm tape); relaxed to − 25 cm by reducing the hem, exceptional only (a tick box on the card). Fabric = same formula |
+| Inverted | no lead band. Panels = ceil(width × gathering ÷ roll width); each panel = height + 30 cm; fabric = round up (panels × panel length), e.g. 3 × 282 cm = 8.46 m → 9 m |
+
+**Direction: Auto** = straight when it fits, otherwise inverted; Straight / Inverted can be forced per card. Asked for a
+lead band on a curtain too tall for straight, it falls back to inverted with hemming and says so (inverted cannot take a
+lead band). A table on each card shows every option at that height, with its limit and metres, the chosen one marked; a
+note appears when inverted would use less than straight (small widths), or when reduced hemming would make straight fit.
+**A height exactly on a limit fits, with a warning** (user, 20 Nov 2026): the rule was written "less than", but at the
+limit the 14 / 30 / 25 cm allowances already hold the tape and hem, and strict would send a lead-band curtain to
+inverted (hemmed, ~1 m more) over a 0 cm difference. The card says "Exactly at the limit: no spare fabric. Check the
+roll's real width before cutting" and the table cell reads "⚠ fits, no spare". About 1 curtain layer in 130 on file
+(46 of 5,967) sits exactly on the lead-band limit, 37 on the hemming limit.
+
+Rounding settled with the user on 20 Nov 2026: whole metres for both directions (it was 0.5 m for a day). `calc()` is
+exported and pure; 26 hand-worked cases (including heights on, just under and just over each limit) (including 500 × 2.0 = 1,000 cm → 10 m, which a float ceil turns into 11 m) were
+run in Node on 20 Nov 2026.
+
+**The gathering multipliers match the order pipeline** since 20 Nov 2026, when Ring went from 2.2 to 2.1 in
+`fn_rebuild_order` (`supabase/sql/20261120_ring_multiplier_2_1.sql`): American 2.1, Ring 2.1, Wave 2.3. Stored lines
+change only when their order is rebuilt.
 
 ## Fabric stock status page (17 Nov 2026)
 

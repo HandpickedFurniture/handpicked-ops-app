@@ -5,7 +5,7 @@
  * TRANSLATED. Reverse that and writes start failing their CHECK.
  */
 
-export const BUILD = "2026-11-19.2";
+export const BUILD = "2026-11-20.4";
 
 /* Supabase project "handpicked-curtains". The publishable key is safe to ship: every table is
  * RLS-locked to the `authenticated` role and `anon` has no policy at all. The bearer token on each
@@ -91,7 +91,7 @@ export const DISPATCH_CONTRACTORS = [
  *
  * `paid` is a rung ABOVE qc_passed, not a state beside it: settling with the last tailor still
  * closes production. order_dispatch carries a payment axis of its own (payment_status / paid_at)
- * that the Dragon Mart report reads, and fn_ops_set_dispatch keeps the two in step in both
+ * that the MD report (was "Dragon Mart") reads, and fn_ops_set_dispatch keeps the two in step in both
  * directions - moving a row back off paid returns it to unpaid. */
 export const DISPATCH_SUBSTATES = [
   { value: "planned",       key: "disp.planned",  tone: "info" },

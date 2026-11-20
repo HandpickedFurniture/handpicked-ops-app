@@ -1038,3 +1038,54 @@ table.dense tr.exp-watch td{background:var(--warn-bg);}
 .isrseg{display:flex;gap:4px;flex-wrap:wrap;}
 .isrprodline{margin-top:6px;font-size:13px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
 .subtabs a.btn{border-radius:999px;}
+
+/* ---------------------------------------------------------------- Fabric calculation (19 Nov 2026)
+ * #/fabcalc: one card per curtain, the result block tinted by how sure it is. */
+.fchead{display:flex;flex-wrap:wrap;align-items:center;gap:8px;}
+.fchead .fcno{font-size:15px;white-space:nowrap;}
+.fchead input{flex:1;min-width:150px;max-width:360px;}
+.fchead .row{margin-left:auto;}
+.fcgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin:10px 0 6px;}
+.fccheck{display:flex;gap:8px;align-items:center;font-size:13px;font-weight:600;margin:4px 0;cursor:pointer;}
+.fccheck[hidden]{display:none;}
+.fccheck input{width:20px;height:20px;flex:none;}
+.fcres{border-radius:10px;padding:10px 12px;margin-top:8px;background:var(--info-bg);border:1px solid #c5d8de;}
+.fcres.warn{background:var(--warn-bg);border-color:#f0d9ac;}
+.fcres.bad{background:var(--bad-bg);border-color:#f2c3bd;}
+.fcres.wait{background:var(--mute-bg);border-color:var(--line);}
+.fcbig{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;}
+.fcbig .fcm{font-size:28px;font-weight:800;line-height:1.1;color:var(--brand-dark);font-variant-numeric:tabular-nums;}
+.fcwork{font-size:13px;margin-top:4px;overflow-wrap:anywhere;}
+.fcmsg{font-size:13px;margin-top:6px;font-weight:600;}
+.fcmsg.bad{color:var(--danger);}
+.fcmsg.warn{color:var(--warn);}
+.fcmsg.note{color:var(--muted);}
+table.fcopts{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px;}
+table.fcopts th{text-align:left;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;padding:4px 6px;}
+table.fcopts td{padding:5px 6px;border-top:1px solid rgba(15,76,92,.12);}
+table.fcopts .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
+table.fcopts tr.pick td{font-weight:800;background:rgba(255,255,255,.6);}
+table.fcopts tr.pick td:first-child{box-shadow:inset 3px 0 0 var(--brand);}
+.fcyes{color:var(--ok);font-weight:700;white-space:nowrap;}
+.fcno2{color:var(--danger);font-weight:700;white-space:nowrap;}
+.fcfab{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
+.fcrules p{font-size:13px;margin:8px 0;line-height:1.5;}
+#fcrules summary{cursor:pointer;}
+.fcedge{color:var(--warn);font-weight:700;white-space:nowrap;}
+/* fabric code dropdown (searchable, free entry) and the roll width hint under its field */
+.fccombo{position:relative;}
+.fcdrop{position:absolute;left:0;top:100%;margin-top:4px;z-index:40;min-width:100%;width:max-content;
+  max-width:min(340px,calc(100vw - 40px));max-height:300px;overflow-y:auto;background:var(--card);
+  border:1.5px solid var(--brand);border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,.14);}
+.fcdrop[hidden]{display:none;}
+.fcopt{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:10px 12px;cursor:pointer;
+  font-size:14px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;}
+.fcopt:hover,.fcopt.hi{background:var(--info-bg);}
+.fcopt.fcnew{color:var(--brand);font-weight:700;}
+.fcdnote{padding:8px 12px;font-size:12px;color:var(--muted);}
+.fchint{font-size:12px;margin-top:4px;color:var(--muted);}
+.fchint:empty{display:none;}
+.fchint.warn{color:var(--warn);font-weight:600;}
+.fchint button{border:0;background:none;color:var(--brand);font-weight:700;text-decoration:underline;
+  padding:2px 4px;cursor:pointer;font-size:12px;font-family:inherit;}
+.fcstatus{font-size:12px;margin-top:2px;}

@@ -35,6 +35,7 @@ import * as finance from "./mod-finance.js";
 import * as tailors from "./mod-tailors.js";
 import * as reviews from "./mod-reviews.js";
 import * as punctuality from "./mod-punctuality.js";
+import * as fabcalc from "./mod-fabcalc.js";
 
 /* Every screen is a top-level route. Only seven of them are in the ribbon.
  *
@@ -73,6 +74,8 @@ const ROUTES = {
   reviews:    { key: "nav.reviews",    render: (m) => reviews.render(m) },
   // how early or late each team arrives vs the scheduled time, from the Tookan arrival sheets (18 Nov 2026)
   punctuality: { key: "nav.punctuality", render: (m) => punctuality.render(m) },
+  // metres of fabric per curtain from typed-in sizes: straight / inverted, lead band / hemming (19 Nov 2026)
+  fabcalc:    { key: "nav.fabcalc",    render: (m) => fabcalc.render(m) },
 };
 
 /* Six, in the order the day runs, and six is deliberate: seven was the most a phone showed without
@@ -259,7 +262,7 @@ function queueSheet() {
 
 const TAB_ICON = { home: "🏠", production: "✂️", prep: "🧵", status: "🚚", schedule: "🗓️", stepper: "🧭",
                    transfer: "📦", inventory: "🔩", po: "📄", chotu: "🗣️", menu: "🧭",
-                   dashboard: "📊", reports: "📈", eod: "🌙", audit: "📷", roles: "🔑", isr: "🔁", tailors: "🧵", reviews: "⭐", punctuality: "⏱️" };
+                   dashboard: "📊", reports: "📈", eod: "🌙", audit: "📷", roles: "🔑", isr: "🔁", tailors: "🧵", reviews: "⭐", punctuality: "⏱️", fabcalc: "📐" };
 
 function paintTabs() {
   const { route: r, params } = readHash();

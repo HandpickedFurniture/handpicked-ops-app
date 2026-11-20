@@ -27,6 +27,8 @@
  *   supabase functions deploy chotu        # GEMINI_API_KEY is already set on this project
  */
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+// the fabricCalculation skill: Chotu parses, this code calculates (see fabric-answer.js)
+import { fabricAnswer } from "./fabric-answer.js";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 
@@ -69,6 +71,7 @@ const INTENTS = [
   "adjustment",         // fn_ops_add_adjustment - chargeable work beyond the PO
   "order_edit",         // fn_ops_save_visit     - order-level fields: alteration, removals
   "log_note",           // fn_chotu_log only     - write it down; nothing else to change
+  "fabric_calc",        // NOT a write: worked out by fabric-answer.js, returned as an "answer"
 ];
 
 const ALLOWED_ORIGINS = [
@@ -303,6 +306,24 @@ HOW THE BUSINESS TALKS, so you pick the right one:
 * Fabrics arrive against an order (fabric_received); motors, remotes, blinds, tracks and cassettes
   are materials (material_received). Loose stock with no order is inventory_move.
 
+* fabric_calc is a QUESTION about how much fabric a curtain needs: "how many metres for 350 by 260",
+  "kitna kapda lagega", "fd533-3, 4 metre wide, 2.7 high, wave". YOU DO NOT CALCULATE ANYTHING and you
+  leave "say" EMPTY - code works the metres out with the company's rules and writes the reply. Your only
+  job is to copy what they said into "fields":
+    width, height  the curtain's adjusted width and height AS SAID, with the unit they used ("350 cm",
+                   "3.5 m", "350"). Never convert a unit or do any arithmetic yourself.
+    roll           the roll width, only if they said one.
+    fabric_code    only if they said one, written like st66682b-9.
+    style          american, pinch_pleat, eyelet, ring, wave, ripplefold or roman - only if they said.
+    bottom         lead_band or hemming - only if they said ("hem", "no lead band" = hemming).
+    layer          sheer or blackout - only if they said.
+    direction      straight or inverted - only if they insisted on one.
+    qty            how many identical curtains, if they said. allow_reduced: true only if they asked
+                   for a reduced hem.
+  Leave out whatever they did not say - the code asks for what it needs. In a follow-up ("and with a
+  280 roll?", "make it wave"), repeat ALL the sizes from EARLIER IN THIS CONVERSATION with the change
+  applied. order_id is null: a fabric question is not about an order.
+
 Order numbers are always five digits. Fabric codes look like fd523b-31 or st66682b-9.
 
 Reply as JSON only:
@@ -431,6 +452,18 @@ Deno.serve(async (req: Request) => {
       parsed = { say: salvaged, intent: "answer" };
     }
 
+    /* A fabric question is worked out HERE, never by the model: fabric-answer.js turns the sizes it
+     * copied into cm, looks the fabric's roll width up as the caller, runs the shared fabric rules
+     * (fabric-calc-core.js) and writes the reply. It goes back as a plain answer - nothing to confirm,
+     * nothing saved - so the phone and WhatsApp simply say it. */
+    if (String(parsed.intent ?? "") === "fabric_calc") {
+      const apikey = req.headers.get("apikey") ?? "";
+      const ans = await fabricAnswer((parsed.fields ?? {}) as Record<string, unknown>, {
+        said, lang: body.lang, lookupRoll: (code: string) => rollWidthOf(code, authz, apikey),
+      });
+      return json({ ...ans, facts: slim, llm: true, model: MODEL }, 200, headers);
+    }
+
     const clean = validate(parsed, facts);
     return json({ ...clean, facts: slim, llm: true, model: MODEL }, 200, headers);
   } catch (e) {
@@ -442,6 +475,22 @@ Deno.serve(async (req: Request) => {
     }, 200, headers);
   }
 });
+
+/* A fabric code's roll width, read AS THE CALLER. fabric_roll_widths keeps every code lower-case and
+ * trimmed; a code that is only known from orders (v_fabric_master, upper-case) has no width on file.
+ * Returns { roll } when the code is known (roll null = no width), null when it is not a fabric at all. */
+async function rollWidthOf(code: string, authz: string, apikey: string): Promise<{ roll: number | null } | null> {
+  const get = async (path: string) => {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { headers: { Authorization: authz, apikey } });
+    if (!r.ok) throw new Error(`roll width ${r.status}`);
+    return await r.json() as Record<string, unknown>[];
+  };
+  const c = code.trim().toLowerCase();
+  const rows = await get(`fabric_roll_widths?select=roll_width_cm&fabric_code=eq.${encodeURIComponent(c)}`);
+  if (rows.length && Number(rows[0].roll_width_cm) > 0) return { roll: Number(rows[0].roll_width_cm) };
+  const known = await get(`v_fabric_master?select=fabric_code&fabric_code=eq.${encodeURIComponent(c.toUpperCase())}`);
+  return known.length || rows.length ? { roll: null } : null;
+}
 
 /* ------------------------------------------------------------------ validation
  * The model's reply is a PROPOSAL, not a result. Anything that does not correspond to a row it was

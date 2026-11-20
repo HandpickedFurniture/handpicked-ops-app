@@ -240,6 +240,7 @@ export const REPORT_PAGES = [
     ],
   },
   {
+    // labelled "MD" since 20 Nov 2026 (user; was "Dragon Mart"). id, view and ?rep=dragonmart links unchanged
     id: "dragonmart", key: "rep.dragonMart", view: "v_ops_report_dragonmart",
     order: "installation_date.desc.nullslast",
     cols: [
