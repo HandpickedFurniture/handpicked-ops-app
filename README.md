@@ -1225,6 +1225,31 @@ anon has no grant on any of it (see the anon definer-view leak). Anyone with the
 "Your name / company" box is self-declared. Access control is the planned next step.
 SQL: `supabase/sql/20261117_fabric_stock_status.sql` (applied).
 
+## Ready-made curtains register (23 Nov 2026)
+
+`ready-curtains.html` — a standalone public page (NOT part of the ribbon app, no login) for registering
+ready-made curtains from a phone. Required: type (American / Wave / Eyelet / Others + text), height and width
+(cm), quantity, colour, fabric (Blackout / Semi-blackout / Sheer), bottom finish (Lead band / Hemming),
+condition (New / Good / Fair / Damaged), rack number, reference number, at least 1 photo. Optional: order no.,
+window no., fabric no., one video (up to 150 MB). Up to 20 photos (shrunk to 2560 px JPEG in the browser).
+
+Files are named `<REFERENCE>_A`, `_B`, … (reference is upper-cased, spaces become `-`); photos first, the video
+continues the sequence (3 photos + video = `_A` `_B` `_C` and `_D.mp4`). A reference can be used once: a second
+different submit with the same reference is refused, a retry of the same submit is accepted (`submission_id`).
+
+| Piece | Where |
+|---|---|
+| One row per registration / one row per file (with Drive copy state `drive_synced_at`, `drive_error`) | `ready_curtains`, `ready_curtain_files` |
+| Private bucket, one-time signed upload URLs, 150 MB cap, image + video MIME only | Storage `ready-curtains` |
+| The only door: verify_jwt OFF, `start` (validates, inserts, mints upload URLs) → browser uploads → `finish` (checks every file arrived) → copy to Drive | Edge Function `ready-curtains` |
+| Drive copy: folder **Ready_Curtains** in My Drive, created by the app (drive.file scope, so it can only see folders it made) — resumable upload in 8 MB chunks; runs after every finish and from pg_cron every 2 min for retries | `syncDrive()` in the function, `fn_rc_run_sync()`, cron `handpicked-ready-curtains-sync` |
+| Drive-only OAuth token + cron key live in Vault (`ready_curtains_drive_token`, `ready_curtains_cron_key`), set by `tools/ready_curtains_drive_auth.py` (re-run it to replace the token) | `fn_rc_secret`, `fn_rc_set_secret` (service role only) |
+
+anon has no grant on any of it (see the anon definer-view leak). Anyone with the link can register; there is no
+name box. Storage keeps a copy of every file after the Drive copy (nothing is deleted automatically).
+Files that failed to copy show `drive_error` and are retried by the cron.
+SQL: `supabase/sql/20261123_ready_curtains.sql` (applied; plus the helper functions `fn_rc_set_secret` / `fn_rc_run_sync`).
+
 ## Edge Functions
 
 The functions in `supabase/functions/` live in **this** repo because they exist only to serve this

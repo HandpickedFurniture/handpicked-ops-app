@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Register Ready-Made Curtains</title>
+<meta name="robots" content="noindex">
+<!-- Public one-page form (no login) to register ready-made curtains with photos and a video. 23 Nov 2026.
+     Talks only to the edge function ready-curtains; see supabase/functions/ready-curtains/index.ts.
+     Files are saved as <REFERENCE>_A, _B, ... and copied to the Google Drive folder Ready_Curtains. -->
+<style>
+:root{
+  --bg:#f5f6f8; --card:#fff; --ink:#1b1f24; --muted:#5f6b7a; --line:#d5dbe3;
+  --brand:#1f5fa8; --brand-ink:#fff; --ok:#16794a; --ok-bg:#e3f4ea; --err:#b42318; --err-bg:#fde7e5; --focus:#7fb0ef; --chip-on:#e6f0fc;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#121417; --card:#1b1f24; --ink:#e8ebef; --muted:#9aa5b1; --line:#333a43;
+    --brand:#5b9be6; --brand-ink:#0d1117; --ok:#5fd39a; --ok-bg:#173527; --err:#ff8a80; --err-bg:#3b1d1b; --focus:#3d6ea8; --chip-on:#1c2f47;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#121417; --card:#1b1f24; --ink:#e8ebef; --muted:#9aa5b1; --line:#333a43;
+  --brand:#5b9be6; --brand-ink:#0d1117; --ok:#5fd39a; --ok-bg:#173527; --err:#ff8a80; --err-bg:#3b1d1b; --focus:#3d6ea8; --chip-on:#1c2f47;
+}
+:root{color-scheme:light dark}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding-bottom:110px}
+.wrap{max-width:640px;margin:0 auto;padding:0 16px}
+header{padding:18px 0 6px}
+h1{font-size:22px;margin:0 0 4px}
+header p{margin:0;color:var(--muted);font-size:14px}
+section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:14px}
+h2{font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
+.field{margin-bottom:14px}
+.field:last-child{margin-bottom:0}
+label.l,.l{display:block;font-size:14px;font-weight:600;margin-bottom:5px}
+.l small{font-weight:400;color:var(--muted)}
+.req{color:var(--err)}
+input[type=text],input[type=number],input[type=search]{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px;min-height:48px}
+input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+@media (max-width:420px){.three{grid-template-columns:1fr 1fr}}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{font:inherit;cursor:pointer;color:var(--ink);background:var(--bg);border:1.5px solid var(--line);border-radius:999px;padding:10px 16px;min-height:44px}
+.chip[aria-pressed=true]{background:var(--chip-on);border-color:var(--brand);color:var(--brand);font-weight:700}
+.invalid .chip,.invalid input{border-color:var(--err)}
+.msg{font-size:13px;color:var(--err);margin-top:5px;display:none}
+.invalid > .msg{display:block}
+.hint{font-size:13px;color:var(--muted);margin-top:5px}
+.drop{display:flex;align-items:center;justify-content:center;gap:8px;border:2px dashed var(--line);border-radius:12px;padding:16px;cursor:pointer;font-weight:600;color:var(--brand);background:var(--bg);min-height:56px;text-align:center}
+.drop input{display:none}
+.thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px;margin-top:10px}
+.th{position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:var(--bg);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;text-align:center}
+.th img{width:100%;height:100%;object-fit:cover;display:block}
+.th .let{position:absolute;left:4px;bottom:4px;background:rgba(0,0,0,.65);color:#fff;border-radius:6px;font-size:12px;font-weight:700;padding:1px 7px}
+.th .x{position:absolute;right:4px;top:4px;width:30px;height:30px;border-radius:50%;border:0;background:rgba(0,0,0,.65);color:#fff;font-size:18px;line-height:1;cursor:pointer;padding:0}
+.th .bar{position:absolute;left:0;right:0;bottom:0;height:5px;background:rgba(0,0,0,.25)}
+.th .bar i{display:block;height:100%;width:0;background:var(--brand)}
+.th.done .bar i{background:var(--ok);width:100%}
+.vid{display:flex;align-items:center;gap:10px;margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+.vid b{flex:1;min-width:0;overflow-wrap:anywhere;font-size:14px}
+.vid button{border:0;background:none;color:var(--err);font:inherit;font-weight:600;cursor:pointer;min-height:44px;padding:0 8px}
+#bar{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:10px 0 calc(10px + env(safe-area-inset-bottom));z-index:5}
+#submit{width:100%;font:inherit;font-size:18px;font-weight:700;background:var(--brand);color:var(--brand-ink);border:0;border-radius:12px;min-height:54px;cursor:pointer}
+#submit:disabled{opacity:.55;cursor:default}
+#status{font-size:14px;margin:0 0 8px;min-height:1px}
+#status.err{color:var(--err);font-weight:600}
+#prog{height:8px;border-radius:99px;background:var(--line);overflow:hidden;margin-bottom:8px;display:none}
+#prog i{display:block;height:100%;width:0;background:var(--brand);transition:width .2s}
+#done{display:none;text-align:center;padding:26px 16px}
+#done .tick{width:64px;height:64px;border-radius:50%;background:var(--ok-bg);color:var(--ok);font-size:36px;display:flex;align-items:center;justify-content:center;margin:0 auto 12px}
+#done h2{font-size:20px;text-transform:none;letter-spacing:0;color:var(--ink);margin-bottom:6px}
+#done .btns{display:grid;gap:10px;margin-top:18px}
+#done button{font:inherit;font-weight:700;border-radius:12px;min-height:50px;border:1.5px solid var(--brand);background:var(--card);color:var(--brand);cursor:pointer}
+#done button.p{background:var(--brand);color:var(--brand-ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Register ready-made curtains</h1>
+    <p>Fill in the details, add photos (up to 20) and an optional video, then press Save. Fields marked <span class="req">*</span> are required.</p>
+  </header>
+
+  <form id="form" novalidate autocomplete="off">
+  <section>
+    <h2>Curtain</h2>
+    <div class="field" data-f="curtain_type">
+      <div class="l">Type <span class="req">*</span></div>
+      <div class="chips" data-group="curtain_type">
+        <button type="button" class="chip" data-v="American">American</button>
+        <button type="button" class="chip" data-v="Wave">Wave</button>
+        <button type="button" class="chip" data-v="Eyelet">Eyelet</button>
+        <button type="button" class="chip" data-v="Others">Others</button>
+      </div>
+      <input type="text" id="type_other" maxlength="80" placeholder="Describe the type" style="margin-top:8px;display:none" aria-label="Other type">
+      <div class="msg">Please choose the type.</div>
+    </div>
+    <div class="two">
+      <div class="field" data-f="height_cm">
+        <label class="l" for="height_cm">Height (cm) <span class="req">*</span></label>
+        <input type="number" id="height_cm" inputmode="decimal" min="1" max="999" step="any" placeholder="e.g. 270">
+        <div class="msg">Enter the height.</div>
+      </div>
+      <div class="field" data-f="width_cm">
+        <label class="l" for="width_cm">Width (cm) <span class="req">*</span></label>
+        <input type="number" id="width_cm" inputmode="decimal" min="1" max="1999" step="any" placeholder="e.g. 140">
+        <div class="msg">Enter the width.</div>
+      </div>
+    </div>
+    <div class="two">
+      <div class="field" data-f="quantity">
+        <label class="l" for="quantity">Quantity <span class="req">*</span></label>
+        <input type="number" id="quantity" inputmode="numeric" min="1" max="9999" step="1" placeholder="e.g. 2">
+        <div class="msg">Enter the quantity.</div>
+      </div>
+      <div class="field" data-f="colour">
+        <label class="l" for="colour">Colour <span class="req">*</span></label>
+        <input type="text" id="colour" maxlength="60" placeholder="e.g. Beige">
+        <div class="msg">Enter the colour.</div>
+      </div>
+    </div>
+    <div class="field" data-f="fabric_kind">
+      <div class="l">Fabric <span class="req">*</span></div>
+      <div class="chips" data-group="fabric_kind">
+        <button type="button" class="chip" data-v="Blackout">Blackout</button>
+        <button type="button" class="chip" data-v="Semi-blackout">Semi-blackout</button>
+        <button type="button" class="chip" data-v="Sheer">Sheer</button>
+      </div>
+      <div class="msg">Please choose the fabric.</div>
+    </div>
+    <div class="field" data-f="bottom_finish">
+      <div class="l">Bottom finish <span class="req">*</span></div>
+      <div class="chips" data-group="bottom_finish">
+        <button type="button" class="chip" data-v="Lead band">Lead band</button>
+        <button type="button" class="chip" data-v="Hemming">Hemming</button>
+      </div>
+      <div class="msg">Please choose lead band or hemming.</div>
+    </div>
+    <div class="field" data-f="condition">
+      <div class="l">Condition <span class="req">*</span></div>
+      <div class="chips" data-group="condition">
+        <button type="button" class="chip" data-v="New">New</button>
+        <button type="button" class="chip" data-v="Good">Good</button>
+        <button type="button" class="chip" data-v="Fair">Fair</button>
+        <button type="button" class="chip" data-v="Damaged">Damaged</button>
+      </div>
+      <div class="msg">Please choose the condition.</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Where it belongs</h2>
+    <div class="three">
+      <div class="field" data-f="order_no">
+        <label class="l" for="order_no">Order no. <small>(optional)</small></label>
+        <input type="text" id="order_no" maxlength="40" inputmode="text">
+      </div>
+      <div class="field" data-f="window_no">
+        <label class="l" for="window_no">Window no. <small>(optional)</small></label>
+        <input type="text" id="window_no" maxlength="40">
+      </div>
+      <div class="field" data-f="fabric_no">
+        <label class="l" for="fabric_no">Fabric no. <small>(optional)</small></label>
+        <input type="text" id="fabric_no" maxlength="60">
+      </div>
+    </div>
+    <div class="field" data-f="rack_no" style="margin-top:14px">
+      <label class="l" for="rack_no">Rack number <span class="req">*</span></label>
+      <input type="text" id="rack_no" maxlength="40" placeholder="e.g. R-12">
+      <div class="msg">Enter the rack number.</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Reference</h2>
+    <div class="field" data-f="ref">
+      <label class="l" for="ref">Reference number <span class="req">*</span></label>
+      <input type="text" id="ref" maxlength="40" autocapitalize="characters" placeholder="e.g. RC-0001">
+      <div class="hint" id="refHint">Photos and the video are saved as <b>REFERENCE_A</b>, <b>REFERENCE_B</b> and so on.</div>
+      <div class="msg" id="refMsg">Enter a reference number (letters, digits, - _ . only).</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Photos <span id="pcount" style="text-transform:none;letter-spacing:0">(0 of 20)</span> <span class="req">*</span></h2>
+    <label class="drop" id="photoDrop">
+      <span>📷 Take or add photos</span>
+      <input type="file" id="photos" accept="image/*" multiple>
+    </label>
+    <div class="thumbs" id="thumbs"></div>
+    <div class="field" data-f="photos"><div class="msg">Please add at least one photo.</div></div>
+  </section>
+
+  <section>
+    <h2>Video <small style="text-transform:none;letter-spacing:0">(optional, up to 150 MB)</small></h2>
+    <label class="drop" id="videoDrop">
+      <span>🎥 Take or add a video</span>
+      <input type="file" id="video" accept="video/*">
+    </label>
+    <div id="vidInfo"></div>
+  </section>
+  </form>
+
+  <section id="done">
+    <div class="tick">✓</div>
+    <h2>Saved</h2>
+    <p id="doneTxt" style="margin:0;color:var(--muted)"></p>
+    <div class="btns">
+      <button type="button" class="p" id="againSame">Same details, new reference</button>
+      <button type="button" id="againBlank">Register a new curtain (blank form)</button>
+    </div>
+  </section>
+</div>
+
+<div id="bar"><div class="wrap">
+  <div id="prog"><i></i></div>
+  <p id="status"></p>
+  <button type="button" id="submit">Save</button>
+</div></div>
+
+<script>
+(() => {
+  const API = "https://jrevqijbzzwdcwxcnwfa.supabase.co/functions/v1/ready-curtains";
+  const KEY = "sb_publishable_I4J8srUWlXVnkI-9qGpPQg_XblXWZ8r";   // public publishable key; the Storage gateway wants a header
+  const MAX_PHOTOS = 20, MAX_VIDEO = 150 * 1024 * 1024, MAX_EDGE = 2560;
+  const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const $ = (id) => document.getElementById(id);
+  const store = {
+    get(k){ try { return localStorage.getItem(k); } catch { return null; } },
+    set(k,v){ try { localStorage.setItem(k,v); } catch {} },
+  };
+  const TEXT = ["order_no","window_no","fabric_no","height_cm","width_cm","quantity","colour","rack_no","ref","type_other"];
+  const GROUPS = ["curtain_type","fabric_kind","bottom_finish","condition"];
+  const pick = {};                    // chip selections
+  let photos = [];                    // {blob, name, type, size, url, ok}
+  let video = null;                   // {file, type, size}
+  let sid = null, uploaded = new Set(), busy = false;
+
+  const newId = () => (crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)));
+  const normRef = (v) => String(v || "").trim().replace(/\s+/g, "-").toUpperCase();
+  const refOk = (r) => /^[A-Z0-9][A-Z0-9._-]{0,39}$/.test(r);
+  const mb = (n) => (n / 1048576).toFixed(n > 10485760 ? 0 : 1) + " MB";
+
+  // ---------- chips ----------
+  document.querySelectorAll(".chips").forEach((box) => box.addEventListener("click", (e) => {
+    const b = e.target.closest(".chip"); if (!b) return;
+    setChip(box.dataset.group, b.dataset.v);
+    box.closest(".field").classList.remove("invalid");
+    saveDraft();
+  }));
+  function setChip(g, v){
+    pick[g] = v;
+    document.querySelectorAll('[data-group="' + g + '"] .chip').forEach((c) => c.setAttribute("aria-pressed", c.dataset.v === v ? "true" : "false"));
+    if (g === "curtain_type") { $("type_other").style.display = v === "Others" ? "" : "none"; if (v === "Others") $("type_other").focus(); }
+  }
+
+  // ---------- draft (text only; files can't be kept) ----------
+  function saveDraft(){
+    const d = { pick }; TEXT.forEach((k) => d[k] = $(k).value);
+    store.set("rc.draft", JSON.stringify(d));
+  }
+  function loadDraft(){
+    try {
+      const d = JSON.parse(store.get("rc.draft") || "null"); if (!d) return;
+      TEXT.forEach((k) => { if (d[k] != null) $(k).value = d[k]; });
+      GROUPS.forEach((g) => { if (d.pick && d.pick[g]) setChip(g, d.pick[g]); });
+    } catch {}
+  }
+  document.querySelectorAll("input[type=text],input[type=number]").forEach((i) => i.addEventListener("input", () => {
+    i.closest(".field")?.classList.remove("invalid"); saveDraft(); if (i.id === "ref") refHint();
+  }));
+  function refHint(){
+    const r = normRef($("ref").value), el = $("refHint");
+    el.innerHTML = r ? "Files will be saved as <b>" + esc(r) + "_A</b>, <b>" + esc(r) + "_B</b> …" : "Photos and the video are saved as <b>REFERENCE_A</b>, <b>REFERENCE_B</b> and so on.";
+  }
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+  // ---------- photos ----------
+  async function shrink(file){
+    const type = file.type || guessType(file.name);
+    if (!/^image\//.test(type)) throw new Error("not an image");
+    try {
+      const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+      const scale = Math.min(1, MAX_EDGE / Math.max(bmp.width, bmp.height));
+      const w = Math.round(bmp.width * scale), h = Math.round(bmp.height * scale);
+      const c = document.createElement("canvas"); c.width = w; c.height = h;
+      c.getContext("2d").drawImage(bmp, 0, 0, w, h); bmp.close && bmp.close();
+      const blob = await new Promise((res) => c.toBlob(res, "image/jpeg", 0.85));
+      if (blob && (scale < 1 || blob.size < file.size)) return { blob, type: "image/jpeg", size: blob.size, preview: true };
+    } catch { /* HEIC on a desktop browser, etc.: send the original */ }
+    return { blob: new Blob([file], { type }), type, size: file.size, preview: /^image\/(jpeg|png|webp)$/.test(type) };
+  }
+  function guessType(name){
+    const e = String(name || "").split(".").pop().toLowerCase();
+    return { jpg:"image/jpeg", jpeg:"image/jpeg", png:"image/png", webp:"image/webp", heic:"image/heic", heif:"image/heif",
+             mp4:"video/mp4", mov:"video/quicktime", m4v:"video/x-m4v", webm:"video/webm", "3gp":"video/3gpp" }[e] || "";
+  }
+
+  $("photos").onchange = async (e) => {
+    const files = [...e.target.files]; e.target.value = "";
+    if (!files.length) return;
+    const room = MAX_PHOTOS - photos.length;
+    if (files.length > room) setStatus("Only " + MAX_PHOTOS + " photos are allowed - " + (files.length - room) + " were not added.", true);
+    else setStatus("");
+    $("photoDrop").style.opacity = .6;
+    for (const f of files.slice(0, Math.max(0, room))) {
+      try {
+        const s = await shrink(f);
+        if (s.size > 15 * 1024 * 1024) { setStatus(f.name + " is larger than 15 MB and was skipped.", true); continue; }
+        photos.push({ ...s, url: s.preview ? URL.createObjectURL(s.blob) : "" });
+      } catch { setStatus(f.name + " is not a photo and was skipped.", true); }
+      renderThumbs();
+    }
+    $("photoDrop").style.opacity = 1;
+    resetAttempt(); document.querySelector('[data-f="photos"]').classList.remove("invalid");
+  };
+  function renderThumbs(){
+    $("pcount").textContent = "(" + photos.length + " of " + MAX_PHOTOS + ")";
+    $("thumbs").innerHTML = photos.map((p, i) =>
+      '<div class="th" data-i="' + i + '">' + (p.url ? '<img alt="" src="' + p.url + '">' : "photo<br>(no preview)") +
+      '<span class="let">' + LETTERS[i] + '</span><button type="button" class="x" aria-label="Remove photo ' + LETTERS[i] + '">×</button><span class="bar"><i></i></span></div>').join("");
+    $("photoDrop").style.display = photos.length >= MAX_PHOTOS ? "none" : "";
+  }
+  $("thumbs").onclick = (e) => {
+    const x = e.target.closest(".x"); if (!x || busy) return;
+    const i = +x.closest(".th").dataset.i, p = photos[i];
+    if (p.url) URL.revokeObjectURL(p.url);
+    photos.splice(i, 1); resetAttempt(); renderThumbs();
+  };
+
+  // ---------- video ----------
+  $("video").onchange = (e) => {
+    const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+    const type = f.type || guessType(f.name);
+    if (!/^video\//.test(type)) { setStatus("That file is not a video.", true); return; }
+    if (f.size > MAX_VIDEO) { setStatus("The video is " + mb(f.size) + ". The limit is 150 MB - record a shorter clip.", true); return; }
+    video = { file: f, type, size: f.size }; setStatus(""); resetAttempt(); renderVideo();
+  };
+  function renderVideo(){
+    $("vidInfo").innerHTML = video ? '<div class="vid"><span>🎥</span><b>' + esc(video.file.name) + " · " + mb(video.size) + '</b><button type="button" id="vidX">Remove</button></div>' : "";
+    $("videoDrop").style.display = video ? "none" : "";
+  }
+  $("vidInfo").onclick = (e) => { if (e.target.id === "vidX" && !busy) { video = null; resetAttempt(); renderVideo(); } };
+
+  // ---------- status ----------
+  function setStatus(t, err){ const s = $("status"); s.textContent = t || ""; s.className = err ? "err" : ""; }
+  function setProg(f){ const p = $("prog"); p.style.display = f == null ? "none" : "block"; if (f != null) p.firstElementChild.style.width = Math.round(f * 100) + "%"; }
+  function resetAttempt(){ uploaded = new Set(); }
+
+  // ---------- validation ----------
+  function validate(){
+    let first = null;
+    const bad = (key) => { const f = document.querySelector('[data-f="' + key + '"]'); f.classList.add("invalid"); first = first || f; };
+    document.querySelectorAll(".invalid").forEach((f) => f.classList.remove("invalid"));
+    GROUPS.forEach((g) => { if (!pick[g]) bad(g); });
+    if (pick.curtain_type === "Others" && !$("type_other").value.trim()) { bad("curtain_type"); document.querySelector('[data-f="curtain_type"] .msg').textContent = "Describe the type."; }
+    else document.querySelector('[data-f="curtain_type"] .msg').textContent = "Please choose the type.";
+    const num = (id, max) => { const v = parseFloat($(id).value); return Number.isFinite(v) && v > 0 && v <= max; };
+    if (!num("height_cm", 999)) bad("height_cm");
+    if (!num("width_cm", 1999)) bad("width_cm");
+    if (!num("quantity", 9999) || !Number.isInteger(+$("quantity").value)) bad("quantity");
+    ["colour","rack_no"].forEach((k) => { if (!$(k).value.trim()) bad(k); });
+    if (!refOk(normRef($("ref").value))) bad("ref");
+    if (!photos.length) bad("photos");
+    if (first) first.scrollIntoView({ behavior: "smooth", block: "center" });
+    return !first;
+  }
+
+  // ---------- network ----------
+  async function call(body){
+    let r;
+    try { r = await fetch(API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); }
+    catch { throw new Error("No connection. Check the internet and press Save again - nothing is lost."); }
+    let j = null; try { j = await r.json(); } catch {}
+    if (!r.ok) { const e = new Error((j && j.error) || "Server error (" + r.status + ")"); e.status = r.status; e.data = j; throw e; }
+    return j;
+  }
+
+  function putFile(url, blob, name, onProgress){
+    return new Promise((resolve, reject) => {
+      const x = new XMLHttpRequest();
+      x.open("PUT", url);
+      x.setRequestHeader("apikey", KEY); x.setRequestHeader("Authorization", "Bearer " + KEY); x.setRequestHeader("x-upsert", "true");
+      x.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded); };
+      x.onload = () => (x.status >= 200 && x.status < 300) ? resolve() : reject(new Error("Upload failed (" + x.status + ")"));
+      x.onerror = () => reject(new Error("Upload interrupted"));
+      x.ontimeout = () => reject(new Error("Upload timed out"));
+      const fd = new FormData(); fd.append("cacheControl", "3600"); fd.append("", blob, name);
+      x.send(fd);
+    });
+  }
+
+  async function submit(){
+    if (busy) return;
+    if (!validate()) { setStatus("Please fix the highlighted fields.", true); return; }
+    busy = true; $("submit").disabled = true; setStatus("Saving details…"); setProg(0);
+    if (!sid) sid = newId();
+    const ref = normRef($("ref").value);
+    try {
+      const startRes = await call({
+        action: "start", submission_id: sid, ref,
+        curtain_type: pick.curtain_type, type_other: $("type_other").value,
+        order_no: $("order_no").value, window_no: $("window_no").value, fabric_no: $("fabric_no").value,
+        height_cm: $("height_cm").value, width_cm: $("width_cm").value, quantity: $("quantity").value,
+        colour: $("colour").value, condition: pick.condition, bottom_finish: pick.bottom_finish, fabric_kind: pick.fabric_kind,
+        rack_no: $("rack_no").value,
+        photos: photos.map((p) => ({ type: p.type, size: p.size })),
+        video: video ? { type: video.type, size: video.size } : null,
+      });
+      if (!startRes.done) {
+        // one job per file: photos first, then the video
+        const jobs = startRes.uploads.map((u, i) => {
+          const isVid = u.kind === "video";
+          return { u, blob: isVid ? new Blob([video.file], { type: video.type }) : photos[i].blob, size: isVid ? video.size : photos[i].size, idx: i, isVid };
+        });
+        const total = jobs.reduce((a, j) => a + j.size, 0) || 1;
+        const loaded = new Map();
+        const refresh = () => { let s = 0; loaded.forEach((v) => s += v); const f = Math.min(1, s / total); setProg(f * 0.97); setStatus("Uploading… " + Math.round(f * 100) + "%"); };
+        const run = async (job) => {
+          if (uploaded.has(job.u.file_name + ":" + job.size)) { loaded.set(job.idx, job.size); refresh(); return; }
+          const th = job.isVid ? null : $("thumbs").children[job.idx];
+          for (let attempt = 1; ; attempt++) {
+            try {
+              await putFile(job.u.url, job.blob, job.u.file_name, (n) => { loaded.set(job.idx, n); if (th) th.querySelector(".bar i").style.width = Math.round(100 * n / job.size) + "%"; refresh(); });
+              break;
+            } catch (e) { if (attempt >= 3) throw e; loaded.set(job.idx, 0); await new Promise((r) => setTimeout(r, 800 * attempt)); }
+          }
+          loaded.set(job.idx, job.size); uploaded.add(job.u.file_name + ":" + job.size);
+          if (th) th.classList.add("done"); refresh();
+        };
+        // 3 at a time (the video starts first so it is not left to the end)
+        const queue = jobs.slice().sort((a, b) => (b.isVid - a.isVid));
+        await Promise.all([0, 1, 2].map(async () => { while (queue.length) await run(queue.shift()); }));
+      }
+      setStatus("Finishing…"); setProg(0.98);
+      await call({ action: "finish", ref, submission_id: sid });
+      setProg(1);
+      success(ref);
+    } catch (e) {
+      if (e.status === 409 && e.data && e.data.missing) { resetAttempt(); setStatus("Some files did not arrive. Press Save again to retry.", true); }
+      else setStatus(e.message, true);
+      setProg(null); $("submit").textContent = "Try again";
+    } finally { busy = false; $("submit").disabled = false; }
+  }
+  $("submit").onclick = submit;
+  window.addEventListener("beforeunload", (e) => { if (busy) { e.preventDefault(); e.returnValue = ""; } });
+
+  // ---------- after saving ----------
+  let lastDetails = null;
+  function success(ref){
+    lastDetails = { pick: { ...pick }, text: Object.fromEntries(TEXT.map((k) => [k, $(k).value])) };
+    const n = photos.length + (video ? 1 : 0);
+    $("doneTxt").innerHTML = "<b>" + esc(ref) + "</b> is registered with " + photos.length + " photo" + (photos.length === 1 ? "" : "s") + (video ? " and a video" : "") +
+      ". " + n + " file" + (n === 1 ? " is" : "s are") + " named <b>" + esc(ref) + "_A</b>" + (n > 1 ? " to <b>" + esc(ref) + "_" + LETTERS[n - 1] + "</b>" : "") + " and being copied to the Ready_Curtains folder in Google Drive.";
+    document.getElementById("form").style.display = "none"; document.querySelector("header").style.display = "none";
+    $("bar").style.display = "none"; $("done").style.display = "block"; window.scrollTo(0, 0);
+    store.set("rc.draft", "");
+  }
+  function clearForm(keep){
+    photos.forEach((p) => p.url && URL.revokeObjectURL(p.url)); photos = []; video = null; sid = null; resetAttempt();
+    renderThumbs(); renderVideo(); setProg(null); setStatus(""); $("submit").textContent = "Save";
+    document.querySelectorAll(".invalid").forEach((f) => f.classList.remove("invalid"));
+    const keepText = keep ? lastDetails.text : {};
+    TEXT.forEach((k) => $(k).value = k === "ref" ? "" : (keepText[k] || ""));
+    GROUPS.forEach((g) => { delete pick[g]; document.querySelectorAll('[data-group="' + g + '"] .chip').forEach((c) => c.setAttribute("aria-pressed", "false")); });
+    $("type_other").style.display = "none";
+    if (keep) GROUPS.forEach((g) => lastDetails.pick[g] && setChip(g, lastDetails.pick[g]));
+    saveDraft(); refHint();
+    document.getElementById("form").style.display = ""; document.querySelector("header").style.display = "";
+    $("bar").style.display = ""; $("done").style.display = "none"; window.scrollTo(0, 0);
+    setTimeout(() => $("ref").focus(), 50);
+  }
+  $("againSame").onclick = () => clearForm(true);
+  $("againBlank").onclick = () => clearForm(false);
+
+  loadDraft(); refHint(); renderThumbs(); renderVideo();
+})();
+</script>
+</body>
+</html>
