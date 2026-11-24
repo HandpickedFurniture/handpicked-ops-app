@@ -3,7 +3,8 @@
  * A no-login page where staff register ready-made curtains: fields + up to 20 photos + 1 optional video.
  * Deployed with verify_jwt OFF (anon has no grants anywhere; this function writes with the service role).
  *
- *   POST {action:"start",  submission_id, ref, curtain_type, ..., photos:[{type,size}], video:{type,size}|null}
+ *   POST {action:"start",  submission_id, ref, curtain_type, ..., curtains:[{width_cm,height_cm,quantity,height_variation}] (1-20),
+ *                        photos:[{type,size}], video:{type,size}|null}
  *        -> {ok, ref, uploads:[{letter,file_name,kind,url}]}   (one-time signed upload URLs into Storage)
  *   POST {action:"finish", ref, submission_id}
  *        -> {ok, ref, files}  (checks every file really arrived, marks the registration complete, starts Drive copy)
@@ -21,6 +22,7 @@ const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const BUCKET = "ready-curtains";
 const DRIVE_FOLDER_NAME = "Ready_Curtains";
 const MAX_PHOTOS = 20, MAX_PHOTO_BYTES = 15 * 1024 * 1024, MAX_VIDEO_BYTES = 150 * 1024 * 1024;
+const MAX_CURTAINS = 20;
 const MAX_BODY = 100_000;
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
@@ -96,17 +98,37 @@ async function start(b: any): Promise<Response> {
   const row = {
     ref, submission_id: sid, curtain_type, type_other: type_other || null,
     order_no: opt(b.order_no, 40), window_no: opt(b.window_no, 40), fabric_no: opt(b.fabric_no, 60),
-    height_cm: num(b.height_cm, "Height", 1, 999), width_cm: num(b.width_cm, "Width", 1, 1999),
-    quantity: Math.round(num(b.quantity, "Quantity", 1, 9999)),
     colour: clean(b.colour, 60), condition: clean(b.condition, 120),
     bottom_finish: pick(b.bottom_finish, CHOICES.bottom_finish, "lead band or hemming"),
     fabric_kind: pick(b.fabric_kind, CHOICES.fabric_kind, "a fabric"),
     rack_no: clean(b.rack_no, 40),
-    photo_count: 0, has_video: false,
+    photo_count: 0, has_video: false, curtain_count: 1, total_quantity: 1,
   };
   if (!row.colour) throw new Bad("Colour is required");
   if (!row.condition) throw new Bad("Condition is required");
   if (!row.rack_no) throw new Bad("Rack number is required");
+
+  // one or more curtain sizes under this reference (an old cached page sends the single-size fields instead)
+  const rawCurtains = Array.isArray(b.curtains) && b.curtains.length
+    ? b.curtains : [{ width_cm: b.width_cm, height_cm: b.height_cm, quantity: b.quantity }];
+  if (rawCurtains.length > MAX_CURTAINS) throw new Bad("Maximum " + MAX_CURTAINS + " curtains per reference");
+  const seen = new Set<string>();
+  const curtains = rawCurtains.map((c: any, i: number) => {
+    const label = LETTERS[i];
+    const item = {
+      item_no: i + 1, label,
+      width_cm: num(c?.width_cm, "Width of curtain " + label, 1, 1999),
+      height_cm: num(c?.height_cm, "Height of curtain " + label, 1, 999),
+      quantity: Math.round(num(c?.quantity, "Quantity of curtain " + label, 1, 9999)),
+      height_variation: opt(c?.height_variation, 60),
+    };
+    const key = item.width_cm + "x" + item.height_cm + "|" + (item.height_variation || "").toLowerCase();
+    if (seen.has(key)) throw new Bad("Curtain " + label + " has the same size as an earlier curtain - raise that quantity instead");
+    seen.add(key);
+    return item;
+  });
+  row.curtain_count = curtains.length;
+  row.total_quantity = curtains.reduce((a: number, c: { quantity: number }) => a + c.quantity, 0);
 
   const photos = Array.isArray(b.photos) ? b.photos : [];
   if (photos.length < 1) throw new Bad("Please add at least one photo");
@@ -138,6 +160,12 @@ async function start(b: any): Promise<Response> {
     await rest("ready_curtains", { method: "POST", body: JSON.stringify(row), prefer: "return=minimal" });
   } catch (e: any) {
     if (e.pg === "23505") throw new Bad("Reference " + ref + " is already registered. Use a different reference number.", 409);
+    throw e;
+  }
+  try {
+    await rest("ready_curtain_items", { method: "POST", body: JSON.stringify(curtains.map((c: any) => ({ ref, ...c }))), prefer: "return=minimal" });
+  } catch (e) {
+    await rest("ready_curtains?ref=eq." + encodeURIComponent(ref), { method: "DELETE" }).catch(() => {});   // no half-registered reference
     throw e;
   }
   const files = items.map((it) => {

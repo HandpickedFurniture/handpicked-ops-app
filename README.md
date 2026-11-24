@@ -1228,8 +1228,10 @@ SQL: `supabase/sql/20261117_fabric_stock_status.sql` (applied).
 ## Ready-made curtains register (23 Nov 2026)
 
 `ready-curtains.html` — a standalone public page (NOT part of the ribbon app, no login) for registering
-ready-made curtains from a phone. Required: type (American / Wave / Eyelet / Others + text), height and width
-(cm), quantity, colour, fabric (Blackout / Semi-blackout / Sheer), bottom finish (Lead band / Hemming),
+ready-made curtains from a phone. Required: type (American / Wave / Eyelet / Others + text), colour,
+and a **size block** per curtain: width (left), height (right), quantity, optional height variation (free text, e.g. "300, 299, 298").
+The + icon next to Size adds Curtain B, C ... (up to 20) under the same reference, each with its own size; two curtains with the
+same width, height and variation are refused (raise the quantity instead). Also required: fabric (Blackout / Semi-blackout / Sheer), bottom finish (Lead band / Hemming),
 condition (New / Good / Fair / Damaged), rack number, reference number, at least 1 photo. Optional: order no.,
 window no., fabric no., one video (up to 150 MB). Up to 20 photos (shrunk to 2560 px JPEG in the browser).
 
@@ -1239,7 +1241,7 @@ different submit with the same reference is refused, a retry of the same submit 
 
 | Piece | Where |
 |---|---|
-| One row per registration / one row per file (with Drive copy state `drive_synced_at`, `drive_error`) | `ready_curtains`, `ready_curtain_files` |
+| One row per registration (`ready_curtains`), one row per curtain size (`ready_curtain_items`; flat view `v_ready_curtains` = one row per size with the details beside it), one row per file (with Drive copy state `drive_synced_at`, `drive_error`) | `ready_curtains`, `ready_curtain_files` |
 | Private bucket, one-time signed upload URLs, 150 MB cap, image + video MIME only | Storage `ready-curtains` |
 | The only door: verify_jwt OFF, `start` (validates, inserts, mints upload URLs) → browser uploads → `finish` (checks every file arrived) → copy to Drive | Edge Function `ready-curtains` |
 | Drive copy: folder **Ready_Curtains** in My Drive, created by the app (drive.file scope, so it can only see folders it made) — resumable upload in 8 MB chunks; runs after every finish and from pg_cron every 2 min for retries | `syncDrive()` in the function, `fn_rc_run_sync()`, cron `handpicked-ready-curtains-sync` |

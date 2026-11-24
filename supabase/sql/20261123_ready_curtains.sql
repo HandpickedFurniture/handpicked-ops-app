@@ -115,3 +115,37 @@ revoke all on function public.fn_rc_run_sync() from public, anon, authenticated;
 
 -- cron (every 2 minutes), scheduled after the Drive token was stored:
 -- select cron.schedule('handpicked-ready-curtains-sync', '*/2 * * * *', 'select public.fn_rc_run_sync()');
+
+-- 24 Nov 2026, migration "ready_curtains_multi_size": one reference can hold several curtain sizes.
+-- ready_curtains lost height_cm / width_cm / quantity (moved to ready_curtain_items, existing rows copied as Curtain A)
+-- and gained curtain_count / total_quantity.
+create table if not exists public.ready_curtain_items (
+  id               bigint generated always as identity primary key,
+  ref              text not null references public.ready_curtains(ref) on delete cascade,
+  item_no          integer not null check (item_no between 1 and 20),
+  label            text not null,                       -- A, B, C ...
+  width_cm         numeric not null check (width_cm > 0 and width_cm < 2000),
+  height_cm        numeric not null check (height_cm > 0 and height_cm < 1000),
+  height_variation text,                                -- optional, e.g. "300, 299, 298"
+  quantity         integer not null check (quantity > 0 and quantity < 10000),
+  unique (ref, item_no)
+);
+alter table public.ready_curtain_items enable row level security;
+revoke all on public.ready_curtain_items from anon;
+grant select on public.ready_curtain_items to authenticated;
+drop policy if exists ready_curtain_items_read on public.ready_curtain_items;
+create policy ready_curtain_items_read on public.ready_curtain_items for select to authenticated using (true);
+insert into public.ready_curtain_items (ref, item_no, label, width_cm, height_cm, quantity)
+select ref, 1, 'A', width_cm, height_cm, quantity from public.ready_curtains on conflict (ref, item_no) do nothing;
+alter table public.ready_curtains add column if not exists curtain_count integer not null default 1 check (curtain_count between 1 and 20);
+alter table public.ready_curtains add column if not exists total_quantity integer;
+update public.ready_curtains set total_quantity = quantity where total_quantity is null;
+alter table public.ready_curtains alter column total_quantity set not null;
+alter table public.ready_curtains drop column height_cm, drop column width_cm, drop column quantity;
+create or replace view public.v_ready_curtains with (security_invoker = true) as
+select c.ref, i.label as curtain, i.width_cm, i.height_cm, i.height_variation, i.quantity,
+       c.curtain_type, c.type_other, c.colour, c.fabric_kind, c.bottom_finish, c.condition,
+       c.order_no, c.window_no, c.fabric_no, c.rack_no, c.photo_count, c.has_video, c.status, c.created_at
+from public.ready_curtains c join public.ready_curtain_items i on i.ref = c.ref;
+revoke all on public.v_ready_curtains from anon;
+grant select on public.v_ready_curtains to authenticated;

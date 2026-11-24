@@ -47,6 +47,19 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
 .chip{font:inherit;cursor:pointer;color:var(--ink);background:var(--bg);border:1.5px solid var(--line);border-radius:999px;padding:10px 16px;min-height:44px}
 .chip[aria-pressed=true]{background:var(--chip-on);border-color:var(--brand);color:var(--brand);font-weight:700}
 .invalid .chip,.invalid input{border-color:var(--err)}
+.sizehead{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.sizehead .l{margin:0}
+.iconbtn{width:44px;height:44px;border-radius:50%;border:1.5px solid var(--brand);background:var(--card);color:var(--brand);font-size:26px;line-height:1;cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center}
+.srow{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:10px;background:var(--bg)}
+.srowhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.srowhead b{font-size:14px}
+.srowhead .rm{border:0;background:none;color:var(--err);font:inherit;font-weight:600;cursor:pointer;min-height:36px;padding:0 6px}
+.sz{display:grid;grid-template-columns:1fr 1fr .75fr;gap:8px}
+.srow .field{margin-bottom:8px}
+.srow .field:last-child{margin-bottom:0}
+.srow label.l{font-size:13px;margin-bottom:4px}
+.srow input{background:var(--card);padding:10px 8px}
+.addbtn{width:100%;font:inherit;font-weight:600;color:var(--brand);background:var(--card);border:2px dashed var(--line);border-radius:10px;min-height:48px;cursor:pointer}
 .msg{font-size:13px;color:var(--err);margin-top:5px;display:none}
 .invalid > .msg{display:block}
 .hint{font-size:13px;color:var(--muted);margin-top:5px}
@@ -99,29 +112,19 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
       <input type="text" id="type_other" maxlength="80" placeholder="Describe the type" style="margin-top:8px;display:none" aria-label="Other type">
       <div class="msg">Please choose the type.</div>
     </div>
-    <div class="two">
-      <div class="field" data-f="height_cm">
-        <label class="l" for="height_cm">Height (cm) <span class="req">*</span></label>
-        <input type="number" id="height_cm" inputmode="decimal" min="1" max="999" step="any" placeholder="e.g. 270">
-        <div class="msg">Enter the height.</div>
-      </div>
-      <div class="field" data-f="width_cm">
-        <label class="l" for="width_cm">Width (cm) <span class="req">*</span></label>
-        <input type="number" id="width_cm" inputmode="decimal" min="1" max="1999" step="any" placeholder="e.g. 140">
-        <div class="msg">Enter the width.</div>
-      </div>
+    <div class="field" data-f="colour">
+      <label class="l" for="colour">Colour <span class="req">*</span></label>
+      <input type="text" id="colour" maxlength="60" placeholder="e.g. Beige">
+      <div class="msg">Enter the colour.</div>
     </div>
-    <div class="two">
-      <div class="field" data-f="quantity">
-        <label class="l" for="quantity">Quantity <span class="req">*</span></label>
-        <input type="number" id="quantity" inputmode="numeric" min="1" max="9999" step="1" placeholder="e.g. 2">
-        <div class="msg">Enter the quantity.</div>
+    <div class="field" id="sizesField">
+      <div class="sizehead">
+        <div class="l">Size (cm) &amp; quantity <span class="req">*</span></div>
+        <button type="button" class="iconbtn" id="addCurtainIcon" aria-label="Add another curtain size" title="Add another curtain size">+</button>
       </div>
-      <div class="field" data-f="colour">
-        <label class="l" for="colour">Colour <span class="req">*</span></label>
-        <input type="text" id="colour" maxlength="60" placeholder="e.g. Beige">
-        <div class="msg">Enter the colour.</div>
-      </div>
+      <div id="sizes"></div>
+      <button type="button" class="addbtn" id="addCurtain">+ Add another curtain (different size)</button>
+      <div class="hint">One reference can hold several curtains of different sizes. Same size? Raise the quantity instead.</div>
     </div>
     <div class="field" data-f="fabric_kind">
       <div class="l">Fabric <span class="req">*</span></div>
@@ -233,12 +236,15 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
     get(k){ try { return localStorage.getItem(k); } catch { return null; } },
     set(k,v){ try { localStorage.setItem(k,v); } catch {} },
   };
-  const TEXT = ["order_no","window_no","fabric_no","height_cm","width_cm","quantity","colour","rack_no","ref","type_other"];
+  const TEXT = ["order_no","window_no","fabric_no","colour","rack_no","ref","type_other"];
   const GROUPS = ["curtain_type","fabric_kind","bottom_finish","condition"];
   const pick = {};                    // chip selections
   let photos = [];                    // {blob, name, type, size, url, ok}
   let video = null;                   // {file, type, size}
   let sid = null, uploaded = new Set(), busy = false;
+  const MAX_CURTAINS = 20;
+  const blank = () => ({ w: "", h: "", q: "", hv: "" });
+  let curtains = [blank()];           // one entry per curtain size under this reference
 
   const newId = () => (crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)));
   const normRef = (v) => String(v || "").trim().replace(/\s+/g, "-").toUpperCase();
@@ -260,7 +266,7 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
 
   // ---------- draft (text only; files can't be kept) ----------
   function saveDraft(){
-    const d = { pick }; TEXT.forEach((k) => d[k] = $(k).value);
+    const d = { pick, curtains }; TEXT.forEach((k) => d[k] = $(k).value);
     store.set("rc.draft", JSON.stringify(d));
   }
   function loadDraft(){
@@ -268,6 +274,7 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
       const d = JSON.parse(store.get("rc.draft") || "null"); if (!d) return;
       TEXT.forEach((k) => { if (d[k] != null) $(k).value = d[k]; });
       GROUPS.forEach((g) => { if (d.pick && d.pick[g]) setChip(g, d.pick[g]); });
+      if (Array.isArray(d.curtains) && d.curtains.length) curtains = d.curtains.slice(0, MAX_CURTAINS).map((c) => ({ ...blank(), ...c }));
     } catch {}
   }
   document.querySelectorAll("input[type=text],input[type=number]").forEach((i) => i.addEventListener("input", () => {
@@ -278,6 +285,41 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
     el.innerHTML = r ? "Files will be saved as <b>" + esc(r) + "_A</b>, <b>" + esc(r) + "_B</b> …" : "Photos and the video are saved as <b>REFERENCE_A</b>, <b>REFERENCE_B</b> and so on.";
   }
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+  // ---------- curtain sizes ----------
+  const letterOf = (i) => LETTERS[i];
+  function renderSizes(){
+    $("sizes").innerHTML = curtains.map((c, i) =>
+      '<div class="srow" data-i="' + i + '">' +
+        '<div class="srowhead"><b>Curtain ' + letterOf(i) + '</b>' + (curtains.length > 1 ? '<button type="button" class="rm">Remove</button>' : "") + "</div>" +
+        '<div class="sz">' +
+          '<div class="field"><label class="l">Width <span class="req">*</span></label><input type="number" class="w" inputmode="decimal" min="1" max="1999" step="any" placeholder="e.g. 260" value="' + esc(c.w) + '"><div class="msg">Enter width</div></div>' +
+          '<div class="field"><label class="l">Height <span class="req">*</span></label><input type="number" class="h" inputmode="decimal" min="1" max="999" step="any" placeholder="e.g. 250" value="' + esc(c.h) + '"><div class="msg">Enter height</div></div>' +
+          '<div class="field"><label class="l">Qty <span class="req">*</span></label><input type="number" class="q" inputmode="numeric" min="1" max="9999" step="1" placeholder="1" value="' + esc(c.q) + '"><div class="msg">Enter qty</div></div>' +
+        "</div>" +
+        '<div class="field"><label class="l">Height variation <small>(optional)</small></label><input type="text" class="hv" maxlength="60" placeholder="e.g. 300, 299, 298" value="' + esc(c.hv) + '"></div>' +
+      "</div>").join("");
+    const full = curtains.length >= MAX_CURTAINS;
+    $("addCurtain").style.display = $("addCurtainIcon").style.display = full ? "none" : "";
+  }
+  function addCurtain(){
+    if (curtains.length >= MAX_CURTAINS || busy) return;
+    curtains.push(blank()); renderSizes(); saveDraft();
+    const row = $("sizes").lastElementChild; row.scrollIntoView({ behavior: "smooth", block: "center" });
+    setTimeout(() => row.querySelector(".w").focus(), 250);
+  }
+  $("addCurtain").onclick = addCurtain; $("addCurtainIcon").onclick = addCurtain;
+  $("sizes").addEventListener("input", (e) => {
+    const row = e.target.closest(".srow"); if (!row) return;
+    const c = curtains[+row.dataset.i], k = e.target.className;
+    if (k === "w" || k === "h" || k === "q" || k === "hv") c[k] = e.target.value;
+    e.target.closest(".field").classList.remove("invalid"); saveDraft();
+  });
+  $("sizes").addEventListener("click", (e) => {
+    const b = e.target.closest(".rm"); if (!b || busy) return;
+    curtains.splice(+b.closest(".srow").dataset.i, 1); if (!curtains.length) curtains.push(blank());
+    renderSizes(); saveDraft();
+  });
 
   // ---------- photos ----------
   async function shrink(file){
@@ -359,14 +401,23 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
     GROUPS.forEach((g) => { if (!pick[g]) bad(g); });
     if (pick.curtain_type === "Others" && !$("type_other").value.trim()) { bad("curtain_type"); document.querySelector('[data-f="curtain_type"] .msg').textContent = "Describe the type."; }
     else document.querySelector('[data-f="curtain_type"] .msg').textContent = "Please choose the type.";
-    const num = (id, max) => { const v = parseFloat($(id).value); return Number.isFinite(v) && v > 0 && v <= max; };
-    if (!num("height_cm", 999)) bad("height_cm");
-    if (!num("width_cm", 1999)) bad("width_cm");
-    if (!num("quantity", 9999) || !Number.isInteger(+$("quantity").value)) bad("quantity");
+    const num = (v, max) => { const n = parseFloat(v); return Number.isFinite(n) && n > 0 && n <= max; };
+    const badEl = (el) => { const f = el.closest(".field"); f.classList.add("invalid"); first = first || f; };
+    const seen = new Set(); let dup = null;
+    [...$("sizes").children].forEach((row, i) => {
+      const c = curtains[i];
+      if (!num(c.w, 1999)) badEl(row.querySelector(".w"));
+      if (!num(c.h, 999)) badEl(row.querySelector(".h"));
+      if (!num(c.q, 9999) || !Number.isInteger(+c.q)) badEl(row.querySelector(".q"));
+      const key = +c.w + "x" + +c.h + "|" + c.hv.trim().toLowerCase();
+      if (num(c.w, 1999) && num(c.h, 999)) { if (seen.has(key) && dup == null) { dup = i; badEl(row.querySelector(".w")); } seen.add(key); }
+    });
+    if (dup != null) setStatus("Curtain " + letterOf(dup) + " has the same size as an earlier curtain - raise that quantity instead.", true);
     ["colour","rack_no"].forEach((k) => { if (!$(k).value.trim()) bad(k); });
     if (!refOk(normRef($("ref").value))) bad("ref");
     if (!photos.length) bad("photos");
     if (first) first.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (first && dup == null) setStatus("Please fix the highlighted fields.", true);
     return !first;
   }
 
@@ -396,7 +447,7 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
 
   async function submit(){
     if (busy) return;
-    if (!validate()) { setStatus("Please fix the highlighted fields.", true); return; }
+    if (!validate()) return;
     busy = true; $("submit").disabled = true; setStatus("Saving details…"); setProg(0);
     if (!sid) sid = newId();
     const ref = normRef($("ref").value);
@@ -405,7 +456,7 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
         action: "start", submission_id: sid, ref,
         curtain_type: pick.curtain_type, type_other: $("type_other").value,
         order_no: $("order_no").value, window_no: $("window_no").value, fabric_no: $("fabric_no").value,
-        height_cm: $("height_cm").value, width_cm: $("width_cm").value, quantity: $("quantity").value,
+        curtains: curtains.map((c) => ({ width_cm: c.w, height_cm: c.h, quantity: c.q, height_variation: c.hv })),
         colour: $("colour").value, condition: pick.condition, bottom_finish: pick.bottom_finish, fabric_kind: pick.fabric_kind,
         rack_no: $("rack_no").value,
         photos: photos.map((p) => ({ type: p.type, size: p.size })),
@@ -452,9 +503,10 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
   // ---------- after saving ----------
   let lastDetails = null;
   function success(ref){
-    lastDetails = { pick: { ...pick }, text: Object.fromEntries(TEXT.map((k) => [k, $(k).value])) };
+    lastDetails = { pick: { ...pick }, text: Object.fromEntries(TEXT.map((k) => [k, $(k).value])), curtains: curtains.map((c) => ({ ...c })) };
+    const totalQty = curtains.reduce((a, c) => a + (+c.q || 0), 0);
     const n = photos.length + (video ? 1 : 0);
-    $("doneTxt").innerHTML = "<b>" + esc(ref) + "</b> is registered with " + photos.length + " photo" + (photos.length === 1 ? "" : "s") + (video ? " and a video" : "") +
+    $("doneTxt").innerHTML = "<b>" + esc(ref) + "</b> is registered with " + curtains.length + " curtain size" + (curtains.length === 1 ? "" : "s") + " (" + totalQty + " curtain" + (totalQty === 1 ? "" : "s") + " in total), " + photos.length + " photo" + (photos.length === 1 ? "" : "s") + (video ? " and a video" : "") +
       ". " + n + " file" + (n === 1 ? " is" : "s are") + " named <b>" + esc(ref) + "_A</b>" + (n > 1 ? " to <b>" + esc(ref) + "_" + LETTERS[n - 1] + "</b>" : "") + " and being copied to the Ready_Curtains folder in Google Drive.";
     document.getElementById("form").style.display = "none"; document.querySelector("header").style.display = "none";
     $("bar").style.display = "none"; $("done").style.display = "block"; window.scrollTo(0, 0);
@@ -464,6 +516,7 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
     photos.forEach((p) => p.url && URL.revokeObjectURL(p.url)); photos = []; video = null; sid = null; resetAttempt();
     renderThumbs(); renderVideo(); setProg(null); setStatus(""); $("submit").textContent = "Save";
     document.querySelectorAll(".invalid").forEach((f) => f.classList.remove("invalid"));
+    curtains = keep ? lastDetails.curtains.map((c) => ({ ...c })) : [blank()]; renderSizes();
     const keepText = keep ? lastDetails.text : {};
     TEXT.forEach((k) => $(k).value = k === "ref" ? "" : (keepText[k] || ""));
     GROUPS.forEach((g) => { delete pick[g]; document.querySelectorAll('[data-group="' + g + '"] .chip').forEach((c) => c.setAttribute("aria-pressed", "false")); });
@@ -477,7 +530,7 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
   $("againSame").onclick = () => clearForm(true);
   $("againBlank").onclick = () => clearForm(false);
 
-  loadDraft(); refHint(); renderThumbs(); renderVideo();
+  loadDraft(); renderSizes(); refHint(); renderThumbs(); renderVideo();
 })();
 </script>
 </body>
