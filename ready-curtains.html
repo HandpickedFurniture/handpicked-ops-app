@@ -77,7 +77,10 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
 .vid b{flex:1;min-width:0;overflow-wrap:anywhere;font-size:14px}
 .vid button{border:0;background:none;color:var(--err);font:inherit;font-weight:600;cursor:pointer;min-height:44px;padding:0 8px}
 #bar{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:10px 0 calc(10px + env(safe-area-inset-bottom));z-index:5}
-#submit{width:100%;font:inherit;font-size:18px;font-weight:700;background:var(--brand);color:var(--brand-ink);border:0;border-radius:12px;min-height:54px;cursor:pointer}
+.btnrow{display:flex;gap:10px}
+#discard{flex:0 0 auto;font:inherit;font-weight:600;color:var(--err);background:var(--card);border:1.5px solid var(--line);border-radius:12px;min-height:54px;padding:0 16px;cursor:pointer}
+#discard:disabled{opacity:.5;cursor:default}
+#submit{flex:1;font:inherit;font-size:18px;font-weight:700;background:var(--brand);color:var(--brand-ink);border:0;border-radius:12px;min-height:54px;cursor:pointer}
 #submit:disabled{opacity:.55;cursor:default}
 #status{font-size:14px;margin:0 0 8px;min-height:1px}
 #status.err{color:var(--err);font-weight:600}
@@ -222,7 +225,10 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
 <div id="bar"><div class="wrap">
   <div id="prog"><i></i></div>
   <p id="status"></p>
-  <button type="button" id="submit">Save</button>
+  <div class="btnrow">
+    <button type="button" id="discard" title="Throw away everything entered and start a new registration">Discard</button>
+    <button type="button" id="submit">Save</button>
+  </div>
 </div></div>
 
 <script>
@@ -448,7 +454,7 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
   async function submit(){
     if (busy) return;
     if (!validate()) return;
-    busy = true; $("submit").disabled = true; setStatus("Saving details…"); setProg(0);
+    busy = true; $("submit").disabled = $("discard").disabled = true; setStatus("Saving details…"); setProg(0);
     if (!sid) sid = newId();
     const ref = normRef($("ref").value);
     try {
@@ -495,9 +501,17 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
       if (e.status === 409 && e.data && e.data.missing) { resetAttempt(); setStatus("Some files did not arrive. Press Save again to retry.", true); }
       else setStatus(e.message, true);
       setProg(null); $("submit").textContent = "Try again";
-    } finally { busy = false; $("submit").disabled = false; }
+    } finally { busy = false; $("submit").disabled = $("discard").disabled = false; }
   }
   $("submit").onclick = submit;
+  // Discard: throw away everything entered (fields, sizes, photos, video) and begin a fresh registration.
+  $("discard").onclick = () => {
+    if (busy) return;
+    const entered = photos.length || video || curtains.length > 1 || curtains.some((c) => c.w || c.h || c.q || c.hv) ||
+      TEXT.some((k) => $(k).value.trim()) || GROUPS.some((g) => pick[g]);
+    if (entered && !confirm("Discard everything you entered (details, sizes, photos and video) and start a new registration?")) return;
+    clearForm(false);
+  };
   window.addEventListener("beforeunload", (e) => { if (busy) { e.preventDefault(); e.returnValue = ""; } });
 
   // ---------- after saving ----------
