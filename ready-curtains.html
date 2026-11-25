@@ -82,6 +82,28 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
 #discard:disabled{opacity:.5;cursor:default}
 #submit{flex:1;font:inherit;font-size:18px;font-weight:700;background:var(--brand);color:var(--brand-ink);border:0;border-radius:12px;min-height:54px;cursor:pointer}
 #submit:disabled{opacity:.55;cursor:default}
+#create{flex:1;font:inherit;font-weight:700;color:var(--brand);background:var(--card);border:1.5px solid var(--brand);border-radius:12px;min-height:54px;padding:0 8px;cursor:pointer}
+#create:disabled{opacity:.5;cursor:default}
+@media (max-width:420px){.btnrow{gap:8px}#discard{padding:0 10px;font-size:15px}#submit,#create{font-size:15px}}
+#gallery{display:none}
+#gallery .tools{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}
+#gallery .tools button,.gi button{font:inherit;font-weight:600;font-size:14px;color:var(--brand);background:var(--card);border:1.5px solid var(--line);border-radius:10px;min-height:44px;padding:0 12px;cursor:pointer}
+#gallery button:disabled{opacity:.5;cursor:default}
+.gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+.gi{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--bg)}
+.gi .ph{aspect-ratio:1;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--muted);font-size:14px;padding:12px;background:var(--bg)}
+.gi .ph.err{color:var(--err)}
+.gi img{display:block;width:100%;aspect-ratio:1;object-fit:cover;cursor:zoom-in}
+.gi .cap{padding:8px 10px;font-size:13px}
+.gi .cap b{display:block;font-size:14px}
+.gi .cap span{color:var(--muted)}
+.gi .act{display:flex;gap:8px;padding:0 10px 10px}
+.gi .act button{flex:1}
+.spin{width:30px;height:30px;border:3px solid var(--line);border-top-color:var(--brand);border-radius:50%;animation:sp 1s linear infinite;margin:0 auto 8px}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation-duration:4s}}
+#zoom{position:fixed;inset:0;background:rgba(0,0,0,.88);display:none;align-items:center;justify-content:center;z-index:20;padding:12px}
+#zoom img{max-width:100%;max-height:100%;object-fit:contain;border-radius:8px}
 #status{font-size:14px;margin:0 0 8px;min-height:1px}
 #status.err{color:var(--err);font-weight:600}
 #prog{height:8px;border-radius:99px;background:var(--line);overflow:hidden;margin-bottom:8px;display:none}
@@ -98,7 +120,7 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
 <div class="wrap">
   <header>
     <h1>Register ready-made curtains</h1>
-    <p>Fill in the details, add photos (up to 20) and an optional video, then press Save. Fields marked <span class="req">*</span> are required.</p>
+    <p>Fill in the details, add photos (up to 20) and an optional video, then press Save. "Create images" makes website pictures of the curtain. Fields marked <span class="req">*</span> are required.</p>
   </header>
 
   <form id="form" novalidate autocomplete="off">
@@ -155,6 +177,15 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
         <button type="button" class="chip" data-v="Damaged">Damaged</button>
       </div>
       <div class="msg">Please choose the condition.</div>
+    </div>
+    <div class="field" data-f="tieback">
+      <div class="l">Tie back <span class="req">*</span></div>
+      <div class="chips" data-group="tieback">
+        <button type="button" class="chip" data-v="No tie back">No tie back</button>
+        <button type="button" class="chip" data-v="Velcro tie back">Velcro tie back</button>
+        <button type="button" class="chip" data-v="Hook style tie back">Hook style tie back</button>
+      </div>
+      <div class="msg">Please choose the tie back.</div>
     </div>
   </section>
 
@@ -220,6 +251,13 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
       <button type="button" id="againBlank">Register a new curtain (blank form)</button>
     </div>
   </section>
+
+  <section id="gallery">
+    <h2>Images</h2>
+    <p class="hint" id="galNote" style="margin:0 0 10px"></p>
+    <div class="tools"><button type="button" id="dlAll" disabled>Download all</button><button type="button" id="galStop" hidden>Stop</button></div>
+    <div class="gal" id="gal"></div>
+  </section>
 </div>
 
 <div id="bar"><div class="wrap">
@@ -228,9 +266,11 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
   <div class="btnrow">
     <button type="button" id="discard" title="Throw away everything entered and start a new registration">Discard</button>
     <button type="button" id="submit">Save</button>
+    <button type="button" id="create" title="Create website images of this curtain">Create images</button>
   </div>
 </div></div>
 
+<div id="zoom"><img alt=""></div>
 <script>
 (() => {
   const API = "https://jrevqijbzzwdcwxcnwfa.supabase.co/functions/v1/ready-curtains";
@@ -243,7 +283,7 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
     set(k,v){ try { localStorage.setItem(k,v); } catch {} },
   };
   const TEXT = ["order_no","window_no","fabric_no","colour","rack_no","ref","type_other"];
-  const GROUPS = ["curtain_type","fabric_kind","bottom_finish","condition"];
+  const GROUPS = ["curtain_type","fabric_kind","bottom_finish","condition","tieback"];
   const pick = {};                    // chip selections
   let photos = [];                    // {blob, name, type, size, url, ok}
   let video = null;                   // {file, type, size}
@@ -454,7 +494,7 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
   async function submit(){
     if (busy) return;
     if (!validate()) return;
-    busy = true; $("submit").disabled = $("discard").disabled = true; setStatus("Saving details…"); setProg(0);
+    busy = true; $("submit").disabled = $("discard").disabled = $("create").disabled = true; setStatus("Saving details…"); setProg(0);
     if (!sid) sid = newId();
     const ref = normRef($("ref").value);
     try {
@@ -464,7 +504,7 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
         order_no: $("order_no").value, window_no: $("window_no").value, fabric_no: $("fabric_no").value,
         curtains: curtains.map((c) => ({ width_cm: c.w, height_cm: c.h, quantity: c.q, height_variation: c.hv })),
         colour: $("colour").value, condition: pick.condition, bottom_finish: pick.bottom_finish, fabric_kind: pick.fabric_kind,
-        rack_no: $("rack_no").value,
+        rack_no: $("rack_no").value, tieback: pick.tieback,
         photos: photos.map((p) => ({ type: p.type, size: p.size })),
         video: video ? { type: video.type, size: video.size } : null,
       });
@@ -501,7 +541,7 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
       if (e.status === 409 && e.data && e.data.missing) { resetAttempt(); setStatus("Some files did not arrive. Press Save again to retry.", true); }
       else setStatus(e.message, true);
       setProg(null); $("submit").textContent = "Try again";
-    } finally { busy = false; $("submit").disabled = $("discard").disabled = false; }
+    } finally { busy = false; $("submit").disabled = $("discard").disabled = false; $("create").disabled = creating; }
   }
   $("submit").onclick = submit;
   // Discard: throw away everything entered (fields, sizes, photos, video) and begin a fresh registration.
@@ -509,10 +549,160 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
     if (busy) return;
     const entered = photos.length || video || curtains.length > 1 || curtains.some((c) => c.w || c.h || c.q || c.hv) ||
       TEXT.some((k) => $(k).value.trim()) || GROUPS.some((g) => pick[g]);
-    if (entered && !confirm("Discard everything you entered (details, sizes, photos and video) and start a new registration?")) return;
+    if ((entered || shots.length) && !confirm("Discard everything you entered (details, sizes, photos, video and created images) and start a new registration?")) return;
     clearForm(false);
   };
   window.addEventListener("beforeunload", (e) => { if (busy) { e.preventDefault(); e.returnValue = ""; } });
+
+  // ---------- create images ----------
+  // Scenes are drawn by Gemini through the edge function (one call per picture). The fabric pictures are NOT drawn by AI: they are the user's
+  // own photos, cleaned from their real pixels right here, because AI changed the colour and the weave when it was tried.
+  const SHOTS = [["closed","Closed curtains"],["open","Open curtains"],["tiedback","Curtains with tie belt"],["tieback_detail","Tie belt close-up"],
+                 ["bottom","Bottom, touching the floor"],["angle_left","Side angle"],["angle_right","Other side angle"]];
+  const TB = { "Velcro tie back": "velcro", "Hook style tie back": "hook" };
+  let shots = [], creating = false, stopFlag = false, runNo = 0;
+
+  function clearGallery(){
+    runNo++; stopFlag = true; shots.forEach((x) => x.url && URL.revokeObjectURL(x.url));
+    shots = []; creating = false; $("create").disabled = busy; $("gal").innerHTML = ""; $("gallery").style.display = "none"; $("dlAll").disabled = true;
+  }
+  const galName = (x, i) => (normRef($("ref").value) || "curtain") + "_" + (i + 1) + ".jpg";
+  function drawTile(i){
+    const x = shots[i], el = $("gal").children[i]; if (!el) return;
+    const body = x.state === "done" ? '<img alt="' + esc(x.label) + '" src="' + x.url + '">'
+      : x.state === "err" ? '<div class="ph err">' + esc(x.error) + "</div>"
+      : '<div class="ph"><div>' + (x.state === "run" ? '<div class="spin"></div>Creating…' : "Waiting…") + "</div></div>";
+    el.innerHTML = body + '<div class="cap"><b>' + esc(x.label) + "</b><span>" + esc(x.state === "done" ? (x.note || "") : "") + "</span></div>" +
+      ((x.state === "done" || x.state === "err") ? '<div class="act">' + (x.state === "done" ? '<button type="button" data-a="dl">Download</button>' : "") +
+        (x.kind === "ai" ? '<button type="button" data-a="redo">' + (x.state === "err" ? "Try again" : "Redo") + "</button>" : "") + "</div>" : "");
+    $("dlAll").disabled = !shots.some((y) => y.state === "done");
+  }
+
+  const loadImg = (src) => new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error("That photo cannot be read on this device.")); im.src = src; });
+  const toBlob = (c) => new Promise((res, rej) => c.toBlob((b) => b ? res(b) : rej(new Error("Could not make the picture.")), "image/jpeg", 0.92));
+  function canvas(w, h){ const c = document.createElement("canvas"); c.width = w; c.height = h; return c; }
+
+  // separable box blur, three passes
+  function blur(a, n, r){
+    let src = a, dst = new Float32Array(a.length);
+    for (let pass = 0; pass < 3; pass++) for (let dir = 0; dir < 2; dir++) {
+      for (let k = 0; k < n; k++) {
+        const at = dir ? (i) => i * n + k : (i) => k * n + i;
+        let sum = 0; for (let i = -r; i <= r; i++) sum += src[at(Math.min(n - 1, Math.max(0, i)))];
+        for (let i = 0; i < n; i++) { dst[at(i)] = sum / (2 * r + 1); sum += src[at(Math.min(n - 1, i + r + 1))] - src[at(Math.max(0, i - r))]; }
+      }
+      const t = src === a ? new Float32Array(a.length) : src; src = dst; dst = t;
+    }
+    return src;
+  }
+  const median = (a) => { const s = Float32Array.from(a).sort(); return s[s.length >> 1]; };
+
+  // same steps as retouch() in the CurtainsImages skill: sharpest even square -> remove shadows / wrinkles / colour patches -> clone out dark spots -> exposure
+  async function retouch(photo, colour){
+    const im = await loadImg(photo.url || URL.createObjectURL(photo.blob));
+    const W0 = im.naturalWidth, H0 = im.naturalHeight, side = Math.floor(Math.min(W0, H0) * 0.62), N = 1000;
+    const k = Math.min(1, 700 / Math.max(W0, H0)), sw = Math.round(W0 * k), sh = Math.round(H0 * k), ss = Math.floor(side * k), sc = canvas(sw, sh);
+    const sx = sc.getContext("2d", { willReadFrequently: true }); sx.drawImage(im, 0, 0, sw, sh);
+    const d = sx.getImageData(0, 0, sw, sh).data, g = new Float32Array(sw * sh);
+    for (let i = 0; i < g.length; i++) g[i] = .299 * d[4 * i] + .587 * d[4 * i + 1] + .114 * d[4 * i + 2];
+    let best = -1e9, bx = 0, by = 0; const q = ss >> 2;
+    for (let i = 0; i < 7; i++) for (let j = 0; j < 7; j++) {
+      const x = Math.floor((sw - ss) * i / 6), y = Math.floor((sh - ss) * j / 6); let minD = 1e9, ms = [];
+      for (let m = 0; m < 4; m++) for (let n = 0; n < 4; n++) {
+        let dd = 0, mm = 0, c = 0;
+        for (let yy = y + m * q; yy < y + (m + 1) * q - 1; yy += 2) for (let xx = x + n * q; xx < x + (n + 1) * q - 1; xx += 2) { const o = yy * sw + xx; dd += Math.abs(g[o] - g[o + 1]); mm += g[o]; c++; }
+        minD = Math.min(minD, dd / c); ms.push(mm / c);
+      }
+      const mean = ms.reduce((a, b) => a + b, 0) / 16, sd = Math.sqrt(ms.reduce((a, b) => a + (b - mean) ** 2, 0) / 16), score = minD / (mean / 150) - 0.06 * sd;
+      if (score > best) { best = score; bx = x / k; by = y / k; }
+    }
+    const c = canvas(N, N), x = c.getContext("2d", { willReadFrequently: true }); x.imageSmoothingQuality = "high";
+    x.drawImage(im, bx, by, side, side, 0, 0, N, N);
+    const id = x.getImageData(0, 0, N, N), p = id.data, T = N * N;
+    let Y = new Float32Array(T), Cb = new Float32Array(T), Cr = new Float32Array(T);
+    for (let i = 0; i < T; i++) { const r = p[4 * i], gg = p[4 * i + 1], b = p[4 * i + 2];
+      Y[i] = .299 * r + .587 * gg + .114 * b; Cb[i] = 128 - .168736 * r - .331264 * gg + .5 * b; Cr[i] = 128 + .5 * r - .418688 * gg - .081312 * b; }
+    const low = blur(Y, N, 18), ml = median(low); for (let i = 0; i < T; i++) Y[i] *= ml / Math.max(low[i], 1);
+    const soft = blur(Y, N, 3), med = median(soft), mad = median(soft.map((v) => Math.abs(v - med))) + 1e-3, cut = med - Math.max(5 * 1.48 * mad, 5);
+    let any = false; const mask = new Float32Array(T); for (let i = 0; i < T; i++) if (soft[i] < cut) { mask[i] = 1; any = true; }
+    if (any) {
+      let m = blur(mask, N, 6); for (let i = 0; i < T; i++) m[i] = Math.min(1, m[i] * 4);
+      for (const [dx, dy] of [[140,0],[0,140],[-140,90],[100,-160]]) {
+        const Y2 = Float32Array.from(Y), m2 = Float32Array.from(m);
+        for (let yy = 0; yy < N; yy++) for (let xx = 0; xx < N; xx++) { const o = yy * N + xx; if (!m[o]) continue;
+          const s = ((yy - dy + N) % N) * N + ((xx - dx + N) % N); if (m[s] < 0.02) { Y2[o] = Y[o] * (1 - m[o]) + Y[s] * m[o]; m2[o] = 0; } }
+        Y = Y2; m = m2;
+      }
+    }
+    const name = colour.toLowerCase().replace(/-/g, " "); let cb = median(Cb), cr = median(Cr), lift = 0;
+    if (/off white|ivory|cream/.test(name)) { cb = 125.5; cr = 129.2; lift = 216; } else if (/white/.test(name)) { cb = 127.6; cr = 128.2; lift = 224; }
+    let m0 = 0; for (let i = 0; i < T; i++) m0 += Y[i]; m0 /= T;
+    const target = lift || Math.min(m0 * 1.15, 205), gain = Math.sqrt(target / m0), lb = blur(Cb, N, 8), lr = blur(Cr, N, 8);
+    for (let i = 0; i < T; i++) { const yv = (Y[i] - m0) * gain + target, b = cb + (Cb[i] - lb[i]) - 128, r = cr + (Cr[i] - lr[i]) - 128;
+      p[4 * i] = yv + 1.402 * r; p[4 * i + 1] = yv - .344136 * b - .714136 * r; p[4 * i + 2] = yv + 1.772 * b; p[4 * i + 3] = 255; }
+    x.putImageData(id, 0, 0);
+    const out = canvas(1200, 1200), ox = out.getContext("2d"); ox.imageSmoothingQuality = "high"; ox.drawImage(c, 0, 0, 1200, 1200);
+    return out;
+  }
+
+  async function runShot(i, run, swatch){
+    const x = shots[i]; x.state = "run"; drawTile(i);
+    try {
+      if (x.kind === "ai") {
+        const j = await call({ action: "create_image", style: x.style, opacity: x.opacity, colour: x.colour, tieback: x.tieback, shot: x.id, seed: x.seed, photo: swatch ? { data: swatch } : null });
+        if (run !== runNo) return;
+        const im = await loadImg("data:" + j.mime + ";base64," + j.image), c = canvas(1200, 1200); c.getContext("2d").drawImage(im, 0, 0, 1200, 1200);
+        x.blob = await toBlob(c); x.note = "AI picture" + (j.faults && j.faults.length ? " · please check: " + j.faults.join("; ") : "");
+      }
+      if (run !== runNo) return;
+      if (x.url) URL.revokeObjectURL(x.url); x.url = URL.createObjectURL(x.blob); x.state = "done";
+    } catch (e) { if (run !== runNo) return; x.state = "err"; x.error = e.message.replace("press Save again - nothing is lost.", "try again."); if (e.status === 429) stopFlag = true; }
+    drawTile(i);
+  }
+
+  async function createImages(){
+    if (creating || busy) return;
+    const need = []; ["curtain_type","fabric_kind","tieback"].forEach((g) => { if (!pick[g]) need.push(g); }); if (!$("colour").value.trim()) need.push("colour");
+    document.querySelectorAll(".invalid").forEach((f) => f.classList.remove("invalid"));
+    if (need.length) { need.forEach((k) => document.querySelector('[data-f="' + k + '"]').classList.add("invalid"));
+      document.querySelector('[data-f="' + need[0] + '"]').scrollIntoView({ behavior: "smooth", block: "center" }); return setStatus("To create images, fill in the highlighted fields.", true); }
+    if (pick.curtain_type === "Others") return setStatus("Images can be created for American, Wave and Eyelet curtains.", true);
+    if (shots.some((x) => x.state === "done") && !confirm("Create a new set of images? The ones shown now will be replaced.")) return;
+    clearGallery(); const run = ++runNo; creating = true; stopFlag = false; $("create").disabled = true; setStatus("");
+    const base = { kind: "ai", style: pick.curtain_type.toLowerCase(), opacity: pick.fabric_kind.toLowerCase(), colour: $("colour").value.trim(), tieback: TB[pick.tieback] || "none", seed: normRef($("ref").value) || newId(), state: "wait" };
+    shots = SHOTS.map(([id, label]) => ({ ...base, id, label }));
+    photos.slice(0, 2).forEach((_, n) => shots.push({ kind: "photo", label: "Fabric close-up " + (n + 1), state: "wait", note: "Your photo " + LETTERS[n] + ", retouched (no AI)" }));
+    $("galNote").textContent = "The room pictures are drawn by AI" + (photos.length ? " from your fabric photo. The fabric close-ups are your own photos, cleaned up." : ". Add a photo of the fabric first for the best match.") + " Check every picture before using it. They are not saved: download the ones you want.";
+    $("gal").innerHTML = shots.map(() => '<div class="gi"></div>').join(""); shots.forEach((_, i) => drawTile(i));
+    $("gallery").style.display = "block"; $("galStop").hidden = false; $("gallery").scrollIntoView({ behavior: "smooth", block: "start" });
+    let swatch = null;
+    for (let n = 0; n < Math.min(2, photos.length); n++) {          // fabric pictures first: the first one is also the colour reference for the rooms
+      const i = SHOTS.length + n; shots[i].state = "run"; drawTile(i); await new Promise((r) => setTimeout(r, 30));
+      try { const c = await retouch(photos[n], base.colour); if (run !== runNo) return; shots[i].blob = await toBlob(c); shots[i].url = URL.createObjectURL(shots[i].blob); shots[i].state = "done";
+        if (n === 0) { const s = canvas(900, 900); s.getContext("2d").drawImage(c, 0, 0, 900, 900); swatch = s.toDataURL("image/jpeg", 0.85); }
+      } catch (e) { shots[i].state = "err"; shots[i].error = e.message; }
+      drawTile(i);
+    }
+    lastSwatch = swatch;
+    const queue = SHOTS.map((_, i) => i);
+    await Promise.all([0, 1, 2].map(async () => { while (queue.length && !stopFlag && run === runNo) await runShot(queue.shift(), run, swatch); }));
+    if (run !== runNo) return;
+    queue.forEach((i) => { shots[i].state = "err"; shots[i].error = "Not created."; drawTile(i); });
+    creating = false; $("create").disabled = busy; $("galStop").hidden = true;
+  }
+  let lastSwatch = null;
+  $("create").onclick = createImages;
+  $("galStop").onclick = () => { stopFlag = true; $("galStop").hidden = true; };
+  function download(i){ const a = document.createElement("a"); a.href = shots[i].url; a.download = galName(shots[i], i); document.body.append(a); a.click(); a.remove(); }
+  $("gal").onclick = (e) => {
+    const tile = e.target.closest(".gi"); if (!tile) return; const i = [...$("gal").children].indexOf(tile), a = e.target.dataset.a;
+    if (a === "dl") download(i);
+    else if (a === "redo") { stopFlag = false; runShot(i, runNo, lastSwatch); }
+    else if (e.target.tagName === "IMG") { $("zoom").firstElementChild.src = shots[i].url; $("zoom").style.display = "flex"; }
+  };
+  $("zoom").onclick = () => { $("zoom").style.display = "none"; };
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("zoom").style.display = "none"; });
+  $("dlAll").onclick = async () => { for (let i = 0; i < shots.length; i++) if (shots[i].state === "done") { download(i); await new Promise((r) => setTimeout(r, 400)); } };
 
   // ---------- after saving ----------
   let lastDetails = null;
@@ -527,7 +717,7 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
     store.set("rc.draft", "");
   }
   function clearForm(keep){
-    photos.forEach((p) => p.url && URL.revokeObjectURL(p.url)); photos = []; video = null; sid = null; resetAttempt();
+    photos.forEach((p) => p.url && URL.revokeObjectURL(p.url)); photos = []; video = null; sid = null; resetAttempt(); clearGallery();
     renderThumbs(); renderVideo(); setProg(null); setStatus(""); $("submit").textContent = "Save";
     document.querySelectorAll(".invalid").forEach((f) => f.classList.remove("invalid"));
     curtains = keep ? lastDetails.curtains.map((c) => ({ ...c })) : [blank()]; renderSizes();

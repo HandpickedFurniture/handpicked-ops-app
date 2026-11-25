@@ -1,0 +1,231 @@
+{
+  "version": "2026-11-25",
+  "model": "gemini-3.1-flash-image",
+  "about": "Single source of truth for how the agent draws curtains. Used by the ready-curtains edge function (via rules.ts, built by tools/build_curtain_rules.py) AND by the CurtainsImages skill (curtain_images.py). Edit here, rebuild rules.ts, redeploy.",
+  "global_rules": [
+    "ONE window and ONE curtain only (a left and a right panel of the same cloth). Each panel is a SINGLE layer. Nothing else hangs at the window: no second curtain, no straight panel behind a tied-back panel, no sheer, no lining layer, no blind, no valance. Wherever a panel has been drawn or tied away you see only bare window glass, frame and bare wall.",
+    "The curtains are floor length: the bottom hem only just TOUCHES the floor. No dragging, no pooling, no puddling on the floor, and no gap above the floor.",
+    "Reproduce the supplied fabric colour and texture faithfully. Do not invent any print, pattern, stripe, shine or two-tone effect.",
+    "Make it look like a real photograph of tailor-made curtains hanging in a real home: natural soft daylight, uncluttered, neutral decor, believable fabric weight and gravity.",
+    "Square 1:1 composition. No text, no watermark, no logo, no people, no pets."
+  ],
+  "styles": {
+    "american": {
+      "label": "American style (triple pinch pleat)",
+      "hardware": "a slim white ceiling-mounted curtain track fixed directly under the ceiling, the curtain starting right at the track",
+      "heading": "TRIPLE PINCH PLEAT heading, built exactly like the construction photo of our own tailors. A flat header band about 9 cm tall runs along the top with ONE thin horizontal machine-stitch line along its lower edge. Pleat groups sit about 12 to 15 cm apart. Each group is exactly THREE thin upright finger folds standing side by side from the top edge down to that stitch line; they are held only from BEHIND by a hidden metal pronged hook. The three fingers are NOT sewn, tacked, tied or knotted together at their base: they stay three separate folds, loosely side by side, a little uneven from one group to the next, and simply run on into the long, loose folds of the curtain below. Never draw a pinched knot, a gathered point, a button, a goblet, tulip, hourglass or X shape, or a fat bulge under the pleat. Never draw double (two-finger) pleats.",
+      "fall": "full, generous fullness with soft relaxed vertical folds that open out gently towards the floor"
+    },
+    "wave": {
+      "label": "Wave style (ripple fold)",
+      "hardware": "a slim white ceiling-mounted wave track fixed directly under the ceiling with the small carriers visible at the top",
+      "heading": "WAVE (ripple fold) heading, built like the construction photo of our own tailors: continuous rounded S-waves about 10 to 12 cm apart, the same depth from the top to the floor, the rounded tops of the waves standing just in front of a slim white ceiling track whose dark slot shows between the waves. No pleats, no pinches, no header band with folds, no rings.",
+      "fall": "deep, uniform, sculptural wave folds, front faces of the fabric smooth and flat between the folds"
+    },
+    "eyelet": {
+      "label": "Eyelet style (ring top)",
+      "hardware": "a slim round metal curtain pole (brushed silver or matt black) mounted just under the ceiling or above the window",
+      "heading": "EYELET (grommet) heading: a row of large round metal eyelet rings, evenly spaced across a flat top band, with the pole threaded through every ring. The fabric between the rings falls into regular, deep, rounded tubular folds.",
+      "fall": "regular rounded folds of equal depth falling straight from each eyelet"
+    }
+  },
+  "opacity": {
+    "blackout": "BLACKOUT cloth: thick, heavy, completely opaque; one solid colour, no light comes through it.",
+    "semi-blackout": "SEMI-BLACKOUT cloth: medium weight, almost opaque, the same even colour from edge to edge. Only a hint of daylight passes: where it hangs in front of glass it is just a touch lighter, with no visible window shape, no bright patch, no spotlight, no warm glow and no two-tone effect.",
+    "sheer": "SHEER cloth: a light, airy, translucent voile in a single layer. Where the cloth hangs in front of the ONE window, the window frame and a bright blurred garden are softly visible THROUGH it; in front of the wall it is pale and slightly see-through. The panels stay exactly as open or closed as in the photo."
+  },
+  "tieback": {
+    "velcro": "VELCRO TIE BELT: a flat belt about 8 cm wide made from the SAME cloth as the curtain, wrapped all the way around the gathered curtain and closed on itself at the front with a flat overlapping velcro tab. It never touches the wall: the wall beside it is bare, NO hook, NO metal, NO rope, NO tassel. Remove the wall hooks of the photo.",
+    "hook": "HOOK STYLE TIE BACK: a flat belt about 8 cm wide made from the SAME cloth as the curtain, passed around the curtain; its ends are hung on a small metal hook fixed to the wall at the outer side. The small metal wall hook is visible at the end of the belt.",
+    "none_choices": [
+      "a twisted soft rope tie-back in a neutral beige, champagne, grey or white that suits the cloth, a double loop closed with a modern faceted geometric snap button. It REPLACES the belt and the wall hooks of the photo: remove those belts and hooks completely.",
+      "a magnetic tie-back: a slim braided cord with a round flat magnetic disc at each end, in a colour matching the cloth, wrapped once around the gathered curtain and closed disc on disc at the front. It REPLACES the belt and the wall hooks of the photo: remove those belts and hooks completely.",
+      "a decorative soft rope tie-back with a small tassel, in a colour matching the cloth, knotted around the gathered curtain. It REPLACES the belt and the wall hooks of the photo: remove those belts and hooks completely."
+    ]
+  },
+  "shots": [
+    {
+      "id": "closed",
+      "label": "Closed curtains",
+      "needs_tieback": false,
+      "scene": "Straight-on front view, curtain fully CLOSED: the two panels meet edge to edge in the middle with NO gap, covering the one window completely from the ceiling to the floor. The curtain is centred and about three quarters of the frame width. The curtain hangs close against ONE flat window wall that is seen straight on and fills the whole width of the frame; plain bare wall shows to the left and right of the curtain. There are no other windows, doors or openings in the picture. Floor visible along the bottom, very little furniture, nothing in front of the curtain."
+    },
+    {
+      "id": "open",
+      "label": "Open curtains",
+      "needs_tieback": false,
+      "scene": "Front view, curtain OPEN: the two panels are stacked back and hang straight and free (NOT tied) at the far left and far right, the whole window between them bare and clearly visible. Wide shot of a calm, tidy furnished room. The curtain hangs close against ONE flat window wall that is seen straight on and fills the whole width of the frame; plain bare wall shows to the left and right of the curtain. There are no other windows, doors or openings in the picture."
+    },
+    {
+      "id": "tiedback",
+      "label": "Curtains with tie belt",
+      "needs_tieback": true,
+      "scene": "Front view, the whole curtain from track to floor, both panels held back. Each panel is ONE piece of cloth: its inner edge starts at the top near the middle of the window, sweeps diagonally outwards down to the tie-back at the outer side of the window (about 100 cm above the floor), and below the tie-back all of the cloth falls straight down to the floor. The triangle between the two swept edges is BARE WINDOW from top to bottom. No cloth hangs straight down between the swept edge and the glass. The curtain hangs close against ONE flat window wall that is seen straight on and fills the whole width of the frame; plain bare wall shows to the left and right of the curtain. There are no other windows, doors or openings in the picture."
+    },
+    {
+      "id": "tieback_detail",
+      "label": "Tie belt close-up",
+      "needs_tieback": true,
+      "scene": "CLOSE-UP detail of ONE curtain panel held by the tie-back described above: the tie-back is sharp and in the centre of the frame, the folds above and below it visible, a little of the window and wall in soft focus."
+    },
+    {
+      "id": "bottom",
+      "label": "Bottom of the curtain at the floor",
+      "needs_tieback": false,
+      "scene": "LOW CLOSE-UP of the bottom of the curtain: the hem and the lowest 60 cm of the folds, with the hem only just touching the floor (a thin soft contact line, nothing dragging), a little skirting board and floor visible."
+    },
+    {
+      "id": "angle_left",
+      "label": "Side angle",
+      "needs_tieback": false,
+      "scene": "THREE-QUARTER view from the left side of the room: the curtain seen at an angle so the depth of the folds shows, window light raking across the fabric. Curtains open and hanging free."
+    },
+    {
+      "id": "angle_right",
+      "label": "Corner angle",
+      "needs_tieback": false,
+      "scene": "A different ANGLE from the right side of the room, a little higher up, looking across at the window; the curtains are CLOSED, showing how the folds run from the track down to the floor."
+    },
+    {
+      "id": "heading",
+      "label": "Heading detail",
+      "needs_tieback": false,
+      "scene": "CLOSE-UP of the top of the curtain at the track or pole, showing the heading exactly as described above, soft side light from the window."
+    }
+  ],
+  "fabric_edit": {
+    "label": "Fabric close-up (your photo, retouched)",
+    "how": "Real pixels only, never AI: on 25 Nov 2026 Gemini turned a white fabric grey and an off-white one beige and changed the weave. See retouch() in curtain_images.py and in ready-curtains.html."
+  },
+  "variants_for_demo": [
+    {
+      "id": "american-blackout",
+      "style": "american",
+      "opacity": "blackout"
+    },
+    {
+      "id": "wave-blackout",
+      "style": "wave",
+      "opacity": "blackout"
+    },
+    {
+      "id": "american-sheer",
+      "style": "american",
+      "opacity": "sheer"
+    },
+    {
+      "id": "wave-sheer",
+      "style": "wave",
+      "opacity": "sheer"
+    },
+    {
+      "id": "american-semi-blackout",
+      "style": "american",
+      "opacity": "semi-blackout"
+    },
+    {
+      "id": "wave-semi-blackout",
+      "style": "wave",
+      "opacity": "semi-blackout"
+    },
+    {
+      "id": "eyelet-blackout",
+      "style": "eyelet",
+      "opacity": "blackout"
+    },
+    {
+      "id": "eyelet-semi-blackout",
+      "style": "eyelet",
+      "opacity": "semi-blackout"
+    },
+    {
+      "id": "eyelet-sheer",
+      "style": "eyelet",
+      "opacity": "sheer"
+    }
+  ],
+  "references": {
+    "american": {
+      "default": [
+        "american_heading_zoom.jpg",
+        "american_full_triple_pinch.jpg"
+      ],
+      "closed": [
+        "american_full_triple_pinch.jpg",
+        "american_heading_zoom.jpg"
+      ],
+      "heading": [
+        "american_heading_zoom.jpg"
+      ],
+      "tiedback": [
+        "american_heading_zoom.jpg",
+        "american_tiedback_room.jpg"
+      ],
+      "tieback_detail": [
+        "american_hook_belt.jpg"
+      ],
+      "bottom": [
+        "american_full_triple_pinch.jpg"
+      ],
+      "sheer:closed": [
+        "american_sheer_room.jpg",
+        "american_heading_zoom.jpg"
+      ],
+      "sheer:default": [
+        "american_heading_zoom.jpg",
+        "american_sheer_room.jpg"
+      ],
+      "sheer:tiedback": [
+        "american_tiedback_room.jpg",
+        "american_heading_zoom.jpg"
+      ]
+    },
+    "wave": {
+      "default": [
+        "wave_heading_1.jpg",
+        "wave_heading_2.jpg"
+      ],
+      "semi-blackout:default": [
+        "wave_heading_1.jpg",
+        "wave_semi_room.jpg"
+      ],
+      "sheer:default": [
+        "wave_heading_1.jpg",
+        "wave_semi_room.jpg"
+      ],
+      "tiedback": [
+        "wave_heading_1.jpg",
+        "american_tiedback_room.jpg"
+      ]
+    },
+    "eyelet": {
+      "default": [],
+      "tiedback": [
+        "american_tiedback_room.jpg"
+      ]
+    }
+  },
+  "reference_note": "The other attached photos are REAL curtains made by our own tailors. They are the CONSTRUCTION reference: copy exactly how the heading is made, how the folds run and how the hem meets the floor. Do NOT copy their fabric colour, room, furniture, belongings or bad lighting.",
+  "qc": {
+    "model": "gemini-3.7-flash",
+    "max_redraws": 2,
+    "prompt": "You are a strict quality inspector for a curtain shop. Inspect the picture. Requested: {style_label}, {opacity}, picture type '{shot_label}', tie-back: {tieback}, curtain colour: {colour}. Answer ONLY with JSON: {\"second_layer\": bool, \"hem\": \"touching|dragging|gap|not_visible\", \"heading_style\": \"triple_pinch|double_pinch|wave|eyelet|other|not_visible\", \"knotted_pleats\": bool, \"light_matches_opacity\": bool, \"tieback_seen\": bool, \"people_or_text\": bool, \"extra_window\": bool, \"fully_closed\": bool, \"against_window_wall\": bool, \"dark_scene\": bool, \"light_leaks\": bool, \"colour_ok\": bool, \"hardware_ok\": bool, \"view_ok\": bool, \"tieback_type_ok\": bool, \"even_cloth\": bool, \"note\": \"max 15 words\"}. second_layer = any other curtain, sheer, blind, or a panel hanging straight down BEHIND or beside a tied-back panel. hem dragging = cloth pooling, flaring out, bunching, folding or lying on the floor even slightly. When a curtain is drawn open its pleats bunch together: if the fingers cannot be counted answer not_visible for heading_style. A reflection of the curtain in the glass counts as second_layer. knotted_pleats = pleat fingers sewn or tied together at their base into a tight point, knot, goblet or hourglass. extra_window = any window, door or opening that is not covered by or between the two panels of this curtain, e.g. glass visible to the left or right of the curtain. fully_closed = the two panels meet with no gap (judge only if the picture type is Closed curtains, otherwise true). against_window_wall = the curtain hangs on a wall at a window like in a real home, not free-standing in the room (true for close-ups). dark_scene = the room or the window is dark, black or night-time (must be bright day). light_leaks = glowing lines, halos or bright edges under the hem, above the track or along the cloth. colour_ok = the cloth is clearly the requested colour. hardware_ok = American and Wave hang from a slim WHITE ceiling track, Eyelet from a metal pole (true if not visible). Judge colour_ok strictly: off-white is not grey, white is not cream. view_ok = the picture really shows the requested picture type (Closed = panels meet; Open or tie belt = window bare in the middle; Bottom = only the lowest part of the curtain and the floor, no track or pole visible). tieback_type_ok = velcro: belt of the same cloth and NO hook on the wall; hook: belt of the same cloth on a wall hook; none: a decorative rope, cord or magnet, not a cloth belt (true if no tie-back is expected). even_cloth = the cloth has one even colour without bright patch, spotlight, window-shaped glow or a much darker half (for sheer answer true)."
+  },
+  "edit_bases": {
+    "american": {
+      "heading": "american_heading_zoom.jpg",
+      "closed": "american_full_triple_pinch.jpg",
+      "sheer:closed": "american_sheer_room.jpg",
+      "sheer:heading": ""
+    },
+    "wave": {
+      "heading": "wave_heading_1.jpg",
+      "semi-blackout:closed": "wave_semi_room.jpg"
+    },
+    "eyelet": {}
+  },
+  "edit_prompt": "EDIT the first attached photo. It is a real photo of a curtain made by our own tailors. KEEP THE CURTAIN ITSELF EXACTLY AS IT IS: the same heading, the same pleat fingers (same number, same loose unstitched shape, same spacing), the same folds and the same hem. Do not redraw, tidy up, tighten or symmetrise the pleats. CHANGE ONLY: (1) THE CLOTH - re-cover the whole curtain in this fabric: {colour}, {opacity_text} {swatch_text} (2) THE ROOM - replace everything around the curtain with a clean, bright, modern, tidy home; remove all furniture, boxes, bags, cables, people's belongings and clutter that are in the photo; the hem must be fully visible, just touching the floor all along, with no light leaking under it; (3) THE PHOTOGRAPHY - professional catalogue lighting, straight verticals, correct white balance, sharp, no creases or stains in the cloth; (4) FRAMING - square 1:1, extend the room naturally where needed. {tieback_text}",
+  "tiedback_note": "One attached photo shows real tied-back curtains: copy ONLY how each single panel sweeps from the top middle out to the tie-back with bare window in between and nothing hanging behind. Ignore that photo's heading; use the heading described here.",
+  "hook_reference": "american_hook_belt.jpg",
+  "golden_prompt": "EDIT the first attached catalogue photo, changing as little as possible. KEEP exactly as they are: camera, framing, walls, floor, bright daytime lighting, furniture, the white curtain track or the metal pole and their colour, heading, pleat fingers, folds, drape, the position of the curtain and how far each panel is open or closed, and its hem line. A window that is in the photo stays with its view; where the photo shows plain wall it stays plain wall: do NOT add any window, door, opening or view beside or around the curtain. CHANGE ONLY the cloth to this: colour {colour}, the same colour and brightness over the whole curtain. {opacity_text} {swatch_text} {tieback_text} Do NOT darken the room or window. NO glowing edges, halos, light lines under the hem or above the track, no second layer, no reflection in glass. The hem stays one clean straight line just touching the floor: it must not spread, pool or puddle. Square 1:1, no text, no people."
+}

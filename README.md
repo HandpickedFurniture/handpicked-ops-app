@@ -1247,6 +1247,22 @@ different submit with the same reference is refused, a retry of the same submit 
 | Drive copy: folder **Ready_Curtains** in My Drive, created by the app (drive.file scope, so it can only see folders it made) — resumable upload in 8 MB chunks; runs after every finish and from pg_cron every 2 min for retries | `syncDrive()` in the function, `fn_rc_run_sync()`, cron `handpicked-ready-curtains-sync` |
 | Drive-only OAuth token + cron key live in Vault (`ready_curtains_drive_token`, `ready_curtains_cron_key`), set by `tools/ready_curtains_drive_auth.py` (re-run it to replace the token) | `fn_rc_secret`, `fn_rc_set_secret` (service role only) |
 
+**Tie back** (25 Nov 2026): required chip - No tie back / Velcro tie back / Hook style tie back (`ready_curtains.tieback`).
+
+**Create images** (25 Nov 2026): third button beside Discard and Save; needs type, fabric, colour and tie back, not a saved registration.
+Seven AI pictures (closed, open, tied back, tie belt close-up, bottom, two angles) plus the first two photos cleaned up as fabric close-ups.
+Nothing is stored: the user downloads what they want.
+
+| Piece | Where |
+|---|---|
+| One call = one picture: `create_image` edits an approved golden picture (private Storage `_templates/golden_<style>_<shot>.jpg`) so only cloth, opacity and tie back change; a vision check inspects it, one redraw, remaining faults are returned and shown under the picture | `images.ts` |
+| Every drawing rule, shared with the **CurtainsImages** skill | `rules.json` -> `python tools/build_curtain_rules.py` -> `rules.ts` -> redeploy |
+| Fabric close-ups: real pixels only, in the browser (AI changed colour and weave) | `retouch()` in the page; same steps in the skill |
+| Gemini key in Vault (`ready_curtains_gemini_key`), golden pictures upload | `tools/ready_curtains_image_setup.py` |
+| Spending limit, because the page has no login: 150 pictures / hour / visitor, 400 / day in total | `rc_image_log`, constants in `images.ts` |
+
+The tailors' template photos show customers' homes: they stay out of git and off the page.
+
 anon has no grant on any of it (see the anon definer-view leak). Anyone with the link can register; there is no
 name box. Storage keeps a copy of every file after the Drive copy (nothing is deleted automatically).
 Files that failed to copy show `drive_error` and are retried by the cron.

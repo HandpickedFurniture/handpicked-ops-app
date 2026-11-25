@@ -8,6 +8,8 @@
  *        -> {ok, ref, uploads:[{letter,file_name,kind,url}]}   (one-time signed upload URLs into Storage)
  *   POST {action:"finish", ref, submission_id}
  *        -> {ok, ref, files}  (checks every file really arrived, marks the registration complete, starts Drive copy)
+ *   POST {action:"create_image", style, opacity, colour, tieback, shot, seed, photo:{data}}  -> {image(base64), mime, label}
+ *        one Gemini picture per call (see images.ts + rules.json); rate limited per visitor and per day
  *   POST {action:"sync"} + header x-cron-key   -> copies pending files into Google Drive folder Ready_Curtains
  *   GET  ?action=ping                          -> {ok, drive:true|false}
  *
@@ -16,6 +18,7 @@
  * which runs after every finish and from pg_cron. Drive uses its own Drive-only OAuth token held in Vault.
  */
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createImage } from "./images.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -24,6 +27,7 @@ const DRIVE_FOLDER_NAME = "Ready_Curtains";
 const MAX_PHOTOS = 20, MAX_PHOTO_BYTES = 15 * 1024 * 1024, MAX_VIDEO_BYTES = 150 * 1024 * 1024;
 const MAX_CURTAINS = 20;
 const MAX_BODY = 100_000;
+const MAX_IMAGE_BODY = 3_500_000;      // create_image carries one downscaled photo
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
 const EXT: Record<string, string> = {
@@ -102,6 +106,7 @@ async function start(b: any): Promise<Response> {
     bottom_finish: pick(b.bottom_finish, CHOICES.bottom_finish, "lead band or hemming"),
     fabric_kind: pick(b.fabric_kind, CHOICES.fabric_kind, "a fabric"),
     rack_no: clean(b.rack_no, 40),
+    tieback: pick(b.tieback || "No tie back", ["No tie back", "Velcro tie back", "Hook style tie back"], "a tie back option"),
     photo_count: 0, has_video: false, curtain_count: 1, total_quantity: 1,
   };
   if (!row.colour) throw new Bad("Colour is required");
@@ -361,8 +366,14 @@ Deno.serve(async (req: Request) => {
     if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
     const raw = await req.text();
-    if (raw.length > MAX_BODY) return json({ error: "Request too large" }, 413);
+    if (raw.length > MAX_IMAGE_BODY) return json({ error: "Request too large" }, 413);
     let b: any; try { b = JSON.parse(raw); } catch { return json({ error: "Bad request" }, 400); }
+    if (b.action !== "create_image" && raw.length > MAX_BODY) return json({ error: "Request too large" }, 413);
+
+    if (b.action === "create_image") {
+      const ip = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
+      return json({ ok: true, ...(await createImage(b, { rest, secret, url: SUPABASE_URL, H, Bad, ip })) });
+    }
 
     if (b.action === "start") return await start(b);
     if (b.action === "finish") return await finish(b);

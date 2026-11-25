@@ -149,3 +149,18 @@ select c.ref, i.label as curtain, i.width_cm, i.height_cm, i.height_variation, i
 from public.ready_curtains c join public.ready_curtain_items i on i.ref = c.ref;
 revoke all on public.v_ready_curtains from anon;
 grant select on public.v_ready_curtains to authenticated;
+
+-- 25 Nov 2026, migration "ready_curtains_tieback_and_image_log": tie back choice, log behind the Create images spending limit.
+alter table public.ready_curtains add column if not exists tieback text not null default 'No tie back'
+  check (tieback in ('No tie back','Velcro tie back','Hook style tie back'));
+-- v_ready_curtains gained c.tieback as its last column; fn_rc_secret / fn_rc_set_secret also allow 'ready_curtains_gemini_key'.
+create table if not exists public.rc_image_log (
+  id bigint generated always as identity primary key,
+  at timestamptz not null default now(),
+  ip_hash text not null,
+  shot text
+);
+create index if not exists rc_image_log_at_idx on public.rc_image_log (at desc);
+create index if not exists rc_image_log_ip_idx on public.rc_image_log (ip_hash, at desc);
+alter table public.rc_image_log enable row level security;
+revoke all on public.rc_image_log from anon, authenticated;
