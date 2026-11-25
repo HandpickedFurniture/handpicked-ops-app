@@ -1248,23 +1248,43 @@ different submit with the same reference is refused, a retry of the same submit 
 | Drive-only OAuth token + cron key live in Vault (`ready_curtains_drive_token`, `ready_curtains_cron_key`), set by `tools/ready_curtains_drive_auth.py` (re-run it to replace the token) | `fn_rc_secret`, `fn_rc_set_secret` (service role only) |
 
 **Tie back** (25 Nov 2026): required chip - No tie back / Velcro tie back / Hook style tie back (`ready_curtains.tieback`).
+The **pictures** show only two tie backs (user rule, 25 Nov 2026, second round): registered as Velcro -> the velcro belt of the user's own
+photos (panel hangs straight, hourglass, level plain belt about 60 % down, nothing on its front, not touching the wall); anything else,
+Hook style included -> the silver-grey rope with two faceted blocks (Temu goods 601102866045658), always in its own colours.
+Every window shows one sharp, real-looking garden (never blurred, no flower field).
 
-**Create images** (25 Nov 2026): third button beside Discard and Save; needs type, fabric, colour and tie back, not a saved registration.
-Seven AI pictures (closed, open, tied back, tie belt close-up, bottom, two angles) plus the first two photos cleaned up as fabric close-ups.
-Nothing is stored: the user downloads what they want.
+**Sign-in** (25 Nov 2026, third round): only approved email addresses. Own credential store (`rc_people`, `rc_sessions`, `rc_login_log`; `auth.ts`)
+**on purpose**: a Supabase Auth account here is `authenticated` and can read about 100 ops tables, so curtain staff must not get one. Admin approves an
+email on the page (People) -> one-time link, 7 days -> the person chooses a password (PBKDF2, 8+ characters). Sessions 30 days, only hashes are stored;
+six wrong passwords lock that email for 15 minutes; removing a person signs them out at once. First admin / forgotten admin password:
+`python tools/ready_curtains_add_admin.py <ingestion-agent> <email>` (opens the link in the browser, prints nothing).
+`rc_settings.login_required` = `on` closes start / finish / create_image / feedback to everyone not signed in (15 s cache); set it to `off` to open the old no-login way.
+
+**Create images** (25 Nov 2026): third button beside Discard and Save; needs type, fabric, tie back and **a photo of the fabric**.
+USER RULE: the colour comes ONLY from the photo, the typed colour name is never used. Phones expose plain cloth to mid-grey (all five register photos
+have a median of about 155, white cloth included), so a **light check** comes first: the cleaned cloth with Lighter / Darker / Warmer / Cooler, matched to the
+real cloth by hand. Seven AI pictures (closed, open, tied back, tie belt close-up, bottom, two angles) plus the first two photos cleaned up.
+
+**Modify images**: spoken (Hindi, English or mixed; 45 s, sent as 16 kHz WAV) or typed feedback -> `feedback` returns what to change in which picture ->
+the person confirms -> a new **version** with only those pictures changed (blue frame); earlier versions stay. A change edits the picture shown (`previous`);
+"draw again" starts from the golden picture; "it should be whiter" corrects the cloth once and redraws all seven from it. Logged in `rc_image_feedback`.
+
+**Approve images**: shows the names first, then private Storage `_approved/<REF>/<approval id>/` -> Google Drive **Approved images / <REF> / `<REF>_A.jpg`, `_B` ...**
+(folder made by the app, id in `rc_settings.approved_folder_id`; pictures left out take no letter). Approving a reference again asks first and
+keeps the earlier folder as `<REF> (replaced <date time>)`. `rc_approvals`, `rc_approved_files`, `approve.ts`. Not approved = not saved.
 
 | Piece | Where |
 |---|---|
-| One call = one picture: `create_image` edits an approved golden picture (private Storage `_templates/golden_<style>_<shot>.jpg`) so only cloth, opacity and tie back change; a vision check inspects it, one redraw, remaining faults are returned and shown under the picture | `images.ts` |
-| Every drawing rule, shared with the **CurtainsImages** skill | `rules.json` -> `python tools/build_curtain_rules.py` -> `rules.ts` -> redeploy |
-| Fabric close-ups: real pixels only, in the browser (AI changed colour and weave) | `retouch()` in the page; same steps in the skill |
+| One call = one picture: `create_image` edits an approved golden picture (private Storage `_templates/golden_<style>_<shot>.jpg`; the two tie-back shots exist once per tie back, `..._velcro.jpg` / `..._temu.jpg`; 27 in all) so only cloth and opacity change; a vision check compares it with the fabric photo, one redraw, remaining faults are returned and shown under the picture | `images.ts` |
+| Every drawing rule, the change rule and the feedback rule, shared with the **CurtainsImages** skill | `rules.json` -> `python tools/build_curtain_rules.py` -> `rules.ts` -> redeploy (index, images, auth, approve, rules) |
+| Fabric close-ups: real pixels only, in the browser (AI changed colour and weave); colour = median of the well lit 60 % of the whole photo | `prepare()` / `retouch()` in the page; same steps in the skill |
 | Gemini key in Vault (`ready_curtains_gemini_key`), golden pictures upload | `tools/ready_curtains_image_setup.py` |
-| Spending limit, because the page has no login: 150 pictures / hour / visitor, 400 / day in total | `rc_image_log`, constants in `images.ts` |
+| Spending limit: 150 pictures / hour / person, 400 / day in total. The key is the SAME Gemini project as the ingestion agent: on 25 Nov 2026 Google throttled it near its **monthly spending cap** (429), so pictures can starve the agent | `rc_image_log`, constants in `images.ts` |
 
 The tailors' template photos show customers' homes: they stay out of git and off the page.
 
-anon has no grant on any of it (see the anon definer-view leak). Anyone with the link can register; there is no
-name box. Storage keeps a copy of every file after the Drive copy (nothing is deleted automatically).
+anon has no grant on any of it (see the anon definer-view leak). With the login on, only approved
+people can register (`ready_curtains.registered_by`). Storage keeps a copy of every file after the Drive copy (nothing is deleted automatically).
 Files that failed to copy show `drive_error` and are retried by the cron.
 SQL: `supabase/sql/20261123_ready_curtains.sql` (applied; plus the helper functions `fn_rc_set_secret` / `fn_rc_run_sync`).
 

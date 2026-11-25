@@ -164,3 +164,94 @@ create index if not exists rc_image_log_at_idx on public.rc_image_log (at desc);
 create index if not exists rc_image_log_ip_idx on public.rc_image_log (ip_hash, at desc);
 alter table public.rc_image_log enable row level security;
 revoke all on public.rc_image_log from anon, authenticated;
+
+-- 25 Nov 2026, migration "ready_curtains_login_feedback_approvals": sign-in for approved emails only, spoken feedback, approved pictures.
+-- Own credential store on purpose: a Supabase Auth account is `authenticated` and can read about 100 ops tables. Only the edge function
+-- (service role) touches these tables: RLS on, no policies, no grants for anon or authenticated.
+create table if not exists public.rc_people (
+  email          text primary key check (email = lower(email) and length(email) <= 120),
+  name           text,
+  is_admin       boolean not null default false,
+  active         boolean not null default true,
+  password_hash  text,                                  -- pbkdf2$iterations$salt$hash, never a password
+  setup_hash     text,                                  -- SHA-256 of the one-time link code
+  setup_expires  timestamptz,
+  fails          integer not null default 0,
+  locked_until   timestamptz,
+  last_login     timestamptz,
+  created_by     text,
+  created_at     timestamptz not null default now()
+);
+create unique index if not exists rc_people_setup_idx on public.rc_people (setup_hash) where setup_hash is not null;
+create table if not exists public.rc_sessions (
+  token_hash  text primary key,                         -- SHA-256 of the token the browser holds
+  email       text not null references public.rc_people(email) on delete cascade,
+  created_at  timestamptz not null default now(),
+  expires_at  timestamptz not null
+);
+create index if not exists rc_sessions_email_idx on public.rc_sessions (email);
+create table if not exists public.rc_login_log (
+  id       bigint generated always as identity primary key,
+  at       timestamptz not null default now(),
+  what     text not null,
+  email    text,
+  ok       boolean not null,
+  ip_hash  text
+);
+create index if not exists rc_login_log_fail_idx on public.rc_login_log (ip_hash, at desc) where not ok;
+create table if not exists public.rc_image_feedback (
+  id          bigint generated always as identity primary key,
+  at          timestamptz not null default now(),
+  email       text,
+  ref         text,
+  spoken      boolean not null default false,
+  language    text,
+  transcript  text,
+  english     text,
+  changes     jsonb
+);
+create table if not exists public.rc_approvals (
+  id               bigint generated always as identity primary key,
+  ref              text not null,
+  version          integer not null default 1,
+  picture_count    integer not null check (picture_count between 1 and 20),
+  approved_by      text not null,
+  status           text not null default 'uploading' check (status in ('uploading','complete')),
+  created_at       timestamptz not null default now(),
+  completed_at     timestamptz,
+  replaced_at      timestamptz,                         -- a later approval of the same reference took over
+  drive_folder_id  text,
+  drive_renamed    boolean not null default false
+);
+create index if not exists rc_approvals_ref_idx on public.rc_approvals (ref);
+create table if not exists public.rc_approved_files (
+  id               bigint generated always as identity primary key,
+  approval_id      bigint not null references public.rc_approvals(id) on delete cascade,
+  ref              text not null,
+  letter           text not null,
+  file_name        text not null,                       -- <REF>_<letter>.jpg, the name in Drive
+  storage_path     text not null,
+  shot             text,
+  label            text,
+  kind             text not null check (kind in ('ai','photo')),
+  mime             text not null default 'image/jpeg',
+  size_bytes       bigint,
+  uploaded_at      timestamptz,
+  drive_file_id    text,
+  drive_synced_at  timestamptz,
+  drive_claimed_at timestamptz,
+  drive_error      text,
+  unique (approval_id, letter)
+);
+create index if not exists rc_approved_files_pending_idx on public.rc_approved_files (id) where uploaded_at is not null and drive_synced_at is null;
+alter table public.ready_curtains add column if not exists registered_by text;
+alter table public.rc_image_log add column if not exists email text;
+create index if not exists rc_image_log_email_idx on public.rc_image_log (email, at desc) where email is not null;
+alter table public.rc_people enable row level security;
+alter table public.rc_sessions enable row level security;
+alter table public.rc_login_log enable row level security;
+alter table public.rc_image_feedback enable row level security;
+alter table public.rc_approvals enable row level security;
+alter table public.rc_approved_files enable row level security;
+revoke all on public.rc_people, public.rc_sessions, public.rc_login_log, public.rc_image_feedback, public.rc_approvals, public.rc_approved_files from anon, authenticated, public;
+-- rc_settings key 'login_required' = 'on' closes the page to everyone who is not signed in (15 s cache in the function).

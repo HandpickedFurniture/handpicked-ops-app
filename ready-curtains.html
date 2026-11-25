@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Register Ready-Made Curtains</title>
 <meta name="robots" content="noindex">
-<!-- Public one-page form (no login) to register ready-made curtains with photos and a video. 23 Nov 2026.
-     Talks only to the edge function ready-curtains; see supabase/functions/ready-curtains/index.ts.
-     Files are saved as <REFERENCE>_A, _B, ... and copied to the Google Drive folder Ready_Curtains. -->
+<!-- One-page form to register ready-made curtains with photos and a video, and to make website pictures. 23 Nov 2026.
+     Sign-in (25 Nov 2026) is only for approved email addresses; talks only to the edge function ready-curtains (index.ts).
+     Files are saved as <REFERENCE>_A, _B, ... : photos in the Google Drive folder Ready_Curtains, approved pictures in Approved images / <REFERENCE>. -->
 <style>
 :root{
   --bg:#f5f6f8; --card:#fff; --ink:#1b1f24; --muted:#5f6b7a; --line:#d5dbe3;
@@ -38,7 +38,7 @@ h2{font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:var(--mute
 label.l,.l{display:block;font-size:14px;font-weight:600;margin-bottom:5px}
 .l small{font-weight:400;color:var(--muted)}
 .req{color:var(--err)}
-input[type=text],input[type=number],input[type=search]{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px;min-height:48px}
+input[type=text],input[type=number],input[type=search],input[type=email],input[type=password],textarea{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px;min-height:48px}
 input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
@@ -104,6 +104,44 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
 @media (prefers-reduced-motion:reduce){.spin{animation-duration:4s}}
 #zoom{position:fixed;inset:0;background:rgba(0,0,0,.88);display:none;align-items:center;justify-content:center;z-index:20;padding:12px}
 #zoom img{max-width:100%;max-height:100%;object-fit:contain;border-radius:8px}
+[hidden]{display:none!important}
+.primary{width:100%;font:inherit;font-size:17px;font-weight:700;background:var(--brand);color:var(--brand-ink);border:0;border-radius:12px;min-height:52px;cursor:pointer}
+.second{font:inherit;font-weight:600;color:var(--brand);background:var(--card);border:1.5px solid var(--line);border-radius:12px;min-height:48px;padding:0 16px;cursor:pointer}
+.primary:disabled,.second:disabled{opacity:.5;cursor:default}
+.note{font-size:14px;margin:10px 0 0;min-height:1px}
+.note.err{color:var(--err);font-weight:600}
+#userbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding-top:12px;font-size:13px;color:var(--muted)}
+#userbar span{flex:1;min-width:0;overflow-wrap:anywhere}
+#userbar button{font:inherit;font-weight:600;color:var(--brand);background:none;border:1px solid var(--line);border-radius:999px;min-height:36px;padding:0 12px;cursor:pointer}
+.person{display:flex;flex-wrap:wrap;align-items:center;gap:8px;border-top:1px solid var(--line);padding:10px 0}
+.person div{flex:1 1 200px;min-width:0;overflow-wrap:anywhere;font-size:14px}
+.person small{display:block;color:var(--muted)}
+.person button{font:inherit;font-size:13px;font-weight:600;color:var(--brand);background:none;border:1px solid var(--line);border-radius:10px;min-height:40px;padding:0 10px;cursor:pointer}
+.person button.rm{color:var(--err)}
+.linkbox{border:1.5px solid var(--brand);border-radius:12px;padding:12px;margin:12px 0;background:var(--chip-on)}
+.linkbox p{margin:0 0 10px;font-size:14px}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.row>*{flex:1 1 140px}
+.check{display:flex;align-items:center;gap:10px;font-size:14px;min-height:44px}
+.check input{width:20px;height:20px}
+.vers{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 10px}
+.vers:empty{display:none}
+.gi.out img{opacity:.35}
+.gi .no{display:inline-block;min-width:24px;text-align:center;background:var(--chip-on);color:var(--brand);border-radius:6px;font-weight:700;margin-right:6px;padding:0 4px}
+.gi.chg{border-color:var(--brand);border-width:2px}
+.decide{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}
+@media (max-width:420px){.decide{grid-template-columns:1fr}}
+.panel{border:1.5px solid var(--brand);border-radius:12px;padding:14px;margin-top:14px;background:var(--bg)}
+.panel h3{margin:0 0 6px;font-size:17px}
+.panel ul{margin:8px 0 12px;padding-left:20px;font-size:14px}
+.panel li{margin-bottom:5px}
+#lightImg{display:block;width:100%;max-width:360px;aspect-ratio:1;object-fit:cover;border-radius:10px;border:1px solid var(--line);margin:10px auto;background:#fff}
+.tones{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}
+.tones .second{padding:0 6px}
+#mic{width:100%;font:inherit;font-size:18px;font-weight:700;border:0;border-radius:12px;min-height:64px;background:var(--brand);color:var(--brand-ink);cursor:pointer;margin:8px 0}
+#mic.on{background:var(--err);color:#fff}
+#mic:disabled{opacity:.5}
+textarea{min-height:80px;resize:vertical;display:block}
 #status{font-size:14px;margin:0 0 8px;min-height:1px}
 #status.err{color:var(--err);font-weight:600}
 #prog{height:8px;border-radius:99px;background:var(--line);overflow:hidden;margin-bottom:8px;display:none}
@@ -118,9 +156,47 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
 </head>
 <body>
 <div class="wrap">
+  <section id="auth" hidden>
+    <form id="loginForm" novalidate>
+      <h1>Ready-made curtains</h1>
+      <p class="hint" style="margin:0 0 14px">Sign in with your approved email address.</p>
+      <div class="field"><label class="l" for="lEmail">Email</label><input type="email" id="lEmail" autocomplete="username" autocapitalize="none" maxlength="120"></div>
+      <div class="field"><label class="l" for="lPw">Password</label><input type="password" id="lPw" autocomplete="current-password" maxlength="200"></div>
+      <button type="submit" class="primary" id="lGo">Sign in</button>
+      <p class="note" id="lNote" role="status"></p>
+      <p class="hint">No access yet, or the password is forgotten? Ask your admin for a link.</p>
+    </form>
+    <form id="setupForm" novalidate hidden>
+      <h1>Choose your password</h1>
+      <p class="hint" style="margin:0 0 14px">For <b id="sEmail"></b>. At least 8 characters.</p>
+      <input type="text" id="sUser" autocomplete="username" hidden>
+      <div class="field"><label class="l" for="sPw">New password</label><input type="password" id="sPw" autocomplete="new-password" maxlength="200"></div>
+      <div class="field"><label class="l" for="sPw2">Repeat the password</label><input type="password" id="sPw2" autocomplete="new-password" maxlength="200"></div>
+      <button type="submit" class="primary" id="sGo">Save and sign in</button>
+      <p class="note" id="sNote" role="status"></p>
+    </form>
+  </section>
+
+  <div id="app" hidden>
+  <div id="userbar"><span id="meTxt"></span><button type="button" id="peopleBtn" hidden>People</button><button type="button" id="signout">Sign out</button></div>
+  <section id="peopleBox" hidden>
+    <h2>Approved people</h2>
+    <p class="hint" style="margin:0 0 10px">Only these email addresses can sign in. Add one, then send the person the link: they choose their own password with it.</p>
+    <div class="row">
+      <div class="field"><label class="l" for="pEmail">Email</label><input type="email" id="pEmail" autocapitalize="none" maxlength="120" placeholder="name@company.com"></div>
+      <div class="field"><label class="l" for="pName">Name <small>(optional)</small></label><input type="text" id="pName" maxlength="60"></div>
+    </div>
+    <label class="check"><input type="checkbox" id="pAdmin"> May approve other people (admin)</label>
+    <button type="button" class="primary" id="pAdd">Approve this email</button>
+    <p class="note" id="pNote" role="status"></p>
+    <div id="pLink" class="linkbox" hidden></div>
+    <div id="pList"></div>
+    <button type="button" class="second" id="pClose" style="width:100%;margin-top:10px">Back to the form</button>
+  </section>
+  <div id="main">
   <header>
     <h1>Register ready-made curtains</h1>
-    <p>Fill in the details, add photos (up to 20) and an optional video, then press Save. "Create images" makes website pictures of the curtain. Fields marked <span class="req">*</span> are required.</p>
+    <p>Fill in the details, add photos (up to 20) and an optional video, then press Save. "Create images" makes website pictures from your fabric photo. Fields marked <span class="req">*</span> are required.</p>
   </header>
 
   <form id="form" novalidate autocomplete="off">
@@ -140,6 +216,7 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
     <div class="field" data-f="colour">
       <label class="l" for="colour">Colour <span class="req">*</span></label>
       <input type="text" id="colour" maxlength="60" placeholder="e.g. Beige">
+      <div class="hint">For the register only. The pictures take the colour from your photo.</div>
       <div class="msg">Enter the colour.</div>
     </div>
     <div class="field" id="sizesField">
@@ -254,13 +331,57 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
 
   <section id="gallery">
     <h2>Images</h2>
+    <div class="panel" id="lightPanel" hidden style="margin:0 0 14px">
+      <h3>Does this look like the real cloth?</h3>
+      <p class="hint" style="margin:0">Hold the real cloth beside the screen, in good light. Phone photos often make cloth greyer or darker than it is. All pictures take this colour.</p>
+      <img id="lightImg" alt="Cleaned fabric photo">
+      <div class="tones">
+        <button type="button" class="second" data-l="brightness" data-d="0.5">☀ Lighter</button><button type="button" class="second" data-l="brightness" data-d="-0.5">🌙 Darker</button>
+        <button type="button" class="second" data-l="warmth" data-d="0.5">Warmer (yellow)</button><button type="button" class="second" data-l="warmth" data-d="-0.5">Cooler (blue)</button>
+      </div>
+      <div class="row"><button type="button" class="second" id="lightReset">As in the photo</button><button type="button" class="second" id="lightCancel">Cancel</button></div>
+      <button type="button" class="primary" id="lightGo" style="margin-top:10px">Yes, draw the pictures</button>
+      <p class="note" id="lightNote" role="status"></p>
+    </div>
+    <div id="galWrap">
+    <div class="vers" id="vers"></div>
     <p class="hint" id="galNote" style="margin:0 0 10px"></p>
     <div class="tools"><button type="button" id="dlAll" disabled>Download all</button><button type="button" id="galStop" hidden>Stop</button></div>
     <div class="gal" id="gal"></div>
+    </div>
+    <div class="decide" id="decide" hidden>
+      <button type="button" class="second" id="modBtn">✏️ Modify images</button>
+      <button type="button" class="primary" id="okBtn">✓ Approve images</button>
+    </div>
+    <div class="panel" id="modPanel" hidden>
+      <div id="modAsk">
+        <h3>What should change?</h3>
+        <p class="hint" style="margin:0">Speak in Hindi or English. / हिंदी या English में बोलिए।<br>Say the picture number if it is about one picture only.</p>
+        <button type="button" id="mic">🎤 Start speaking</button>
+        <textarea id="fbText" maxlength="600" placeholder="Or type it here" aria-label="Type your feedback"></textarea>
+        <div class="row" style="margin-top:10px"><button type="button" class="second" id="modCancel">Cancel</button><button type="button" class="primary" id="fbSend" style="width:auto">Use typed text</button></div>
+      </div>
+      <div id="modShow" hidden>
+        <h3>Is this right?</h3>
+        <p style="margin:0 0 6px;font-size:14px"><b>You said:</b> <span id="fbSaid"></span></p>
+        <p style="margin:0;font-size:14px" id="fbEn"></p>
+        <ul id="fbList"></ul>
+        <div class="row"><button type="button" class="second" id="fbAgain">Say it again</button><button type="button" class="primary" id="fbGo" style="width:auto">Make new version</button></div>
+      </div>
+      <p class="note" id="modNote" role="status"></p>
+    </div>
+    <div class="panel" id="okPanel" hidden>
+      <h3 id="okTitle"></h3>
+      <p id="okText" style="margin:0 0 12px;font-size:14px"></p>
+      <div class="row" id="okBtns"><button type="button" class="second" id="okCancel">Cancel</button><button type="button" class="primary" id="okGo" style="width:auto">Save to Google Drive</button></div>
+      <p class="note" id="okNote" role="status"></p>
+    </div>
   </section>
+  </div>
+  </div>
 </div>
 
-<div id="bar"><div class="wrap">
+<div id="bar" hidden><div class="wrap">
   <div id="prog"><i></i></div>
   <p id="status"></p>
   <div class="btnrow">
@@ -468,14 +589,91 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
   }
 
   // ---------- network ----------
+  let session = store.get("rc.session") || "", me = null;
   async function call(body){
     let r;
-    try { r = await fetch(API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); }
-    catch { throw new Error("No connection. Check the internet and press Save again - nothing is lost."); }
+    try { r = await fetch(API, { method: "POST", headers: { "Content-Type": "application/json", ...(session ? { "x-rc-session": session } : {}) }, body: JSON.stringify(body) }); }
+    catch { const e = new Error("No connection. Check the internet and try again - nothing is lost."); e.offline = true; throw e; }
     let j = null; try { j = await r.json(); } catch {}
+    if (r.status === 401 && body.action !== "login") { session = ""; store.set("rc.session", ""); showLogin("Please sign in again. Your entries on this page are kept."); }
     if (!r.ok) { const e = new Error((j && j.error) || "Server error (" + r.status + ")"); e.status = r.status; e.data = j; throw e; }
     return j;
   }
+
+  // ---------- sign-in: approved email addresses only ----------
+  const note = (id, txt, err) => { const n = $(id); n.textContent = txt || ""; n.className = "note" + (err ? " err" : ""); };
+  function showLogin(msg){
+    $("app").hidden = true; $("bar").hidden = true; $("auth").hidden = false; $("loginForm").hidden = false; $("setupForm").hidden = true;
+    $("lPw").value = ""; note("lNote", msg || "", !!msg);
+  }
+  function showApp(){
+    $("auth").hidden = true; $("app").hidden = false; $("bar").hidden = false;
+    $("meTxt").textContent = me ? "Signed in as " + (me.name ? me.name + " · " : "") + me.email : ""; $("peopleBtn").hidden = !(me && me.admin); closePeople();
+  }
+  function signedIn(j){ session = j.session; store.set("rc.session", session); me = j.me; showApp(); }
+  $("loginForm").onsubmit = async (e) => {
+    e.preventDefault(); if ($("lGo").disabled) return;
+    if (!$("lEmail").value.trim() || !$("lPw").value) return note("lNote", "Enter your email and password.", true);
+    $("lGo").disabled = true; note("lNote", "Signing in…");
+    try { const j = await call({ action: "login", email: $("lEmail").value, password: $("lPw").value }); $("lPw").value = ""; note("lNote", ""); signedIn(j); }
+    catch (x) { note("lNote", x.message, true); $("lPw").select(); }
+    finally { $("lGo").disabled = false; }
+  };
+  let setupCode = "";
+  async function startSetup(code){
+    setupCode = code; history.replaceState(null, "", location.pathname + location.search);       // the one-time code does not stay in the address bar
+    $("app").hidden = true; $("bar").hidden = true; $("auth").hidden = false; $("loginForm").hidden = true; $("setupForm").hidden = false;
+    $("sGo").disabled = true; note("sNote", "Checking the link…");
+    try { const j = await call({ action: "setup_info", code }); $("sEmail").textContent = j.email; $("sUser").value = j.email; $("sGo").disabled = false; note("sNote", ""); $("sPw").focus(); }
+    catch (x) { if (x.offline) return note("sNote", x.message + " Then open the link again.", true); showLogin(x.message); }
+  }
+  $("setupForm").onsubmit = async (e) => {
+    e.preventDefault(); if ($("sGo").disabled) return; const a = $("sPw").value;
+    if (a.length < 8) return note("sNote", "The password needs at least 8 characters.", true);
+    if (a !== $("sPw2").value) return note("sNote", "The two passwords are not the same.", true);
+    $("sGo").disabled = true; note("sNote", "Saving…");
+    try { const j = await call({ action: "setup", code: setupCode, password: a }); setupCode = ""; $("sPw").value = $("sPw2").value = ""; signedIn(j); }
+    catch (x) { note("sNote", x.message, true); $("sGo").disabled = false; }
+  };
+  $("signout").onclick = async () => {
+    if (busy || creating) return;
+    if (pendingPictures() && !confirm("The pictures on this page are not approved yet and will be lost. Sign out?")) return;
+    try { await call({ action: "logout" }); } catch {}
+    session = ""; me = null; store.set("rc.session", ""); clearGallery(); showLogin("");
+  };
+
+  // ---------- approved people (admins) ----------
+  function closePeople(){ $("peopleBox").hidden = true; $("main").hidden = false; if (!$("app").hidden) $("bar").hidden = $("done").style.display === "block"; }
+  $("peopleBtn").onclick = async () => { if (busy || creating) return; $("main").hidden = true; $("bar").hidden = true; $("peopleBox").hidden = false; $("pLink").hidden = true; note("pNote", ""); window.scrollTo(0, 0); await people({ op: "list" }); };
+  $("pClose").onclick = closePeople;
+  async function people(body){
+    try { const j = await call({ action: "people", ...body }); drawPeople(j); return j; }
+    catch (x) { note("pNote", x.message, true); return null; }
+  }
+  function drawPeople(j){
+    const st = { active: "can sign in", "link sent": "link sent, no password yet", "link expired": "link expired" };
+    $("pList").innerHTML = j.people.map((p) => '<div class="person" data-e="' + esc(p.email) + '"><div><b>' + esc(p.name || p.email) + "</b>" + (p.admin ? " (admin)" : "") +
+      "<small>" + (p.name ? esc(p.email) + " · " : "") + esc(st[p.state] || p.state) + (p.last_login ? " · last sign-in " + esc(new Date(p.last_login).toLocaleDateString()) : "") + "</small></div>" +
+      '<button type="button" data-p="link">' + (p.state === "active" ? "Password link" : "New link") + "</button>" + (me && p.email === me.email ? "" : '<button type="button" class="rm" data-p="remove">Remove</button>') + "</div>").join("");
+    const box = $("pLink"); box.hidden = !j.code; if (!j.code) return;
+    const link = location.origin + location.pathname + "#setup=" + j.code;
+    box.innerHTML = "<p>Send this link to <b>" + esc(j.email) + '</b>. It works once, for 7 days. Anyone who has it can set the password, so send it only to that person.</p><div class="row"><button type="button" class="second" id="lnkCopy">Copy link</button><button type="button" class="second" id="lnkWa">WhatsApp</button></div>';
+    $("lnkCopy").onclick = async () => { try { await navigator.clipboard.writeText(link); note("pNote", "Link copied."); } catch { prompt("Copy this link:", link); } };
+    $("lnkWa").onclick = () => window.open("https://wa.me/?text=" + encodeURIComponent("Your link to choose a password for the ready-made curtains page: " + link), "_blank", "noopener");
+    box.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+  $("pAdd").onclick = async () => {
+    const email = $("pEmail").value.trim(); if (!email) return note("pNote", "Enter the email address.", true);
+    $("pAdd").disabled = true; note("pNote", "Saving…");
+    const j = await people({ op: "add", email, name: $("pName").value, admin: $("pAdmin").checked });
+    if (j) { note("pNote", email + " is approved. Now send the link."); $("pEmail").value = $("pName").value = ""; $("pAdmin").checked = false; }
+    $("pAdd").disabled = false;
+  };
+  $("pList").onclick = async (e) => {
+    const op = e.target.dataset.p, row = e.target.closest(".person"); if (!op || !row) return; const email = row.dataset.e;
+    if (op === "remove" && !confirm("Remove " + email + "? They are signed out at once and can no longer open this page.")) return;
+    note("pNote", "Saving…"); if (await people({ op, email })) note("pNote", op === "remove" ? email + " was removed." : "New link for " + email + ".");
+  };
 
   function putFile(url, blob, name, onProgress){
     return new Promise((resolve, reject) => {
@@ -549,34 +747,48 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
     if (busy) return;
     const entered = photos.length || video || curtains.length > 1 || curtains.some((c) => c.w || c.h || c.q || c.hv) ||
       TEXT.some((k) => $(k).value.trim()) || GROUPS.some((g) => pick[g]);
-    if ((entered || shots.length) && !confirm("Discard everything you entered (details, sizes, photos, video and created images) and start a new registration?")) return;
+    if ((entered || shots.length) && !confirm("Discard everything you entered (details, sizes, photos, video and created images" + (pendingPictures() ? ", which are not approved" : "") + ") and start a new registration?")) return;
     clearForm(false);
   };
-  window.addEventListener("beforeunload", (e) => { if (busy) { e.preventDefault(); e.returnValue = ""; } });
+  window.addEventListener("beforeunload", (e) => { if (busy || pendingPictures()) { e.preventDefault(); e.returnValue = ""; } });
 
   // ---------- create images ----------
-  // Scenes are drawn by Gemini through the edge function (one call per picture). The fabric pictures are NOT drawn by AI: they are the user's
-  // own photos, cleaned from their real pixels right here, because AI changed the colour and the weave when it was tried.
+  // Scenes are drawn by Gemini through the edge function (one call per picture). The colour comes ONLY from the fabric photo, never from the typed
+  // colour name. The fabric pictures are NOT drawn by AI: they are the user's own photos, cleaned from their real pixels right here, because AI
+  // changed the colour and the weave when it was tried.
   const SHOTS = [["closed","Closed curtains"],["open","Open curtains"],["tiedback","Curtains with tie belt"],["tieback_detail","Tie belt close-up"],
                  ["bottom","Bottom, touching the floor"],["angle_left","Side angle"],["angle_right","Other side angle"]];
-  const TB = { "Velcro tie back": "velcro", "Hook style tie back": "hook" };
-  let shots = [], creating = false, stopFlag = false, runNo = 0;
+  const TIE_SHOTS = ["tiedback", "tieback_detail"];
+  let versions = [], cur = 0, shots = [], creating = false, stopFlag = false, runNo = 0, approved = false, lastSwatch = null, fabricPhotos = [];
 
+  const curRef = () => normRef($("ref").value) || (lastDetails ? normRef(lastDetails.text.ref) : "");
+  const included = () => shots.filter((x) => x.state === "done" && x.blob && !x.out);
+  function pendingPictures(){ return !approved && versions.length > 0 && shots.some((x) => x.state === "done"); }
   function clearGallery(){
-    runNo++; stopFlag = true; shots.forEach((x) => x.url && URL.revokeObjectURL(x.url));
-    shots = []; creating = false; $("create").disabled = busy; $("gal").innerHTML = ""; $("gallery").style.display = "none"; $("dlAll").disabled = true;
+    $("lightPanel").hidden = true; runNo++; stopFlag = true; stopMic(true); versions.forEach((v) => v.shots.forEach((x) => x.url && URL.revokeObjectURL(x.url)));
+    versions = []; cur = 0; shots = []; creating = false; approved = false; $("create").disabled = busy; $("gal").innerHTML = ""; $("vers").innerHTML = ""; $("gallery").style.display = "none"; $("dlAll").disabled = true; closePanels();
   }
-  const galName = (x, i) => (normRef($("ref").value) || "curtain") + "_" + (i + 1) + ".jpg";
+  const galName = (x, i) => { const n = included().indexOf(x); return (curRef() || "curtain") + "_" + LETTERS[n < 0 ? i : n] + ".jpg"; };
   function drawTile(i){
     const x = shots[i], el = $("gal").children[i]; if (!el) return;
     const body = x.state === "done" ? '<img alt="' + esc(x.label) + '" src="' + x.url + '">'
       : x.state === "err" ? '<div class="ph err">' + esc(x.error) + "</div>"
       : '<div class="ph"><div>' + (x.state === "run" ? '<div class="spin"></div>Creating…' : "Waiting…") + "</div></div>";
-    el.innerHTML = body + '<div class="cap"><b>' + esc(x.label) + "</b><span>" + esc(x.state === "done" ? (x.note || "") : "") + "</span></div>" +
-      ((x.state === "done" || x.state === "err") ? '<div class="act">' + (x.state === "done" ? '<button type="button" data-a="dl">Download</button>' : "") +
+    el.className = "gi" + (x.out && x.state === "done" ? " out" : "") + (x.changed ? " chg" : "");
+    el.innerHTML = body + '<div class="cap"><b><span class="no">' + (i + 1) + "</span>" + esc(x.label) + "</b><span>" + esc(x.state === "done" ? (x.out ? "Left out. " : "") + (x.changed ? "Changed. " : "") + (x.note || "") : "") + "</span></div>" +
+      ((x.state === "done" || x.state === "err") ? '<div class="act">' + (x.state === "done" ? '<button type="button" data-a="dl">Download</button><button type="button" data-a="out">' + (x.out ? "Put back" : "Leave out") + "</button>" : "") +
         (x.kind === "ai" ? '<button type="button" data-a="redo">' + (x.state === "err" ? "Try again" : "Redo") + "</button>" : "") + "</div>" : "");
     $("dlAll").disabled = !shots.some((y) => y.state === "done");
+    $("decide").hidden = creating || !shots.some((y) => y.state === "done");
   }
+  function drawVersion(){
+    $("gal").innerHTML = shots.map(() => '<div class="gi"></div>').join(""); shots.forEach((_, i) => drawTile(i));
+    $("galNote").textContent = versions[cur].note || "";
+    $("vers").innerHTML = versions.length > 1 ? versions.map((v, i) => '<button type="button" class="chip" data-ver="' + i + '" aria-pressed="' + (i === cur) + '">Version ' + (i + 1) + "</button>").join("") : "";
+  }
+  $("vers").onclick = (e) => { const b = e.target.closest("[data-ver]"); if (!b || creating) return; cur = +b.dataset.ver; shots = versions[cur].shots; lastSwatch = versions[cur].swatch || lastSwatch; approved = !!versions[cur].approved; closePanels(); drawVersion(); };
+  function setGalNote(s){ versions[cur].note = s; $("galNote").textContent = s; }
+  function setCreating(on){ creating = on; $("create").disabled = on || busy; $("galStop").hidden = !on; $("decide").hidden = on || !shots.some((y) => y.state === "done"); }
 
   const loadImg = (src) => new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error("That photo cannot be read on this device.")); im.src = src; });
   const toBlob = (c) => new Promise((res, rej) => c.toBlob((b) => b ? res(b) : rej(new Error("Could not make the picture.")), "image/jpeg", 0.92));
@@ -595,16 +807,22 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
     }
     return src;
   }
-  const median = (a) => { const s = Float32Array.from(a).sort(); return s[s.length >> 1]; };
+  const quantile = (a, f) => { const s = Float32Array.from(a).sort(); return s[Math.min(s.length - 1, Math.floor(s.length * f))]; }, median = (a) => quantile(a, .5);
 
-  // same steps as retouch() in the CurtainsImages skill: sharpest even square -> remove shadows / wrinkles / colour patches -> clone out dark spots -> exposure
-  async function retouch(photo, colour){
+  // same steps as retouch() in the CurtainsImages skill: sharpest even square -> remove shadows / wrinkles / colour patches -> clone out dark spots.
+  // The colour and brightness of the well lit part of the WHOLE photo are kept; tone = {brightness, warmth, contrast} (-3..3) only when someone asks for it.
+  async function prepare(photo){
+    if (photo.prep) return photo.prep;
     const im = await loadImg(photo.url || URL.createObjectURL(photo.blob));
     const W0 = im.naturalWidth, H0 = im.naturalHeight, side = Math.floor(Math.min(W0, H0) * 0.62), N = 1000;
     const k = Math.min(1, 700 / Math.max(W0, H0)), sw = Math.round(W0 * k), sh = Math.round(H0 * k), ss = Math.floor(side * k), sc = canvas(sw, sh);
     const sx = sc.getContext("2d", { willReadFrequently: true }); sx.drawImage(im, 0, 0, sw, sh);
     const d = sx.getImageData(0, 0, sw, sh).data, g = new Float32Array(sw * sh);
     for (let i = 0; i < g.length; i++) g[i] = .299 * d[4 * i] + .587 * d[4 * i + 1] + .114 * d[4 * i + 2];
+    // the colour of the cloth as the WHOLE photo shows it (median of the well lit 60 %), so one warm or blue corner does not decide it
+    const lo = quantile(g, .35), hi = quantile(g, .95), kr = [], kg = [], kb = [];
+    for (let i = 0; i < g.length; i++) if (g[i] >= lo && g[i] <= hi) { kr.push(d[4 * i]); kg.push(d[4 * i + 1]); kb.push(d[4 * i + 2]); }
+    const R0 = median(kr), G0 = median(kg), B0 = median(kb), y0 = .299 * R0 + .587 * G0 + .114 * B0, cb0 = 128 - .168736 * R0 - .331264 * G0 + .5 * B0, cr0 = 128 + .5 * R0 - .418688 * G0 - .081312 * B0;
     let best = -1e9, bx = 0, by = 0; const q = ss >> 2;
     for (let i = 0; i < 7; i++) for (let j = 0; j < 7; j++) {
       const x = Math.floor((sw - ss) * i / 6), y = Math.floor((sh - ss) * j / 6); let minD = 1e9, ms = [];
@@ -617,12 +835,13 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
       if (score > best) { best = score; bx = x / k; by = y / k; }
     }
     const c = canvas(N, N), x = c.getContext("2d", { willReadFrequently: true }); x.imageSmoothingQuality = "high";
+    bx = Math.max(0, Math.min(Math.floor(bx), W0 - side)); by = Math.max(0, Math.min(Math.floor(by), H0 - side));       // never past the edge of the photo
     x.drawImage(im, bx, by, side, side, 0, 0, N, N);
     const id = x.getImageData(0, 0, N, N), p = id.data, T = N * N;
     let Y = new Float32Array(T), Cb = new Float32Array(T), Cr = new Float32Array(T);
     for (let i = 0; i < T; i++) { const r = p[4 * i], gg = p[4 * i + 1], b = p[4 * i + 2];
       Y[i] = .299 * r + .587 * gg + .114 * b; Cb[i] = 128 - .168736 * r - .331264 * gg + .5 * b; Cr[i] = 128 + .5 * r - .418688 * gg - .081312 * b; }
-    const low = blur(Y, N, 18), ml = median(low); for (let i = 0; i < T; i++) Y[i] *= ml / Math.max(low[i], 1);
+    const low = blur(Y, N, 18), ml = y0; for (let i = 0; i < T; i++) Y[i] *= ml / Math.max(low[i], 1);
     const soft = blur(Y, N, 3), med = median(soft), mad = median(soft.map((v) => Math.abs(v - med))) + 1e-3, cut = med - Math.max(5 * 1.48 * mad, 5);
     let any = false; const mask = new Float32Array(T); for (let i = 0; i < T; i++) if (soft[i] < cut) { mask[i] = 1; any = true; }
     if (any) {
@@ -634,75 +853,239 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
         Y = Y2; m = m2;
       }
     }
-    const name = colour.toLowerCase().replace(/-/g, " "); let cb = median(Cb), cr = median(Cr), lift = 0;
-    if (/off white|ivory|cream/.test(name)) { cb = 125.5; cr = 129.2; lift = 216; } else if (/white/.test(name)) { cb = 127.6; cr = 128.2; lift = 224; }
     let m0 = 0; for (let i = 0; i < T; i++) m0 += Y[i]; m0 /= T;
-    const target = lift || Math.min(m0 * 1.15, 205), gain = Math.sqrt(target / m0), lb = blur(Cb, N, 8), lr = blur(Cr, N, 8);
-    for (let i = 0; i < T; i++) { const yv = (Y[i] - m0) * gain + target, b = cb + (Cb[i] - lb[i]) - 128, r = cr + (Cr[i] - lr[i]) - 128;
+    const lb = blur(Cb, N, 8), lr = blur(Cr, N, 8); for (let i = 0; i < T; i++) { Cb[i] -= lb[i]; Cr[i] -= lr[i]; }       // only the small colour flecks of the yarn are left
+    return photo.prep = { N, Y, Cb, Cr, m0, cb0, cr0 };
+  }
+  async function retouch(photo, tone){
+    const { N, Y, Cb, Cr, m0, cb0, cr0 } = await prepare(photo), T = N * N, c = canvas(N, N), x = c.getContext("2d"), id = x.createImageData(N, N), p = id.data;
+    const tn = tone || {}, cb = cb0 - (tn.warmth || 0) * 2 - 128, cr = cr0 + (tn.warmth || 0) * 2 - 128;
+    const target = Math.max(8, Math.min(238, m0 + (tn.brightness || 0) * 14)), gain = 1 + (tn.contrast || 0) * .12;
+    for (let i = 0; i < T; i++) { const yv = (Y[i] - m0) * gain + target, b = cb + Cb[i], r = cr + Cr[i];
       p[4 * i] = yv + 1.402 * r; p[4 * i + 1] = yv - .344136 * b - .714136 * r; p[4 * i + 2] = yv + 1.772 * b; p[4 * i + 3] = 255; }
     x.putImageData(id, 0, 0);
     const out = canvas(1200, 1200), ox = out.getContext("2d"); ox.imageSmoothingQuality = "high"; ox.drawImage(c, 0, 0, 1200, 1200);
     return out;
   }
 
-  async function runShot(i, run, swatch){
-    const x = shots[i]; x.state = "run"; drawTile(i);
+  const dataUrl = async (blob, size, quality) => { const u = URL.createObjectURL(blob); try { const im = await loadImg(u), c = canvas(size, size); c.getContext("2d").drawImage(im, 0, 0, size, size); return c.toDataURL("image/jpeg", quality); } finally { URL.revokeObjectURL(u); } };
+
+  // one picture. change = {instruction, previous: blob|null} when it is part of a new version
+  async function runShot(i, run, change){
+    const list = shots, x = list[i]; x.state = "run"; drawTile(i);
+    const show = () => { if (list === shots) drawTile(i); };
     try {
+      let blob;
       if (x.kind === "ai") {
-        const j = await call({ action: "create_image", style: x.style, opacity: x.opacity, colour: x.colour, tieback: x.tieback, shot: x.id, seed: x.seed, photo: swatch ? { data: swatch } : null });
+        const body = { action: "create_image", style: x.style, opacity: x.opacity, tieback: x.tieback, shot: x.id, photo: lastSwatch ? { data: lastSwatch } : null };
+        if (change && change.instruction) { body.feedback = change.instruction; if (change.previous) body.previous = { data: await dataUrl(change.previous, 1024, .9) }; }
+        const j = await call(body);
         if (run !== runNo) return;
         const im = await loadImg("data:" + j.mime + ";base64," + j.image), c = canvas(1200, 1200); c.getContext("2d").drawImage(im, 0, 0, 1200, 1200);
-        x.blob = await toBlob(c); x.note = "AI picture" + (j.faults && j.faults.length ? " · please check: " + j.faults.join("; ") : "");
-      }
+        blob = await toBlob(c); x.note = "AI picture" + (j.faults && j.faults.length ? " · please check: " + j.faults.join("; ") : "");
+      } else blob = await toBlob(await retouch(x.photo, x.tone));
       if (run !== runNo) return;
-      if (x.url) URL.revokeObjectURL(x.url); x.url = URL.createObjectURL(x.blob); x.state = "done";
-    } catch (e) { if (run !== runNo) return; x.state = "err"; x.error = e.message.replace("press Save again - nothing is lost.", "try again."); if (e.status === 429) stopFlag = true; }
-    drawTile(i);
+      x.blob = blob; x.url = URL.createObjectURL(blob); x.state = "done"; x.error = "";
+    } catch (e) { if (run !== runNo) return; x.state = "err"; x.error = e.message; if (e.status === 429 || e.status === 503 || e.status === 401) stopFlag = true; }
+    show();
   }
 
+  let lightTone = { brightness: 0, warmth: 0, contrast: 0 }, lightFor = null, lightBusy = false;
   async function createImages(){
     if (creating || busy) return;
-    const need = []; ["curtain_type","fabric_kind","tieback"].forEach((g) => { if (!pick[g]) need.push(g); }); if (!$("colour").value.trim()) need.push("colour");
+    const need = []; ["curtain_type","fabric_kind","tieback"].forEach((g) => { if (!pick[g]) need.push(g); }); if (!photos.length) need.push("photos");
     document.querySelectorAll(".invalid").forEach((f) => f.classList.remove("invalid"));
     if (need.length) { need.forEach((k) => document.querySelector('[data-f="' + k + '"]').classList.add("invalid"));
-      document.querySelector('[data-f="' + need[0] + '"]').scrollIntoView({ behavior: "smooth", block: "center" }); return setStatus("To create images, fill in the highlighted fields.", true); }
+      document.querySelector('[data-f="' + need[0] + '"]').scrollIntoView({ behavior: "smooth", block: "center" });
+      return setStatus(need.includes("photos") && need.length === 1 ? "Add a photo of the fabric first. The pictures take the colour from it." : "To create images, fill in the highlighted fields.", true); }
     if (pick.curtain_type === "Others") return setStatus("Images can be created for American, Wave and Eyelet curtains.", true);
-    if (shots.some((x) => x.state === "done") && !confirm("Create a new set of images? The ones shown now will be replaced.")) return;
-    clearGallery(); const run = ++runNo; creating = true; stopFlag = false; $("create").disabled = true; setStatus("");
-    const base = { kind: "ai", style: pick.curtain_type.toLowerCase(), opacity: pick.fabric_kind.toLowerCase(), colour: $("colour").value.trim(), tieback: TB[pick.tieback] || "none", seed: normRef($("ref").value) || newId(), state: "wait" };
+    setStatus(""); closePanels();
+    if (lightFor !== photos[0]) { lightFor = photos[0]; lightTone = { brightness: 0, warmth: 0, contrast: 0 }; }
+    $("gallery").style.display = "block"; $("lightPanel").hidden = false; $("lightGo").disabled = true; $("lightImg").removeAttribute("src"); note("lightNote", "Cleaning your photo…"); $("lightPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+    await new Promise((r) => setTimeout(r, 60)); await showLight();
+  }
+  async function showLight(){
+    if (lightBusy) return; lightBusy = true; const ph = lightFor;
+    try {
+      for (;;) { const key = JSON.stringify(lightTone); $("lightImg").src = (await retouch(ph, lightTone)).toDataURL("image/jpeg", .9); if (key === JSON.stringify(lightTone)) break; }
+      $("lightGo").disabled = false; note("lightNote", lightTone.brightness || lightTone.warmth ? "Light corrected by hand." : "");
+    } catch (e) { note("lightNote", "This photo cannot be read on this device. Remove it and add another one (JPG).", true); $("lightGo").disabled = true; }
+    lightBusy = false;
+  }
+  document.querySelector(".tones").onclick = (e) => { const b = e.target.closest("[data-l]"); if (!b || $("lightPanel").hidden) return; lightTone = { ...lightTone, [b.dataset.l]: clamp5(lightTone[b.dataset.l] + +b.dataset.d) }; showLight(); };
+  $("lightReset").onclick = () => { lightTone = { brightness: 0, warmth: 0, contrast: 0 }; showLight(); };
+  function hideLight(){ $("lightPanel").hidden = true; if (!versions.length) $("gallery").style.display = "none"; }
+  $("lightCancel").onclick = hideLight;
+  $("lightGo").onclick = () => {
+    if (creating || busy || lightBusy) return;
+    if (lightFor !== photos[0] || !photos.length) { hideLight(); return createImages(); }         // photos were changed meanwhile: look again
+    if (pendingPictures() && !confirm("Create a new set of images? The ones shown now are not approved and will be replaced.")) return;
+    drawAll();
+  };
+  async function drawAll(){
+    clearGallery(); const run = ++runNo; stopFlag = false; setStatus(""); lastSwatch = null;
+    const toneNow = { ...lightTone };
+    const base = { kind: "ai", style: pick.curtain_type.toLowerCase(), opacity: pick.fabric_kind.toLowerCase(), tieback: pick.tieback === "Velcro tie back" ? "velcro" : "temu", state: "wait" };
+    fabricPhotos = photos.slice(0, 2);
     shots = SHOTS.map(([id, label]) => ({ ...base, id, label }));
-    photos.slice(0, 2).forEach((_, n) => shots.push({ kind: "photo", label: "Fabric close-up " + (n + 1), state: "wait", note: "Your photo " + LETTERS[n] + ", retouched (no AI)" }));
-    $("galNote").textContent = "The room pictures are drawn by AI" + (photos.length ? " from your fabric photo. The fabric close-ups are your own photos, cleaned up." : ". Add a photo of the fabric first for the best match.") + " Check every picture before using it. They are not saved: download the ones you want.";
-    $("gal").innerHTML = shots.map(() => '<div class="gi"></div>').join(""); shots.forEach((_, i) => drawTile(i));
-    $("gallery").style.display = "block"; $("galStop").hidden = false; $("gallery").scrollIntoView({ behavior: "smooth", block: "start" });
-    let swatch = null;
-    for (let n = 0; n < Math.min(2, photos.length); n++) {          // fabric pictures first: the first one is also the colour reference for the rooms
-      const i = SHOTS.length + n; shots[i].state = "run"; drawTile(i); await new Promise((r) => setTimeout(r, 30));
-      try { const c = await retouch(photos[n], base.colour); if (run !== runNo) return; shots[i].blob = await toBlob(c); shots[i].url = URL.createObjectURL(shots[i].blob); shots[i].state = "done";
-        if (n === 0) { const s = canvas(900, 900); s.getContext("2d").drawImage(c, 0, 0, 900, 900); swatch = s.toDataURL("image/jpeg", 0.85); }
-      } catch (e) { shots[i].state = "err"; shots[i].error = e.message; }
-      drawTile(i);
+    fabricPhotos.forEach((ph, n) => shots.push({ kind: "photo", id: "fabric" + (n + 1), label: "Fabric close-up " + (n + 1), state: "wait", photo: ph, tone: toneNow, note: "Your photo " + LETTERS[n] + ", cleaned (no AI)" + (toneNow.brightness || toneNow.warmth ? ", light corrected by hand" : "") }));
+    versions = [{ shots }]; cur = 0; setCreating(true);
+    setGalNote("The room pictures are drawn by AI in the colour of your photo. The fabric close-ups are your own photos, cleaned up. Check every picture. Nothing is saved until you approve.");
+    drawVersion(); $("gallery").style.display = "block"; $("gallery").scrollIntoView({ behavior: "smooth", block: "start" });
+    for (let n = 0; n < fabricPhotos.length; n++) {                  // fabric pictures first: the first one is also the colour reference for the rooms
+      await runShot(SHOTS.length + n, run); if (run !== runNo) return;
+      const x = shots[SHOTS.length + n]; if (!lastSwatch && x.state === "done") lastSwatch = await dataUrl(x.blob, 900, .88);
     }
-    lastSwatch = swatch;
-    const queue = SHOTS.map((_, i) => i);
-    await Promise.all([0, 1, 2].map(async () => { while (queue.length && !stopFlag && run === runNo) await runShot(queue.shift(), run, swatch); }));
+    if (!lastSwatch) { SHOTS.forEach((_, i) => { shots[i].state = "err"; shots[i].error = "The fabric photo could not be read on this device. Add another photo (JPG)."; drawTile(i); }); setCreating(false); return; }
+    versions[0].swatch = lastSwatch; const queue = SHOTS.map((_, i) => i);
+    await Promise.all([0, 1, 2].map(async () => { while (queue.length && !stopFlag && run === runNo) await runShot(queue.shift(), run); }));
     if (run !== runNo) return;
     queue.forEach((i) => { shots[i].state = "err"; shots[i].error = "Not created."; drawTile(i); });
-    creating = false; $("create").disabled = busy; $("galStop").hidden = true;
+    setCreating(false); if (!$("decide").hidden) $("decide").scrollIntoView({ behavior: "smooth", block: "center" });
   }
-  let lastSwatch = null;
   $("create").onclick = createImages;
   $("galStop").onclick = () => { stopFlag = true; $("galStop").hidden = true; };
   function download(i){ const a = document.createElement("a"); a.href = shots[i].url; a.download = galName(shots[i], i); document.body.append(a); a.click(); a.remove(); }
-  $("gal").onclick = (e) => {
+  $("gal").onclick = async (e) => {
     const tile = e.target.closest(".gi"); if (!tile) return; const i = [...$("gal").children].indexOf(tile), a = e.target.dataset.a;
     if (a === "dl") download(i);
-    else if (a === "redo") { stopFlag = false; runShot(i, runNo, lastSwatch); }
+    else if (a === "out") { shots[i].out = !shots[i].out; drawTile(i); }
+    else if (a === "redo") { if (creating) return; stopFlag = false; approved = versions[cur].approved = false; closePanels(); setCreating(true); await runShot(i, runNo); setCreating(false); }
     else if (e.target.tagName === "IMG") { $("zoom").firstElementChild.src = shots[i].url; $("zoom").style.display = "flex"; }
   };
   $("zoom").onclick = () => { $("zoom").style.display = "none"; };
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("zoom").style.display = "none"; });
-  $("dlAll").onclick = async () => { for (let i = 0; i < shots.length; i++) if (shots[i].state === "done") { download(i); await new Promise((r) => setTimeout(r, 400)); } };
+  $("dlAll").onclick = async () => { for (let i = 0; i < shots.length; i++) if (shots[i].state === "done" && !shots[i].out) { download(i); await new Promise((r) => setTimeout(r, 400)); } };
+
+  // ---------- modify images: spoken (Hindi / English) or typed feedback -> a new version ----------
+  let rec = null, recTimer = null, plan = null;
+  const MAX_SPEECH = 45;
+  function closePanels(){ stopMic(true); $("modPanel").hidden = $("okPanel").hidden = true; $("modAsk").hidden = false; $("modShow").hidden = true; plan = null; note("modNote", ""); note("okNote", ""); }
+  $("modBtn").onclick = () => { closePanels(); $("fbText").value = ""; $("modPanel").hidden = false; $("modPanel").scrollIntoView({ behavior: "smooth", block: "center" }); };
+  $("modCancel").onclick = closePanels;
+  function micLabel(){ $("mic").textContent = rec ? "⏹ Stop (" + Math.max(0, MAX_SPEECH - Math.floor((Date.now() - rec.t0) / 1000)) + ")" : "🎤 Start speaking"; $("mic").classList.toggle("on", !!rec); }
+  function stopMic(drop){
+    clearInterval(recTimer); if (!rec) return; const r = rec; rec = null; r.drop = !!drop;
+    try { if (r.mr.state !== "inactive") r.mr.stop(); } catch {} r.stream.getTracks().forEach((x) => x.stop()); micLabel();
+  }
+  $("mic").onclick = async () => {
+    if (rec) return stopMic(false);
+    if (!navigator.mediaDevices || !window.MediaRecorder) return note("modNote", "This device cannot record here. Please type instead.", true);
+    let stream; note("modNote", "");
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch { return note("modNote", "The microphone is not allowed. Allow it for this page, or type instead.", true); }
+    const mr = new MediaRecorder(stream), chunks = [], r = { mr, stream, t0: Date.now(), drop: false };
+    mr.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    mr.onstop = async () => {
+      if (r.drop) return;
+      try { note("modNote", "Listening to your recording…"); await understand({ audio: await toWav(new Blob(chunks, { type: mr.mimeType })) }); }
+      catch (x) { note("modNote", x.message, true); }
+    };
+    rec = r; mr.start(); micLabel(); recTimer = setInterval(() => { if (!rec) return; if (Date.now() - rec.t0 > MAX_SPEECH * 1000) stopMic(false); else micLabel(); }, 500);
+  };
+  // any browser recording -> 16 kHz mono WAV, which the speech model reads on every device
+  async function toWav(blob){
+    const AC = window.AudioContext || window.webkitAudioContext, ac = new AC(); let buf;
+    try { buf = await ac.decodeAudioData(await blob.arrayBuffer()); } catch { throw new Error("The recording could not be read. Please try again or type."); } finally { ac.close && ac.close(); }
+    const rate = 16000, n = Math.ceil(buf.duration * rate), off = new OfflineAudioContext(1, Math.max(1, n), rate), src = off.createBufferSource();
+    src.buffer = buf; src.connect(off.destination); src.start(); const d = (await off.startRendering()).getChannelData(0);
+    let peak = 0; for (let i = 0; i < d.length; i++) peak = Math.max(peak, Math.abs(d[i]));
+    if (buf.duration < .6 || peak < .012) throw new Error("Nothing was heard. Please speak again.");
+    const v = new DataView(new ArrayBuffer(44 + d.length * 2)), s = (o, x) => { for (let i = 0; i < x.length; i++) v.setUint8(o + i, x.charCodeAt(i)); };
+    s(0, "RIFF"); v.setUint32(4, 36 + d.length * 2, true); s(8, "WAVEfmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); s(36, "data"); v.setUint32(40, d.length * 2, true);
+    const g = Math.min(8, .9 / peak); for (let i = 0; i < d.length; i++) v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, d[i] * g)) * 32767, true);
+    return new Promise((res, rej) => { const f = new FileReader(); f.onload = () => res({ mime: "audio/wav", data: String(f.result).split(",")[1] }); f.onerror = () => rej(new Error("The recording could not be read.")); f.readAsDataURL(new Blob([v.buffer], { type: "audio/wav" })); });
+  }
+  async function understand(what){
+    const run = runNo, ai = shots.find((x) => x.kind === "ai"); $("mic").disabled = $("fbSend").disabled = true; note("modNote", "Understanding…");
+    try {
+      const j = await call({ action: "feedback", ...what, ref: curRef(), style: ai.style, opacity: ai.opacity, tieback: ai.tieback, pictures: shots.map((x) => ({ id: x.id, label: x.label, kind: x.kind })) });
+      if (run !== runNo || $("modPanel").hidden) return;
+      const tieNew = j.tieback && j.tieback !== ai.tieback ? j.tieback : null, changes = j.changes.filter((c) => shots.some((x) => x.id === c.id));
+      const cloth = j.cloth && (j.cloth.brightness || j.cloth.warmth) ? j.cloth : null;
+      if (!changes.length && !tieNew && !cloth) return note("modNote", (j.transcript ? "Heard: “" + j.transcript + "”. " : "") + "No change to a picture was understood. Please say it again, for example: “Picture 3, move the belt a little lower”.", true);
+      plan = { changes, tieback: tieNew, cloth, said: j.transcript || "" };
+      $("fbSaid").textContent = "“" + (j.transcript || "") + "”"; $("fbEn").textContent = j.english && j.english !== j.transcript ? "Meaning: " + j.english : "";
+      const tone = (c) => [["brightness", "brighter", "darker"], ["warmth", "warmer", "cooler"], ["contrast", "more contrast", "less contrast"]].filter(([k]) => c[k]).map(([k, up, dn]) => c[k] > 0 ? up : dn).join(", ");
+      const li = changes.map((c) => "<li><b>Picture " + (shots.findIndex((x) => x.id === c.id) + 1) + ", " + esc(c.label) + ":</b> " + esc(c.kind === "photo" ? tone(c) : (c.redraw ? "draw it again. " : "") + c.instruction) + "</li>");
+      if (tieNew) li.unshift("<li><b>Tie back pictures:</b> " + (tieNew === "velcro" ? "velcro belt" : "rope tie back") + "</li>");
+      if (cloth) li.unshift("<li><b>The cloth in all pictures:</b> " + esc(tone(cloth)) + ". All pictures are drawn again.</li>");
+      $("fbList").innerHTML = li.join(""); $("modAsk").hidden = true; $("modShow").hidden = false; note("modNote", cloth ? "" : "The other pictures stay as they are.");
+    } catch (x) { note("modNote", x.message, true); }
+    finally { $("mic").disabled = $("fbSend").disabled = false; }
+  }
+  $("fbSend").onclick = () => { const s = $("fbText").value.trim(); if (!s) return note("modNote", "Type what should change, or press the microphone.", true); understand({ text: s }); };
+  $("fbAgain").onclick = () => { plan = null; $("modShow").hidden = true; $("modAsk").hidden = false; note("modNote", ""); };
+  $("fbGo").onclick = async () => {
+    if (!plan || creating) return; const p = plan, run = runNo, before = shots; closePanels();
+    const next = before.map((x) => ({ ...x, changed: false })), jobs = [], first = [];
+    next.forEach((x, i) => {
+      const c = p.changes.find((y) => y.id === x.id), tie = p.tieback && TIE_SHOTS.includes(x.id);
+      if (p.tieback && x.kind === "ai") x.tieback = p.tieback;
+      if (!c && !tie && !p.cloth) return;
+      x.changed = true; x.out = false; x.state = "wait";
+      if (x.kind === "photo") {
+        const o = x.tone || {}, add = (k) => (o[k] || 0) + ((c && c[k]) || 0) + ((p.cloth && p.cloth[k]) || 0);
+        x.tone = { brightness: clamp5(add("brightness")), warmth: clamp5(add("warmth")), contrast: clamp5(add("contrast")) }; (p.cloth ? first : jobs).push([i, null]);
+      } else jobs.push([i, { instruction: (c && c.instruction) || "", previous: tie || p.cloth || (c && c.redraw) || !before[i].blob ? null : before[i].blob }]);
+    });
+    versions.push({ shots: next, said: p.said }); cur = versions.length - 1; shots = next; approved = false; stopFlag = false; setCreating(true); drawVersion();
+    setGalNote("Version " + (cur + 1) + (p.said ? ", after: “" + p.said + "”. " : ". ") + "The changed pictures have a blue frame. Earlier versions are kept above.");
+    $("gallery").scrollIntoView({ behavior: "smooth", block: "start" });
+    for (const [i] of first) { await runShot(i, run); if (run !== runNo) return; }                // a corrected cloth: first the reference, then every picture in it
+    if (first.length && shots[first[0][0]].state === "done") lastSwatch = await dataUrl(shots[first[0][0]].blob, 900, .88);
+    versions[cur].swatch = lastSwatch;
+    await Promise.all([0, 1, 2].map(async () => { while (jobs.length && !stopFlag && run === runNo) { const [i, c] = jobs.shift(); await runShot(i, run, c); } }));
+    if (run !== runNo) return;
+    jobs.forEach(([i]) => { shots[i].state = "err"; shots[i].error = "Not created."; drawTile(i); });
+    setCreating(false); $("decide").scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+  const clamp5 = (n) => Math.max(-5, Math.min(5, n || 0));
+
+  // ---------- approve images: saved as <REF>_A.jpg ... in Google Drive, Approved images / <REF> ----------
+  let replaceOk = false;
+  function askApprove(){
+    closePanels(); const ref = curRef(), list = included(); replaceOk = false;
+    if (!list.length) return;
+    if (!refOk(ref)) { const f = document.querySelector('[data-f="ref"]'); f.classList.add("invalid"); f.scrollIntoView({ behavior: "smooth", block: "center" }); $("ref").focus({ preventScroll: true }); return setStatus("Enter the reference number first: the pictures are named after it.", true); }
+    setStatus("");
+    const last = LETTERS[list.length - 1], bad = list.filter((x) => /please check/.test(x.note || "")).length;
+    $("okTitle").textContent = "Approve " + list.length + " picture" + (list.length === 1 ? "" : "s") + (versions.length > 1 ? " of version " + (cur + 1) : "") + "?";
+    $("okText").innerHTML = "They are saved as <b>" + esc(ref) + "_A.jpg</b>" + (list.length > 1 ? " to <b>" + esc(ref) + "_" + last + ".jpg</b>" : "") + " in Google Drive, folder <b>Approved images / " + esc(ref) + "</b>." + (bad ? " <b>" + bad + (bad === 1 ? " picture has" : " pictures have") + " a “please check” remark.</b>" : "");
+    $("okBtns").hidden = false; $("okGo").textContent = "Save to Google Drive"; $("okGo").disabled = $("okCancel").disabled = false; $("okPanel").hidden = false; $("okPanel").scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+  $("okBtn").onclick = askApprove; $("okCancel").onclick = closePanels;
+  $("okGo").onclick = async () => {
+    const run = runNo, ref = curRef(), list = included(), ver = versions[cur]; if (!list.length || creating) return;
+    $("okGo").disabled = $("okCancel").disabled = $("modBtn").disabled = $("okBtn").disabled = true; note("okNote", "Saving…");
+    try {
+      const st = await call({ action: "approve_start", ref, version: cur + 1, replace: replaceOk, pictures: list.map((x) => ({ id: x.id, label: x.label, kind: x.kind, size: x.blob.size })) });
+      for (let i = 0; i < list.length; i++) {
+        note("okNote", "Saving picture " + (i + 1) + " of " + list.length + "…");
+        for (let n = 1; ; n++) { try { await putFile(st.uploads[i].url, list[i].blob, st.uploads[i].file_name, () => {}); break; } catch (e) { if (n >= 3) throw e; await new Promise((r) => setTimeout(r, 800 * n)); } }
+      }
+      await call({ action: "approve_finish", approval_id: st.approval_id });
+      ver.approved = true; if (run === runNo && ver === versions[cur]) approved = true;
+      let s = null;
+      for (let n = 0; n < 40 && run === runNo; n++) {
+        try { s = await call({ action: "approve_status", approval_id: st.approval_id }); } catch {}
+        if (s && s.saved >= s.total) break;
+        note("okNote", "Copying to Google Drive: " + (s ? s.saved : 0) + " of " + list.length + "…"); await new Promise((r) => setTimeout(r, 3000));
+      }
+      if (run !== runNo) return;
+      const all = s && s.saved >= s.total; $("okBtns").hidden = true; note("okNote", "");
+      $("okTitle").textContent = "✓ Approved";
+      $("okText").innerHTML = list.length + " picture" + (list.length === 1 ? "" : "s") + " saved as <b>" + esc(ref) + "_A.jpg</b>" + (list.length > 1 ? " to <b>" + esc(ref) + "_" + LETTERS[list.length - 1] + ".jpg</b>" : "") + (all ? " in <b>Approved images / " + esc(ref) + "</b>." : ". They are safe; the copy to Google Drive is still running and finishes by itself.") +
+        (s && s.folder ? ' <a href="' + esc(s.folder) + '" target="_blank" rel="noopener">Open the folder</a>' : "");
+    } catch (e) {
+      if (e.status === 409 && e.data && e.data.exists) {
+        const x = e.data.exists; replaceOk = true; note("okNote", "");
+        $("okTitle").textContent = ref + " already has approved pictures"; $("okText").textContent = x.pictures + " pictures, approved " + (x.at ? new Date(x.at).toLocaleString() : "") + " by " + x.by + ". Save these instead? The earlier folder is kept in Google Drive as “" + ref + " (replaced …)”.";
+        $("okGo").textContent = "Save these instead";
+      } else note("okNote", e.message, true);
+      $("okGo").disabled = $("okCancel").disabled = false;
+    } finally { $("modBtn").disabled = $("okBtn").disabled = false; }
+  };
 
   // ---------- after saving ----------
   let lastDetails = null;
@@ -713,7 +1096,7 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
     $("doneTxt").innerHTML = "<b>" + esc(ref) + "</b> is registered with " + curtains.length + " curtain size" + (curtains.length === 1 ? "" : "s") + " (" + totalQty + " curtain" + (totalQty === 1 ? "" : "s") + " in total), " + photos.length + " photo" + (photos.length === 1 ? "" : "s") + (video ? " and a video" : "") +
       ". " + n + " file" + (n === 1 ? " is" : "s are") + " named <b>" + esc(ref) + "_A</b>" + (n > 1 ? " to <b>" + esc(ref) + "_" + LETTERS[n - 1] + "</b>" : "") + " and being copied to the Ready_Curtains folder in Google Drive.";
     document.getElementById("form").style.display = "none"; document.querySelector("header").style.display = "none";
-    $("bar").style.display = "none"; $("done").style.display = "block"; window.scrollTo(0, 0);
+    $("bar").hidden = true; $("done").style.display = "block"; window.scrollTo(0, 0);
     store.set("rc.draft", "");
   }
   function clearForm(keep){
@@ -728,13 +1111,23 @@ input:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1
     if (keep) GROUPS.forEach((g) => lastDetails.pick[g] && setChip(g, lastDetails.pick[g]));
     saveDraft(); refHint();
     document.getElementById("form").style.display = ""; document.querySelector("header").style.display = "";
-    $("bar").style.display = ""; $("done").style.display = "none"; window.scrollTo(0, 0);
+    $("bar").hidden = false; $("done").style.display = "none"; window.scrollTo(0, 0);
     setTimeout(() => $("ref").focus(), 50);
   }
-  $("againSame").onclick = () => clearForm(true);
-  $("againBlank").onclick = () => clearForm(false);
+  const leaveOk = () => !creating && (!pendingPictures() || confirm("The pictures below are not approved yet and will be lost. Continue?"));
+  $("againSame").onclick = () => { if (leaveOk()) clearForm(true); };
+  $("againBlank").onclick = () => { if (leaveOk()) clearForm(false); };
 
   loadDraft(); renderSizes(); refHint(); renderThumbs(); renderVideo();
+
+  // ---------- start ----------
+  (async () => {
+    const m = /^#setup=([A-Za-z0-9_-]{30,60})$/.exec(location.hash);
+    if (m) return startSetup(m[1]);
+    if (!session) return showLogin("");
+    try { me = (await call({ action: "me" })).me; showApp(); }
+    catch (e) { if (e.offline) showApp(); else if (e.status !== 401) showLogin(e.message); else showLogin(""); }
+  })();
 })();
 </script>
 </body>

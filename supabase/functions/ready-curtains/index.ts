@@ -1,15 +1,20 @@
 /* ready-curtains: the only door behind ready-curtains.html (23 Nov 2026).
  *
- * A no-login page where staff register ready-made curtains: fields + up to 20 photos + 1 optional video.
- * Deployed with verify_jwt OFF (anon has no grants anywhere; this function writes with the service role).
+ * The page where staff register ready-made curtains: fields + up to 20 photos + 1 optional video, website pictures made by AI.
+ * Deployed with verify_jwt OFF: sign-in is its own (auth.ts, approved emails only, header x-rc-session), anon has no grants anywhere and this
+ * function writes with the service role. While rc_settings.login_required is not 'on', start / finish / create_image / feedback also work
+ * without a session (roll-out of the login); everything else always needs one.
  *
  *   POST {action:"start",  submission_id, ref, curtain_type, ..., curtains:[{width_cm,height_cm,quantity,height_variation}] (1-20),
  *                        photos:[{type,size}], video:{type,size}|null}
  *        -> {ok, ref, uploads:[{letter,file_name,kind,url}]}   (one-time signed upload URLs into Storage)
  *   POST {action:"finish", ref, submission_id}
  *        -> {ok, ref, files}  (checks every file really arrived, marks the registration complete, starts Drive copy)
- *   POST {action:"create_image", style, opacity, colour, tieback, shot, seed, photo:{data}}  -> {image(base64), mime, label}
- *        one Gemini picture per call (see images.ts + rules.json); rate limited per visitor and per day
+ *   POST {action:"create_image", style, opacity, tieback, shot, photo:{data}, feedback?, previous?:{data}}  -> {image(base64), mime, label, faults}
+ *        one Gemini picture per call (see images.ts + rules.json); the colour comes only from `photo`; limited per person and per day
+ *   POST {action:"feedback", audio:{data,mime}|text, pictures:[{id,label,kind}], style, opacity, tieback}  -> what to change in which picture
+ *   POST {action:"approve_start" | "approve_finish" | "approve_status"}  -> approved pictures to Drive "Approved images" (approve.ts)
+ *   POST {action:"login" | "setup_info" | "setup" | "me" | "logout" | "people"}  (auth.ts)
  *   POST {action:"sync"} + header x-cron-key   -> copies pending files into Google Drive folder Ready_Curtains
  *   GET  ?action=ping                          -> {ok, drive:true|false}
  *
@@ -18,16 +23,19 @@
  * which runs after every finish and from pg_cron. Drive uses its own Drive-only OAuth token held in Vault.
  */
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createImage } from "./images.ts";
+import { createImage, understand } from "./images.ts";
+import { login, logout, people, setup, setupInfo, type Who, whoIs } from "./auth.ts";
+import { approvalFolder, approveFinish, approveStart, approveStatus } from "./approve.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const BUCKET = "ready-curtains";
-const DRIVE_FOLDER_NAME = "Ready_Curtains";
+const DRIVE_FOLDER_NAME = "Ready_Curtains", APPROVED_FOLDER_NAME = "Approved images";
+const GAPI = Deno.env.get("GOOGLE_BASE") || "https://www.googleapis.com", GOAUTH = Deno.env.get("GOOGLE_BASE") || "https://oauth2.googleapis.com";   // GOOGLE_BASE: local tests only
 const MAX_PHOTOS = 20, MAX_PHOTO_BYTES = 15 * 1024 * 1024, MAX_VIDEO_BYTES = 150 * 1024 * 1024;
 const MAX_CURTAINS = 20;
 const MAX_BODY = 100_000;
-const MAX_IMAGE_BODY = 3_500_000;      // create_image carries one downscaled photo
+const MAX_IMAGE_BODY = 4_500_000;      // create_image carries the fabric photo and, for a change, the picture; feedback carries a recording
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
 const EXT: Record<string, string> = {
@@ -38,12 +46,15 @@ const EXT: Record<string, string> = {
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "content-type, authorization, apikey, x-client-info, x-cron-key",
+  "Access-Control-Allow-Headers": "content-type, authorization, apikey, x-client-info, x-cron-key, x-rc-session",
 };
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 
-class Bad extends Error { constructor(m: string, public status = 400) { super(m); } }
+class Bad extends Error {
+  status: number; extra: any = null;
+  constructor(m: string, status = 400) { super(m); this.status = status; }
+}
 
 const H = { apikey: SERVICE_KEY, Authorization: "Bearer " + SERVICE_KEY };
 
@@ -93,8 +104,26 @@ const normSid = (v: unknown) => {
   return s;
 };
 
+// ---------- storage ----------
+const objectPath = (p: string) => p.split("/").map(encodeURIComponent).join("/");
+async function signUpload(path: string): Promise<string> {
+  const r = await fetch(SUPABASE_URL + "/storage/v1/object/upload/sign/" + BUCKET + "/" + objectPath(path), {
+    method: "POST", headers: { ...H, "Content-Type": "application/json", "x-upsert": "true" }, body: "{}",
+  });
+  const j = await r.json().catch(() => null);
+  if (!r.ok || !j?.url) { console.error("sign", r.status, JSON.stringify(j)); throw new Error("sign failed"); }
+  return SUPABASE_URL + "/storage/v1" + j.url;
+}
+async function listFiles(prefix: string): Promise<Map<string, number>> {
+  const r = await fetch(SUPABASE_URL + "/storage/v1/object/list/" + BUCKET, {
+    method: "POST", headers: { ...H, "Content-Type": "application/json" }, body: JSON.stringify({ prefix, limit: 100 }),
+  });
+  const listed: any[] = r.ok ? await r.json() : [];
+  return new Map(listed.map((o) => [o.name, Number(o.metadata?.size) || 0]));
+}
+
 // ---------- start ----------
-async function start(b: any): Promise<Response> {
+async function start(b: any, who: Who | null): Promise<Response> {
   const ref = normRef(b.ref), sid = normSid(b.submission_id);
   const curtain_type = pick(b.curtain_type, CHOICES.curtain_type, "a curtain type");
   const type_other = curtain_type === "Others" ? clean(b.type_other, 80) : "";
@@ -107,7 +136,7 @@ async function start(b: any): Promise<Response> {
     fabric_kind: pick(b.fabric_kind, CHOICES.fabric_kind, "a fabric"),
     rack_no: clean(b.rack_no, 40),
     tieback: pick(b.tieback || "No tie back", ["No tie back", "Velcro tie back", "Hook style tie back"], "a tie back option"),
-    photo_count: 0, has_video: false, curtain_count: 1, total_quantity: 1,
+    photo_count: 0, has_video: false, curtain_count: 1, total_quantity: 1, registered_by: who?.email ?? null,
   };
   if (!row.colour) throw new Bad("Colour is required");
   if (!row.condition) throw new Bad("Condition is required");
@@ -179,14 +208,7 @@ async function start(b: any): Promise<Response> {
   });
   await rest("ready_curtain_files", { method: "POST", body: JSON.stringify(files), prefer: "return=minimal" });
 
-  const uploads = await Promise.all(files.map(async (f) => {
-    const r = await fetch(SUPABASE_URL + "/storage/v1/object/upload/sign/" + BUCKET + "/" + f.storage_path.split("/").map(encodeURIComponent).join("/"), {
-      method: "POST", headers: { ...H, "Content-Type": "application/json", "x-upsert": "true" }, body: "{}",
-    });
-    const j = await r.json().catch(() => null);
-    if (!r.ok || !j?.url) { console.error("sign", r.status, JSON.stringify(j)); throw new Error("sign failed"); }
-    return { letter: f.letter, file_name: f.file_name, kind: f.kind, url: SUPABASE_URL + "/storage/v1" + j.url };
-  }));
+  const uploads = await Promise.all(files.map(async (f) => ({ letter: f.letter, file_name: f.file_name, kind: f.kind, url: await signUpload(f.storage_path) })));
   return json({ ok: true, ref, uploads });
 }
 
@@ -196,12 +218,7 @@ async function finish(b: any): Promise<Response> {
   const reg = await rest("ready_curtains?select=id,submission_id,status,photo_count,has_video&ref=eq." + encodeURIComponent(ref));
   if (!reg?.length || reg[0].submission_id !== sid) throw new Bad("Registration not found - please submit again", 404);
   const files: any[] = await rest("ready_curtain_files?select=id,file_name,size_bytes&ref=eq." + encodeURIComponent(ref) + "&order=letter");
-  const lr = await fetch(SUPABASE_URL + "/storage/v1/object/list/" + BUCKET, {
-    method: "POST", headers: { ...H, "Content-Type": "application/json" },
-    body: JSON.stringify({ prefix: ref, limit: 100 }),
-  });
-  const listed: any[] = lr.ok ? await lr.json() : [];
-  const have = new Map(listed.map((o) => [o.name, Number(o.metadata?.size) || 0]));
+  const have = await listFiles(ref);
   const missing = files.filter((f) => !have.has(f.file_name)).map((f) => f.file_name);
   if (missing.length) return json({ error: "Some files did not arrive", missing }, 409);
   await rest("ready_curtain_files?ref=eq." + encodeURIComponent(ref) + "&uploaded_at=is.null", {
@@ -229,7 +246,7 @@ async function accessToken(): Promise<string | null> {
   const raw = await secret("ready_curtains_drive_token");
   if (!raw) return null;
   const t = JSON.parse(raw);
-  const r = await fetch("https://oauth2.googleapis.com/token", {
+  const r = await fetch(GOAUTH + "/token", {
     method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ client_id: t.client_id, client_secret: t.client_secret, refresh_token: t.refresh_token, grant_type: "refresh_token" }),
   });
@@ -242,33 +259,38 @@ async function gd(tok: string, url: string, init: RequestInit = {}): Promise<Res
   return fetch(url, { ...init, headers: { Authorization: "Bearer " + tok, ...(init.headers || {}) } });
 }
 
-async function driveFolder(tok: string): Promise<string> {
-  const saved = await rest("rc_settings?select=value&key=eq.drive_folder_id");
+/** A folder in My Drive made by this app (drive.file scope), remembered in rc_settings, created once. */
+async function rootFolder(tok: string, key: string, name: string): Promise<string> {
+  const saved = await rest("rc_settings?select=value&key=eq." + key);
   if (saved?.length) {
-    const r = await gd(tok, "https://www.googleapis.com/drive/v3/files/" + saved[0].value + "?fields=id,trashed");
+    const r = await gd(tok, GAPI + "/drive/v3/files/" + saved[0].value + "?fields=id,trashed");
     if (r.ok) { const j = await r.json(); if (!j.trashed) return saved[0].value; } else await r.body?.cancel();
   }
-  const q = encodeURIComponent("name = '" + DRIVE_FOLDER_NAME + "' and mimeType = 'application/vnd.google-apps.folder' and 'root' in parents and trashed = false");
-  const lr = await gd(tok, "https://www.googleapis.com/drive/v3/files?spaces=drive&fields=files(id)&q=" + q);
+  const q = encodeURIComponent("name = '" + name + "' and mimeType = 'application/vnd.google-apps.folder' and 'root' in parents and trashed = false");
+  const lr = await gd(tok, GAPI + "/drive/v3/files?spaces=drive&fields=files(id)&q=" + q);
   const found = lr.ok ? (await lr.json()).files || [] : [];
   let id: string = found[0]?.id;
   let created = false;
   if (!id) {
-    const cr = await gd(tok, "https://www.googleapis.com/drive/v3/files?fields=id", {
+    const cr = await gd(tok, GAPI + "/drive/v3/files?fields=id", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: DRIVE_FOLDER_NAME, mimeType: "application/vnd.google-apps.folder", parents: ["root"] }),
+      body: JSON.stringify({ name, mimeType: "application/vnd.google-apps.folder", parents: ["root"] }),
     });
     if (!cr.ok) throw new Error("Could not create the Drive folder: " + cr.status);
     id = (await cr.json()).id; created = true;
   }
+  if (saved?.length) {                                                     // the remembered folder was deleted: remember the new one
+    await rest("rc_settings?key=eq." + key, { method: "PATCH", prefer: "return=minimal", body: JSON.stringify({ value: id }) });
+    return id;
+  }
   // first writer wins, so two runs at once never leave two folders
   const won = await rest("rc_settings?on_conflict=key", {
     method: "POST", prefer: "resolution=ignore-duplicates,return=representation",
-    body: JSON.stringify({ key: "drive_folder_id", value: id }),
+    body: JSON.stringify({ key, value: id }),
   });
   if (won && won.length) return id;
-  if (created) await gd(tok, "https://www.googleapis.com/drive/v3/files/" + id, { method: "DELETE" });
-  const now = await rest("rc_settings?select=value&key=eq.drive_folder_id");
+  if (created) await gd(tok, GAPI + "/drive/v3/files/" + id, { method: "DELETE" });
+  const now = await rest("rc_settings?select=value&key=eq." + key);
   return now[0].value;
 }
 
@@ -277,7 +299,7 @@ const CHUNK = 8 * 1024 * 1024;                       // multiple of 256 KiB, as 
 async function copyToDrive(tok: string, folder: string, f: any): Promise<string> {
   // already there (a retry after a half-finished run)?
   const q = encodeURIComponent("name = '" + f.file_name.replace(/'/g, "\\'") + "' and '" + folder + "' in parents and trashed = false");
-  const lr = await gd(tok, "https://www.googleapis.com/drive/v3/files?spaces=drive&fields=files(id)&q=" + q);
+  const lr = await gd(tok, GAPI + "/drive/v3/files?spaces=drive&fields=files(id)&q=" + q);
   if (lr.ok) { const hit = (await lr.json()).files?.[0]; if (hit) return hit.id; } else await lr.body?.cancel();
 
   const src = SUPABASE_URL + "/storage/v1/object/" + BUCKET + "/" + f.storage_path.split("/").map(encodeURIComponent).join("/");
@@ -286,7 +308,7 @@ async function copyToDrive(tok: string, folder: string, f: any): Promise<string>
   if (!head.ok || !total) throw new Error("file not found in Storage (" + head.status + ")");
   const mime = f.mime || "application/octet-stream";
 
-  const init = await gd(tok, "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id", {
+  const init = await gd(tok, GAPI + "/upload/drive/v3/files?uploadType=resumable&fields=id", {
     method: "POST",
     headers: { "Content-Type": "application/json; charset=UTF-8", "X-Upload-Content-Type": mime, "X-Upload-Content-Length": String(total) },
     body: JSON.stringify({ name: f.file_name, parents: [folder], mimeType: mime }),
@@ -318,36 +340,43 @@ async function syncDrive(budgetMs = 110_000): Promise<{ drive: boolean; copied: 
   try {
     const tok = await accessToken();
     if (!tok) return { drive: false, copied: 0, failed: 0 };
-    const folder = await driveFolder(tok);
     const t0 = Date.now();
-    let copied = 0, failed = 0;
-    while (Date.now() - t0 < budgetMs) {
-      const stale = new Date(Date.now() - 6 * 60_000).toISOString();
-      const rows: any[] = await rest("ready_curtain_files?select=*&uploaded_at=not.is.null&drive_synced_at=is.null" +
-        "&or=(drive_claimed_at.is.null,drive_claimed_at.lt." + stale + ")&order=id&limit=1");
-      if (!rows.length) break;
-      const f = rows[0];
-      // claim it (atomic: only one run gets the row back)
-      const claimed = await rest("ready_curtain_files?id=eq." + f.id + "&drive_synced_at=is.null" +
-        "&or=(drive_claimed_at.is.null,drive_claimed_at.lt." + stale + ")", {
-        method: "PATCH", prefer: "return=representation", body: JSON.stringify({ drive_claimed_at: new Date().toISOString() }),
-      });
-      if (!claimed?.length) continue;
-      try {
-        const id = await copyToDrive(tok, folder, f);
-        await rest("ready_curtain_files?id=eq." + f.id, {
-          method: "PATCH", prefer: "return=minimal",
-          body: JSON.stringify({ drive_file_id: id, drive_synced_at: new Date().toISOString(), drive_error: null }),
+    let copied = 0, failed = 0, folder = "", approvedRoot = "";
+    const folderFor = async (table: string, f: any): Promise<string> => {
+      if (table === "ready_curtain_files") return folder ||= await rootFolder(tok, "drive_folder_id", DRIVE_FOLDER_NAME);
+      approvedRoot ||= await rootFolder(tok, "approved_folder_id", APPROVED_FOLDER_NAME);
+      const ap = (await rest("rc_approvals?select=*&id=eq." + f.approval_id))[0];
+      return approvalFolder(ap, approvedRoot, (path, init) => gd(tok, GAPI + path, init), { rest });
+    };
+    for (const table of ["ready_curtain_files", "rc_approved_files"]) {
+      while (Date.now() - t0 < budgetMs) {
+        const stale = new Date(Date.now() - 6 * 60_000).toISOString();
+        const rows: any[] = await rest(table + "?select=*&uploaded_at=not.is.null&drive_synced_at=is.null" +
+          "&or=(drive_claimed_at.is.null,drive_claimed_at.lt." + stale + ")&order=id&limit=1");
+        if (!rows.length) break;
+        const f = rows[0];
+        // claim it (atomic: only one run gets the row back)
+        const claimed = await rest(table + "?id=eq." + f.id + "&drive_synced_at=is.null" +
+          "&or=(drive_claimed_at.is.null,drive_claimed_at.lt." + stale + ")", {
+          method: "PATCH", prefer: "return=representation", body: JSON.stringify({ drive_claimed_at: new Date().toISOString() }),
         });
-        copied++;
-      } catch (e: any) {
-        console.error("drive copy", f.file_name, e?.message);
-        failed++;
-        await rest("ready_curtain_files?id=eq." + f.id, {
-          method: "PATCH", prefer: "return=minimal",
-          // keep the claim for 6 minutes so one bad file does not block the queue; cron retries it later
-          body: JSON.stringify({ drive_error: String(e?.message || e).slice(0, 300) }),
-        });
+        if (!claimed?.length) continue;
+        try {
+          const id = await copyToDrive(tok, await folderFor(table, f), f);
+          await rest(table + "?id=eq." + f.id, {
+            method: "PATCH", prefer: "return=minimal",
+            body: JSON.stringify({ drive_file_id: id, drive_synced_at: new Date().toISOString(), drive_error: null }),
+          });
+          copied++;
+        } catch (e: any) {
+          console.error("drive copy", f.file_name, e?.message);
+          failed++;
+          await rest(table + "?id=eq." + f.id, {
+            method: "PATCH", prefer: "return=minimal",
+            // keep the claim for 6 minutes so one bad file does not block the queue; cron retries it later
+            body: JSON.stringify({ drive_error: String(e?.message || e).slice(0, 300) }),
+          });
+        }
       }
     }
     return { drive: true, copied, failed };
@@ -355,12 +384,22 @@ async function syncDrive(budgetMs = 110_000): Promise<{ drive: boolean; copied: 
 }
 
 // ---------- entry ----------
+let loginFlag: { on: boolean; until: number } | null = null;
+/** rc_settings.login_required = 'on' closes the page to everyone who is not signed in. A read error counts as 'on'. */
+async function loginRequired(): Promise<boolean> {
+  if (loginFlag && loginFlag.until > Date.now()) return loginFlag.on;
+  try {
+    const r = await rest("rc_settings?select=value&key=eq.login_required");
+    loginFlag = { on: r?.[0]?.value === "on", until: Date.now() + 15_000 };
+    return loginFlag.on;
+  } catch { return true; }
+}
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
   try {
     if (req.method === "GET") {
       const action = new URL(req.url).searchParams.get("action") || "ping";
-      if (action === "ping") return json({ ok: true, drive: !!(await secret("ready_curtains_drive_token")) });
+      if (action === "ping") return json({ ok: true, drive: !!(await secret("ready_curtains_drive_token")), login: await loginRequired() });
       return json({ error: "Unknown action" }, 400);
     }
     if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
@@ -368,23 +407,44 @@ Deno.serve(async (req: Request) => {
     const raw = await req.text();
     if (raw.length > MAX_IMAGE_BODY) return json({ error: "Request too large" }, 413);
     let b: any; try { b = JSON.parse(raw); } catch { return json({ error: "Bad request" }, 400); }
-    if (b.action !== "create_image" && raw.length > MAX_BODY) return json({ error: "Request too large" }, 413);
+    const big = b.action === "create_image" || b.action === "feedback";
+    if (!big && raw.length > MAX_BODY) return json({ error: "Request too large" }, 413);
 
-    if (b.action === "create_image") {
-      const ip = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
-      return json({ ok: true, ...(await createImage(b, { rest, secret, url: SUPABASE_URL, H, Bad, ip })) });
-    }
-
-    if (b.action === "start") return await start(b);
-    if (b.action === "finish") return await finish(b);
     if (b.action === "sync") {
       const key = await secret("ready_curtains_cron_key");
       if (!key || req.headers.get("x-cron-key") !== key) return json({ error: "Not allowed" }, 403);
       return json({ ok: true, ...(await syncDrive()) });
     }
+
+    const ip = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown", core = { rest, Bad, ip };
+    if (b.action === "login") return json({ ok: true, ...(await login(b, core)) });
+    if (b.action === "setup_info") return json({ ok: true, ...(await setupInfo(b, core)) });
+    if (b.action === "setup") return json({ ok: true, ...(await setup(b, core)) });
+
+    const token = req.headers.get("x-rc-session"), who = await whoIs(token, core);
+    const OPEN_UNTIL_ON = ["start", "finish", "create_image", "feedback"];
+    if (!who && (!OPEN_UNTIL_ON.includes(b.action) || await loginRequired())) throw new Bad("Please sign in.", 401);
+
+    const ctx = { rest, secret, url: SUPABASE_URL, H, Bad, ip, email: who?.email ?? null };
+    if (b.action === "create_image") return json({ ok: true, ...(await createImage(b, ctx)) });
+    if (b.action === "feedback") return json({ ok: true, ...(await understand(b, ctx)) });
+    if (b.action === "start") return await start(b, who);
+    if (b.action === "finish") return await finish(b);
+    if (b.action === "me") return json({ ok: true, me: who });
+    if (b.action === "logout") return json({ ok: true, ...(await logout(token, core)) });
+    if (b.action === "people") return json({ ok: true, ...(await people(b, who!, core)) });
+    const deps = { rest, Bad, sign: signUpload, list: listFiles, normRef, bucket: BUCKET };
+    if (b.action === "approve_start") return json({ ok: true, ...(await approveStart(b, who!, deps)) });
+    if (b.action === "approve_finish") {
+      const out = await approveFinish(b, who!, deps);
+      // @ts-ignore EdgeRuntime is provided by the Supabase runtime
+      EdgeRuntime.waitUntil(syncDrive().catch((e) => console.error("sync after approve", e)));
+      return json({ ok: true, ...out });
+    }
+    if (b.action === "approve_status") return json({ ok: true, ...(await approveStatus(b, deps)) });
     return json({ error: "Unknown action" }, 400);
   } catch (e: any) {
-    if (e instanceof Bad) return json({ error: e.message }, e.status);
+    if (e instanceof Bad) return json({ error: e.message, ...(e.extra || {}) }, e.status);
     console.error("ready-curtains", e?.message || e);
     return json({ error: "Something went wrong on the server. Please try again." }, 500);
   }
